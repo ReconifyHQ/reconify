@@ -85,23 +85,43 @@ jobs:
 
     - name: Get version
       id: get_version
+      shell: bash
       run: |
         VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
         BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
 
-    - name: Build binary
+    - name: Set build variables
+      id: build_vars
+      shell: bash
       run: |
-        GOOS=${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }} \
+        if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+          echo "goos=linux" >> $GITHUB_OUTPUT
+        elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+          echo "goos=darwin" >> $GITHUB_OUTPUT
+        else
+          echo "goos=windows" >> $GITHUB_OUTPUT
+        fi
+        
+        if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          echo "binary_name=reconify.exe" >> $GITHUB_OUTPUT
+        else
+          echo "binary_name=reconify" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build binary
+      shell: bash
+      run: |
+        GOOS=${{ steps.build_vars.outputs.goos }} \
         GOARCH=amd64 \
         go build -ldflags "-X main.Version=${{ steps.get_version.outputs.version }} -X main.BuildTime=${{ steps.get_version.outputs.build_time }}" \
-        -o reconify${{ matrix.os == 'windows-latest' && '.exe' || '' }} \
+        -o ${{ steps.build_vars.outputs.binary_name }} \
         ./cmd/reconify
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: reconify-${{ matrix.os }}
-        path: reconify${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        path: ${{ steps.build_vars.outputs.binary_name }}
 
