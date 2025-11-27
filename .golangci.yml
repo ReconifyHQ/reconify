@@ -2,11 +2,6 @@ run:
   timeout: 5m
   tests: true
 
-skip-dirs:
-  - vendor
-  - dist
-  - build
-
 linters:
   enable:
     - errcheck
@@ -52,6 +47,9 @@ issues:
       linters:
         - errcheck
         - gocritic
+    - path: vendor/
+    - path: dist/
+    - path: build/
   max-issues-per-linter: 0
   max-same-issues: 0
 
