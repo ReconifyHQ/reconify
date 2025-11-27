@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+
+    - name: Get version
+      id: get_version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+
+    - name: Build binaries
+      run: |
+        mkdir -p dist
+        VERSION=${{ steps.get_version.outputs.version }}
+        BUILD_TIME=${{ steps.get_version.outputs.build_time }}
+        
+        # Linux
+        GOOS=linux GOARCH=amd64 go build \
+          -ldflags "-X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" \
+          -o dist/reconify-linux-amd64 ./cmd/reconify
+        
+        # macOS Intel
+        GOOS=darwin GOARCH=amd64 go build \
+          -ldflags "-X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" \
+          -o dist/reconify-darwin-amd64 ./cmd/reconify
+        
+        # macOS Apple Silicon
+        GOOS=darwin GOARCH=arm64 go build \
+          -ldflags "-X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" \
+          -o dist/reconify-darwin-arm64 ./cmd/reconify
+        
+        # Windows
+        GOOS=windows GOARCH=amd64 go build \
+          -ldflags "-X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" \
+          -o dist/reconify-windows-amd64.exe ./cmd/reconify
+
+    - name: Create checksums
+      run: |
+        cd dist
+        sha256sum * > checksums.txt
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          dist/*
+        body: |
+          ## Reconify ${{ steps.get_version.outputs.version }}
+          
+          ### Downloads
+          
+          - **Linux (amd64)**: `reconify-linux-amd64`
+          - **macOS (Intel)**: `reconify-darwin-amd64`
+          - **macOS (Apple Silicon)**: `reconify-darwin-arm64`
+          - **Windows (amd64)**: `reconify-windows-amd64.exe`
+          
+          ### Checksums
+          
+          See `checksums.txt` for SHA256 checksums of all binaries.
+        draft: false
+        prerelease: ${{ contains(steps.get_version.outputs.version, '-') }}
+
