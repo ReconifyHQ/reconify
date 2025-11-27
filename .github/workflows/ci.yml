@@ -66,6 +66,7 @@ jobs:
         version: latest
         args: --timeout=5m
         working-directory: ./cli
+        only-new-issues: false
 
   build:
     name: Build
