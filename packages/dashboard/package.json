@@ -1,0 +1,15 @@
+{
+  "name": "@reconify/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Dashboard dev - TODO'",
+    "build": "echo 'Dashboard build - TODO'",
+    "preview": "echo 'Dashboard preview - TODO'",
+    "test": "echo 'Dashboard tests - TODO'",
+    "lint": "echo 'Dashboard lint - TODO'",
+    "clean": "rm -rf dist node_modules .next"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

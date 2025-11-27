@@ -1,68 +1,115 @@
-.PHONY: build test lint fmt clean install help
-
-# Binary name
-BINARY_NAME=reconify
-VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
-LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
-
-# Go parameters
-GOCMD=go
-GOBUILD=$(GOCMD) build
-GOTEST=$(GOCMD) test
-GOMOD=$(GOCMD) mod
-GOFMT=gofmt
-GOLINT=golangci-lint
+.PHONY: help build build-all dev test lint clean docker-build docker-up docker-down install
 
 help: ## Show this help message
-	@echo 'Usage: make [target]'
+	@echo 'Reconify Monorepo - Available Commands:'
 	@echo ''
-	@echo 'Available targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo 'Development:'
+	@echo '  make dev:api          - Start API in development mode'
+	@echo '  make dev:dashboard    - Start dashboard in development mode'
+	@echo ''
+	@echo 'Build:'
+	@echo '  make build            - Build all components'
+	@echo '  make build:cli        - Build CLI only'
+	@echo '  make build:api        - Build API only'
+	@echo '  make build:dashboard  - Build dashboard only'
+	@echo '  make build:docs       - Build docs site only'
+	@echo ''
+	@echo 'Testing:'
+	@echo '  make test             - Run all tests'
+	@echo '  make test:cli         - Run CLI tests only'
+	@echo ''
+	@echo 'Docker:'
+	@echo '  make docker-build     - Build all Docker images'
+	@echo '  make docker-up        - Start all services'
+	@echo '  make docker-down      - Stop all services'
+	@echo '  make docker-logs      - View Docker logs'
+	@echo ''
+	@echo 'Installation:'
+	@echo '  make install          - Install CLI globally'
+	@echo ''
+	@echo 'Clean:'
+	@echo '  make clean            - Clean all build artifacts'
 
-build: ## Build the binary
-	$(GOBUILD) $(LDFLAGS) -o $(BINARY_NAME) ./cmd/reconify
+# Development
+dev: dev:api ## Start all dev servers (alias for dev:api)
 
-build-all: ## Build binaries for all platforms
-	@echo "Building for multiple platforms..."
-	@mkdir -p dist
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-linux-amd64 ./cmd/reconify
-	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-amd64 ./cmd/reconify
-	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-arm64 ./cmd/reconify
-	GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-windows-amd64.exe ./cmd/reconify
+dev:api: ## Start API in development mode
+	pnpm --filter api dev
 
-test: ## Run tests
-	$(GOTEST) -v -race -coverprofile=coverage.out ./...
+dev:dashboard: ## Start dashboard in development mode
+	pnpm --filter dashboard dev
 
-test-coverage: test ## Run tests with coverage report
-	$(GOCMD) tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
+dev:docs: ## Start docs site in development mode
+	pnpm --filter docs dev
 
-lint: ## Run linter
-	@if command -v $(GOLINT) > /dev/null; then \
-		$(GOLINT) run ./...; \
-	else \
-		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
-	fi
+# Build
+build: ## Build all components
+	@echo "Building CLI..."
+	@make -C cli build
+	@echo "Building Node.js packages..."
+	@pnpm -r build
 
-fmt: ## Format code
-	$(GOFMT) -s -w .
+build:cli: ## Build CLI only
+	make -C cli build
 
-tidy: ## Tidy dependencies
-	$(GOMOD) tidy
-	$(GOMOD) verify
+build:api: ## Build API only
+	pnpm --filter api build
 
-clean: ## Clean build artifacts
-	rm -f $(BINARY_NAME)
-	rm -rf dist/
-	rm -f coverage.out coverage.html
+build:dashboard: ## Build dashboard only
+	pnpm --filter dashboard build
 
-install: build ## Install binary to GOPATH/bin
-	cp $(BINARY_NAME) $(GOPATH)/bin/
+build:docs: ## Build docs site only
+	pnpm --filter docs build
 
-deps: ## Download dependencies
-	$(GOMOD) download
-	$(GOMOD) verify
+build-all: build:cli ## Build CLI for all platforms
+	make -C cli build-all
+
+# Testing
+test: ## Run all tests
+	@echo "Running CLI tests..."
+	@make -C cli test
+	@echo "Running Node.js tests..."
+	@pnpm -r test
+
+test:cli: ## Run CLI tests only
+	make -C cli test
+
+# Linting
+lint: ## Run all linters
+	@echo "Linting CLI..."
+	@make -C cli lint
+	@echo "Linting Node.js packages..."
+	@pnpm -r lint
+
+# Docker
+docker-build: build:cli ## Build all Docker images
+	@echo "Building CLI binary for Docker..."
+	@make -C cli build
+	@echo "Copying CLI binary for Docker build..."
+	@cp cli/reconify cli/reconify 2>/dev/null || true
+	@echo "Building Docker images..."
+	@docker-compose build
+
+docker-up: ## Start all Docker services
+	docker-compose up -d
+
+docker-down: ## Stop all Docker services
+	docker-compose down
+
+docker-logs: ## View Docker logs
+	docker-compose logs -f
+
+# Installation
+install: build:cli ## Install CLI globally
+	make -C cli install
+
+# Clean
+clean: ## Clean all build artifacts
+	@echo "Cleaning CLI..."
+	@make -C cli clean
+	@echo "Cleaning Node.js packages..."
+	@pnpm -r clean
+	@echo "Removing Docker volumes..."
+	@docker-compose down -v 2>/dev/null || true
 
 .DEFAULT_GOAL := help
-

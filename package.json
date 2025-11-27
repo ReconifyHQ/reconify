@@ -1,0 +1,31 @@
+{
+  "name": "reconify-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reconify - A developer-first reconciliation engine",
+  "scripts": {
+    "build": "pnpm -r build && make -C cli build",
+    "build:cli": "make -C cli build",
+    "build:api": "pnpm --filter api build",
+    "build:dashboard": "pnpm --filter dashboard build",
+    "build:docs": "pnpm --filter docs build",
+    "dev:api": "pnpm --filter api dev",
+    "dev:dashboard": "pnpm --filter dashboard dev",
+    "dev:docs": "pnpm --filter docs dev",
+    "test": "pnpm -r test && make -C cli test",
+    "test:cli": "make -C cli test",
+    "lint": "pnpm -r lint && make -C cli lint",
+    "clean": "pnpm -r clean && make -C cli clean",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}

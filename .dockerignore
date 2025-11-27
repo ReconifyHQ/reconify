@@ -1,0 +1,15 @@
+node_modules
+.git
+.github
+dist
+build
+*.log
+.env
+.env.local
+.DS_Store
+coverage
+.nyc_output
+.vscode
+.idea
+reconify
+*.test

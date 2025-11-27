@@ -103,22 +103,104 @@ reconify reconcile --config reconify.yaml --pair bank_vs_stripe --out results.js
 Reconify consists of:
 
 1. **Core Engine (CLI)**: Fast, deterministic reconciliation binary
-2. **Web Dashboard** (Coming Soon): Simple web interface for ad-hoc reconciliations
+2. **API Server** (Coming Soon): REST API for programmatic access
+3. **Web Dashboard** (Coming Soon): Simple web interface for ad-hoc reconciliations
+
+## Self-Hosting
+
+Reconify is designed to be easily self-hosted. See [Self-Hosting Guide](docs/self-hosting.md) for detailed instructions.
+
+### Quick Start with Docker
+
+```bash
+# Clone the repository
+git clone https://github.com/reconify/reconify.git
+cd reconify
+
+# Start all services
+docker-compose up -d
+
+# Access services
+# - API: http://localhost:3000
+# - Dashboard: http://localhost:8080
+```
+
+For production deployment, you'll need to:
+- Set up a reverse proxy (nginx, Caddy, etc.)
+- Configure SSL certificates
+- Configure your domain/DNS
+
+See the [Self-Hosting Guide](docs/self-hosting.md) for complete instructions.
 
 ## Development
 
-```bash
-# Run tests
-make test
+This is a monorepo using pnpm workspaces for Node.js components and Go modules for the CLI.
 
-# Build binary
+### Prerequisites
+
+- Go 1.25+
+- Node.js 18+
+- pnpm 8+
+
+### Setup
+
+```bash
+# Install pnpm (if not installed)
+npm install -g pnpm
+
+# Install all dependencies
+pnpm install
+
+# Install Go dependencies
+cd cli && go mod download
+```
+
+### Build
+
+```bash
+# Build everything
 make build
 
-# Run linter
-make lint
+# Build individual components
+make build:cli        # CLI only
+make build:api        # API only
+make build:dashboard  # Dashboard only
+```
 
-# Format code
-make fmt
+### Development
+
+```bash
+# Start API in dev mode
+make dev:api
+
+# Start dashboard in dev mode
+make dev:dashboard
+```
+
+### Testing
+
+```bash
+# Run all tests
+make test
+
+# Run CLI tests only
+make test:cli
+```
+
+### Docker
+
+```bash
+# Build Docker images
+make docker-build
+
+# Start all services
+make docker-up
+
+# View logs
+make docker-logs
+
+# Stop services
+make docker-down
 ```
 
 ## License
