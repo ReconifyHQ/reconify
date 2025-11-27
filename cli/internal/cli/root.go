@@ -44,4 +44,3 @@ func getConfigPath() string {
 	}
 	return "reconify.yaml"
 }
-

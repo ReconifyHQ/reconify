@@ -83,4 +83,3 @@ This validates that required columns exist and that sample data can be parsed.`,
 
 	return cmd
 }
-

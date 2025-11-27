@@ -48,4 +48,3 @@ This is useful for testing and debugging parser configurations.`,
 
 	return cmd
 }
-

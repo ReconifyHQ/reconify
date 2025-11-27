@@ -47,4 +47,3 @@ according to the configured rules.`,
 
 	return cmd
 }
-

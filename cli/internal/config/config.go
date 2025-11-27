@@ -18,7 +18,7 @@ type Config struct {
 
 // Source defines a data source configuration
 type Source struct {
-	FilePattern string      `yaml:"file_pattern"`
+	FilePattern string       `yaml:"file_pattern"`
 	Parser      CSVParserCfg `yaml:"parser"`
 }
 
@@ -83,15 +83,15 @@ func (c *Config) Validate() []error {
 	}
 
 	for name, source := range c.Sources {
-		if errs := validateSource(name, source); len(errs) > 0 {
-			errs = append(errs, errs...)
+		if sourceErrs := validateSource(name, source); len(sourceErrs) > 0 {
+			errs = append(errs, sourceErrs...)
 		}
 	}
 
 	// Validate pairs
 	for name, pair := range c.Pairs {
-		if errs := validatePair(name, pair, c.Sources); len(errs) > 0 {
-			errs = append(errs, errs...)
+		if pairErrs := validatePair(name, pair, c.Sources); len(pairErrs) > 0 {
+			errs = append(errs, pairErrs...)
 		}
 	}
 
@@ -201,4 +201,3 @@ func getSourceNames(sources map[string]Source) []string {
 	}
 	return names
 }
-
