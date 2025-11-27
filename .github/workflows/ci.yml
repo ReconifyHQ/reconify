@@ -27,18 +27,18 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        key: ${{ runner.os }}-go-${{ hashFiles('cli/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
 
     - name: Download dependencies
-      run: go mod download
+      run: cd cli && go mod download
 
     - name: Verify dependencies
-      run: go mod verify
+      run: cd cli && go mod verify
 
     - name: Run tests
-      run: go test -v -race -coverprofile=coverage.out ./...
+      run: cd cli && go test -v -race -coverprofile=coverage.out ./...
 
     - name: Upload coverage
       uses: codecov/codecov-action@v4
@@ -65,6 +65,7 @@ jobs:
       with:
         version: latest
         args: --timeout=5m
+        working-directory: ./cli
 
   build:
     name: Build
@@ -113,10 +114,11 @@ jobs:
     - name: Build binary
       shell: bash
       run: |
+        cd cli
         GOOS=${{ steps.build_vars.outputs.goos }} \
         GOARCH=amd64 \
         go build -ldflags "-X main.Version=${{ steps.get_version.outputs.version }} -X main.BuildTime=${{ steps.get_version.outputs.build_time }}" \
-        -o ${{ steps.build_vars.outputs.binary_name }} \
+        -o ../${{ steps.build_vars.outputs.binary_name }} \
         ./cmd/reconify
 
     - name: Upload artifacts
@@ -124,4 +126,34 @@ jobs:
       with:
         name: reconify-${{ matrix.os }}
         path: ${{ steps.build_vars.outputs.binary_name }}
+
+  nodejs:
+    name: Node.js
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 8
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Lint Node.js packages
+      run: pnpm -r lint
+
+    - name: Test Node.js packages
+      run: pnpm -r test
+
+    - name: Build Node.js packages
+      run: pnpm -r build
 

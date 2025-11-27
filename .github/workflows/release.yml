@@ -38,24 +38,32 @@ jobs:
         BUILD_TIME=${{ steps.get_version.outputs.build_time }}
         
         # Linux
+        cd cli
         GOOS=linux GOARCH=amd64 go build \
           -ldflags "-X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" \
-          -o dist/reconify-linux-amd64 ./cmd/reconify
+          -o ../dist/reconify-linux-amd64 ./cmd/reconify
+        cd ..
         
         # macOS Intel
+        cd cli
         GOOS=darwin GOARCH=amd64 go build \
           -ldflags "-X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" \
-          -o dist/reconify-darwin-amd64 ./cmd/reconify
+          -o ../dist/reconify-darwin-amd64 ./cmd/reconify
+        cd ..
         
         # macOS Apple Silicon
+        cd cli
         GOOS=darwin GOARCH=arm64 go build \
           -ldflags "-X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" \
-          -o dist/reconify-darwin-arm64 ./cmd/reconify
+          -o ../dist/reconify-darwin-arm64 ./cmd/reconify
+        cd ..
         
         # Windows
+        cd cli
         GOOS=windows GOARCH=amd64 go build \
           -ldflags "-X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" \
-          -o dist/reconify-windows-amd64.exe ./cmd/reconify
+          -o ../dist/reconify-windows-amd64.exe ./cmd/reconify
+        cd ..
 
     - name: Create checksums
       run: |
