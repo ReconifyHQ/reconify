@@ -47,9 +47,6 @@ issues:
       linters:
         - errcheck
         - gocritic
-    - path: vendor/
-    - path: dist/
-    - path: build/
   max-issues-per-linter: 0
   max-same-issues: 0
 

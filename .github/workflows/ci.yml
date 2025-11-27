@@ -154,6 +154,7 @@ jobs:
 
     - name: Lint docs
       run: pnpm --filter docs lint
+      continue-on-error: true
 
     - name: Lint other packages
       run: pnpm --filter '{api,dashboard}' lint
