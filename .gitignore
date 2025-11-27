@@ -51,7 +51,6 @@ cli/reconify-*
 
 # Node.js
 node_modules/
-pnpm-lock.yaml
 .pnpm-store/
 packages/*/node_modules/
 packages/*/dist/
