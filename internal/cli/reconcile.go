@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,13 +16,25 @@ func newReconcileCmd() *cobra.Command {
 	var outputPath string
 	var leftFile string
 	var rightFile string
+	var format string
+	var maxTokenBuffer int
 
 	cmd := &cobra.Command{
 		Use:   "reconcile",
 		Short: "Run a reconciliation between two sources",
 		Long: `Execute a reconciliation between two configured sources.
-This command reads CSV files, normalizes them, and matches transactions
-according to the configured rules. Outputs JSON to stdout or a file.`,
+Reads CSV files, normalizes them, and matches transactions according to
+configured rules. Outputs results in the requested format.
+
+Formats:
+  json         (default) Indented JSON object; buffers full result in memory.
+               For files >500k rows, prefer json-stream, ndjson, or csv.
+  json-stream  Streaming JSON object; same structure as json but encodes
+               each event immediately. Lower GC pressure for large files.
+               Note: output is invalid JSON if the process is interrupted.
+  ndjson       One tagged JSON line per event; O(1) memory; crash-safe.
+  csv          Fixed-schema CSV; O(1) memory.
+  table        Aligned ASCII table; buffers all rows in memory.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
 			if pairName == "" {
@@ -62,23 +74,7 @@ according to the configured rules. Outputs JSON to stdout or a file.`,
 				return fmt.Errorf("right source: %w", err)
 			}
 
-			// Parse both sources
-			leftTxns, err := engine.ParseCSV(pair.Left, leftPath, leftSrc.Parser)
-			if err != nil {
-				return fmt.Errorf("parse left source: %w", err)
-			}
-			rightTxns, err := engine.ParseCSV(pair.Right, rightPath, rightSrc.Parser)
-			if err != nil {
-				return fmt.Errorf("parse right source: %w", err)
-			}
-
-			// Run reconciliation
-			result, err := engine.Reconcile(pairName, pair.Left, pair.Right, leftTxns, rightTxns, pair)
-			if err != nil {
-				return fmt.Errorf("reconciliation failed: %w", err)
-			}
-
-			// Write output
+			// Open output destination
 			var out *os.File
 			if outputPath == "-" || outputPath == "" {
 				out = os.Stdout
@@ -90,19 +86,53 @@ according to the configured rules. Outputs JSON to stdout or a file.`,
 				defer out.Close()
 			}
 
-			enc := json.NewEncoder(out)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(result); err != nil {
-				return fmt.Errorf("encode result: %w", err)
+			// All formats route through ReconcileStreaming.
+			// The caller creates the index and passes it in — ReconcileStreaming
+			// never assumes a specific RightIndex implementation.
+			w, err := engine.NewResultWriter(format, out)
+			if err != nil {
+				return err
 			}
 
-			cmd.PrintErrf(
-				"Reconciled %q: %d matched, %d unmatched (%.1f%% match rate)\n",
+			// Propagate pair metadata to json-stream writer so it can include
+			// pair/source names in the output object.
+			if jsw, ok := w.(interface {
+				SetMeta(pairName, leftSource, rightSource string)
+			}); ok {
+				jsw.SetMeta(pairName, pair.Left, pair.Right)
+			}
+
+			// For the default json writer, also set metadata fields via the
+			// jsonWriter's result struct. We do this by setting it on the result
+			// directly through the GetResult method if available.
+			if jw, ok := w.(interface {
+				GetResult() *engine.Result
+			}); ok {
+				r := jw.GetResult()
+				r.PairName = pairName
+				r.LeftSource = pair.Left
+				r.RightSource = pair.Right
+			}
+
+			idx := engine.NewMemoryIndex()
+			defer idx.Close()
+
+			if err := engine.ReconcileStreaming(
+				context.Background(),
 				pairName,
-				result.Summary.MatchedCount,
-				result.Summary.UnmatchedLeft+result.Summary.UnmatchedRight,
-				result.Summary.MatchRatePct,
-			)
+				pair.Left,
+				pair.Right,
+				leftPath,
+				rightPath,
+				leftSrc.Parser,
+				rightSrc.Parser,
+				pair,
+				idx,
+				w,
+				maxTokenBuffer,
+			); err != nil {
+				return fmt.Errorf("reconciliation failed: %w", err)
+			}
 
 			return nil
 		},
@@ -112,6 +142,10 @@ according to the configured rules. Outputs JSON to stdout or a file.`,
 	cmd.Flags().StringVarP(&outputPath, "out", "o", "-", "Output file path (use '-' for stdout)")
 	cmd.Flags().StringVar(&leftFile, "left-file", "", "Explicit path to left source CSV file")
 	cmd.Flags().StringVar(&rightFile, "right-file", "", "Explicit path to right source CSV file")
+	cmd.Flags().StringVar(&format, "format", "json",
+		`Output format: json (default), json-stream, ndjson, csv, table`)
+	cmd.Flags().IntVar(&maxTokenBuffer, "max-token-buffer", 100_000,
+		"Advisory row limit for token-mode unmatched buffer (0 = unlimited)")
 
 	return cmd
 }
