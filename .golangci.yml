@@ -1,0 +1,58 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - revive
+    - gocritic
+    - unconvert
+
+  exclusions:
+    rules:
+      - path: _test.go
+        linters:
+          - errcheck
+          - gocritic
+
+  settings:
+    revive:
+      rules:
+      - name: exported
+        severity: warning
+      - name: unexported-return
+        severity: warning
+      - name: error-return
+        severity: warning
+      - name: error-naming
+        severity: warning
+      - name: var-naming
+        severity: warning
+      - name: range
+        severity: warning
+      - name: increment-decrement
+        severity: warning
+      - name: var-declaration
+        severity: warning
+      - name: package-comments
+        severity: warning
+      - name: exported
+        severity: warning
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+

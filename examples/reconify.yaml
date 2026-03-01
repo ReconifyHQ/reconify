@@ -1,0 +1,42 @@
+version: 1
+timezone: "UTC"
+
+sources:
+  bank:
+    file_pattern: "data/bank/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      tz: "UTC"
+      amount_col: "Amount"
+      decimal: "."
+      thousands: ","
+      multiplier: 100
+      currency_col: "Currency"
+      name_col: "Details"
+      ref_col: "Reference"
+
+  stripe:
+    file_pattern: "data/stripe/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      tz: "UTC"
+      amount_col: "Amount"
+      decimal: "."
+      thousands: ","
+      multiplier: 100
+      currency_col: "Currency"
+      name_col: "Description"
+      ref_col: "Reference"
+
+pairs:
+  bank_vs_stripe:
+    left: bank
+    right: stripe
+    date_window: "1d"
+    amount_tolerance_minor: 0
+    name_mode: "tokens"
+
