@@ -36,6 +36,10 @@ type CSVParserCfg struct {
 	CurrencyCol string `yaml:"currency_col,omitempty"`
 	NameCol     string `yaml:"name_col,omitempty"`
 	RefCol      string `yaml:"ref_col,omitempty"`
+	// SkipRaw skips the per-row Raw map[string]string allocation.
+	// Set to true for large files to reduce allocator pressure.
+	// Default false preserves the Raw field on every Transaction.
+	SkipRaw bool `yaml:"skip_raw,omitempty"`
 }
 
 // Pair defines a reconciliation pair configuration

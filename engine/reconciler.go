@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -67,6 +69,381 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 	}
 
 	return result, nil
+}
+
+// ReconcileStreaming is the canonical streaming reconciliation function.
+//
+// It accepts a RightIndex (created by the caller) and a ResultWriter, and emits
+// events incrementally as it processes both sides. ReconcileStreaming never
+// assumes a specific RightIndex implementation — passing newMemoryIndex() is the
+// default; a disk-backed index can be substituted without changing this function.
+//
+// Token mode ordering: reference matching always runs first. Token/name matching
+// applies only to transactions that remain unmatched after the reference pass.
+// Token matches cannot override reference matches.
+//
+// Memory complexity:
+//   - Right-side index: O(n_right) via the provided RightIndex
+//   - Right dup tracking: O(unique_refs_right) for counting + O(dup_right_txns) for groups
+//   - Left ref tracking: O(unique_refs_left) for counting + O(dup_left_txns) for groups
+//   - Token mode buffer: O(n_unmatched) worst case — guarded by maxTokenBuffer
+//
+// Empty references ("") are treated as unmatched and are never grouped as duplicates.
+func ReconcileStreaming(
+	ctx context.Context,
+	pairName string,
+	leftSource string,
+	rightSource string,
+	leftPath string,
+	rightPath string,
+	leftCfg config.CSVParserCfg,
+	rightCfg config.CSVParserCfg,
+	pair config.Pair,
+	idx RightIndex,
+	w ResultWriter,
+	maxTokenBuffer int,
+) error {
+	dateWindowDays, err := parseDateWindow(pair.DateWindow)
+	if err != nil {
+		return fmt.Errorf("invalid date_window: %w", err)
+	}
+
+	tolerance := pair.AmountToleranceMinor
+
+	// -----------------------------------------------------------------------
+	// Pass 1: stream right CSV into index, track right duplicates
+	// -----------------------------------------------------------------------
+	// Force SkipRaw for the right side — Raw data in the index wastes memory.
+	rightCfgNoRaw := rightCfg
+	rightCfgNoRaw.SkipRaw = true
+
+	// Lightweight right-side duplicate detection.
+	// rightSeen tracks occurrence count per reference, capped at 2 (saturating).
+	// rightDupRefs collects references that appeared ≥ 2 times; the full
+	// Transaction set is retrieved via a targeted re-scan after this pass.
+	rightSeen    := make(map[string]uint8)
+	rightDupRefs := make(map[string]bool)
+	var totalRight int
+
+	if err := ParseCSVEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
+		totalRight++
+		if tx.Reference == "" {
+			return idx.Add(tx)
+		}
+		if rightSeen[tx.Reference] < 2 {
+			rightSeen[tx.Reference]++
+		}
+		if rightSeen[tx.Reference] == 2 {
+			rightDupRefs[tx.Reference] = true
+		}
+		return idx.Add(tx)
+	}); err != nil {
+		return fmt.Errorf("parse right source: %w", err)
+	}
+
+	// Emit right duplicate groups via targeted re-scan of the right file.
+	// collectDuplicates is only called when duplicates actually exist;
+	// for datasets with no duplicates this is a no-op.
+	if len(rightDupRefs) > 0 {
+		groups, err := collectDuplicates(ctx, rightSource, rightPath, rightCfg, rightDupRefs)
+		if err != nil {
+			return fmt.Errorf("collect right duplicates: %w", err)
+		}
+		for _, g := range groups {
+			if err := w.WriteDuplicate(g); err != nil {
+				return err
+			}
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Pass 2: stream left CSV, match against index, emit events immediately
+	// -----------------------------------------------------------------------
+	// Lightweight left-side duplicate detection — same saturating-uint8 approach
+	// as the right side. leftFirst/leftDups are replaced by a targeted re-scan
+	// after this pass (collectDuplicates), called only when duplicates exist.
+	leftSeen    := make(map[string]uint8)
+	leftDupRefs := make(map[string]bool)
+
+	var (
+		matchedCount       int
+		amountDiffCount    int
+		timingDiffCount    int
+		unmatchedLeftCount int
+		tokenUnmatchedLeft []Transaction
+	)
+	var totalLeft int
+
+	if err := ParseCSVEach(ctx, leftSource, leftPath, leftCfg, func(ltx Transaction, _ int) error {
+		totalLeft++
+
+		// Track left duplicates (count only; full transactions retrieved in third pass)
+		if ltx.Reference != "" {
+			if leftSeen[ltx.Reference] < 2 {
+				leftSeen[ltx.Reference]++
+			}
+			if leftSeen[ltx.Reference] == 2 {
+				leftDupRefs[ltx.Reference] = true
+			}
+		}
+
+		// Empty reference: classify as unmatched immediately
+		if ltx.Reference == "" {
+			unmatchedLeftCount++
+			if pair.NameMode == "tokens" {
+				tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
+				return nil
+			}
+			return w.WriteUnmatched(ltx, "left")
+		}
+
+		// Attempt reference matching.
+		// Cache left date as Unix nanos once per row — avoids recomputing
+		// it for every right-side bucket candidate.
+		buckets := idx.Get(ltx.Reference)
+		matched := false
+		ltxDateNano := ltx.Date.UnixNano()
+		for _, b := range buckets {
+			if b.used {
+				continue
+			}
+
+			amtDiff := ltx.Amount - b.amount
+			if amtDiff < 0 {
+				amtDiff = -amtDiff
+			}
+			daysDiff := daysBetweenNano(ltxDateNano, b.dateUnix)
+			amtOk := amtDiff <= tolerance
+			dateOk := dateWindowDays == 0 || daysDiff <= dateWindowDays
+
+			if amtOk && dateOk {
+				b.used = true
+				matched = true
+				matchedCount++
+				return w.WriteMatch(MatchedPair{Left: ltx, Right: b.toTransaction(ltx.Reference)})
+			}
+			if !amtOk && dateOk {
+				b.used = true
+				matched = true
+				amountDiffCount++
+				return w.WriteAmountDiff(AmountDiffPair{
+					Left:      ltx,
+					Right:     b.toTransaction(ltx.Reference),
+					DiffMinor: ltx.Amount - b.amount,
+				})
+			}
+			if amtOk && !dateOk {
+				b.used = true
+				matched = true
+				timingDiffCount++
+				return w.WriteTimingDiff(TimingDiffPair{
+					Left:     ltx,
+					Right:    b.toTransaction(ltx.Reference),
+					DaysDiff: daysDiff,
+				})
+			}
+		}
+
+		if !matched {
+			unmatchedLeftCount++
+			if pair.NameMode == "tokens" {
+				tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
+				return nil
+			}
+			return w.WriteUnmatched(ltx, "left")
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("parse left source: %w", err)
+	}
+
+	// Emit left duplicate groups via targeted re-scan of the left file.
+	if len(leftDupRefs) > 0 {
+		groups, err := collectDuplicates(ctx, leftSource, leftPath, leftCfg, leftDupRefs)
+		if err != nil {
+			return fmt.Errorf("collect left duplicates: %w", err)
+		}
+		for _, g := range groups {
+			if err := w.WriteDuplicate(g); err != nil {
+				return err
+			}
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// After pass 2: collect unused right-side transactions
+	// -----------------------------------------------------------------------
+	var tokenUnmatchedRight []Transaction
+	unmatchedRightCount := 0
+
+	if err := idx.IterateUnused(func(tx Transaction) error {
+		unmatchedRightCount++
+		if pair.NameMode == "tokens" {
+			tokenUnmatchedRight = append(tokenUnmatchedRight, tx)
+			return nil
+		}
+		return w.WriteUnmatched(tx, "right")
+	}); err != nil {
+		return err
+	}
+
+	// -----------------------------------------------------------------------
+	// Optional token-mode second pass on unmatched transactions
+	//
+	// Token mode is an edge case / fallback. It buffers unmatched transactions
+	// from both sides. Worst case (all unmatched): O(n_total) memory.
+	// Guarded by maxTokenBuffer advisory limit.
+	// -----------------------------------------------------------------------
+	if pair.NameMode == "tokens" {
+		bufTotal := len(tokenUnmatchedLeft) + len(tokenUnmatchedRight)
+		if maxTokenBuffer > 0 && bufTotal > maxTokenBuffer {
+			fmt.Fprintf(os.Stderr,
+				"warning: token mode unmatched buffer is %d rows (limit %d); memory usage may be high\n",
+				bufTotal, maxTokenBuffer)
+		}
+
+		// Run Jaccard secondary matching on the buffered unmatched transactions.
+		// Returns matched pairs plus the remaining (still unmatched) left/right slices.
+		tokenMatches, remainLeft, remainRight := matchByNameTokensStreaming(
+			tokenUnmatchedLeft, tokenUnmatchedRight, tolerance, dateWindowDays,
+		)
+		for _, mp := range tokenMatches {
+			matchedCount++
+			// Each token match reduces unmatched counts
+			unmatchedLeftCount--
+			unmatchedRightCount--
+			if err := w.WriteMatch(mp); err != nil {
+				return err
+			}
+		}
+		for _, tx := range remainLeft {
+			if err := w.WriteUnmatched(tx, "left"); err != nil {
+				return err
+			}
+		}
+		for _, tx := range remainRight {
+			if err := w.WriteUnmatched(tx, "right"); err != nil {
+				return err
+			}
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Summary
+	// -----------------------------------------------------------------------
+	dupCount := len(leftDupRefs) + len(rightDupRefs)
+	total := totalLeft
+	if totalRight > total {
+		total = totalRight
+	}
+	matchRate := 0.0
+	if total > 0 {
+		matchRate = math.Round(float64(matchedCount)/float64(total)*10000) / 100
+	}
+
+	if err := w.WriteSummary(Summary{
+		TotalLeft:       totalLeft,
+		TotalRight:      totalRight,
+		MatchedCount:    matchedCount,
+		UnmatchedLeft:   unmatchedLeftCount,
+		UnmatchedRight:  unmatchedRightCount,
+		AmountDiffCount: amountDiffCount,
+		TimingDiffCount: timingDiffCount,
+		DuplicateCount:  dupCount,
+		MatchRatePct:    matchRate,
+	}); err != nil {
+		return err
+	}
+
+	return w.Flush()
+}
+
+// matchByNameTokensStreaming runs the Jaccard secondary pass on pre-buffered
+// unmatched slices and returns a slice of MatchedPairs plus the remaining
+// (still unmatched) slices in-place.
+func matchByNameTokensStreaming(
+	left, right []Transaction,
+	tolerance int64,
+	windowDays int,
+) (matches []MatchedPair, remainLeft, remainRight []Transaction) {
+	usedRight := make(map[string]bool)
+
+	for _, ltx := range left {
+		if ltx.Name == "" {
+			remainLeft = append(remainLeft, ltx)
+			continue
+		}
+		ltokens := tokenize(ltx.Name)
+		bestScore := 0.0
+		bestIdx := -1
+		for i, rtx := range right {
+			if usedRight[rtx.ID] || rtx.Name == "" {
+				continue
+			}
+			amtDiff := ltx.Amount - rtx.Amount
+			if amtDiff < 0 {
+				amtDiff = -amtDiff
+			}
+			if amtDiff > tolerance {
+				continue
+			}
+			if windowDays > 0 && daysBetween(ltx.Date, rtx.Date) > windowDays {
+				continue
+			}
+			score := tokenOverlap(ltokens, tokenize(rtx.Name))
+			if score > bestScore {
+				bestScore = score
+				bestIdx = i
+			}
+		}
+		if bestScore > 0.5 && bestIdx >= 0 {
+			matches = append(matches, MatchedPair{Left: ltx, Right: right[bestIdx]})
+			usedRight[right[bestIdx].ID] = true
+		} else {
+			remainLeft = append(remainLeft, ltx)
+		}
+	}
+	for _, rtx := range right {
+		if !usedRight[rtx.ID] {
+			remainRight = append(remainRight, rtx)
+		}
+	}
+	return matches, remainLeft, remainRight
+}
+
+// collectDuplicates re-scans a CSV file and returns a DuplicateGroup for every
+// reference in dupRefs. It is invoked only when duplicates were detected during
+// the primary pass; for datasets with no duplicates this function is never called.
+//
+// Using the original cfg (not rightCfgNoRaw) preserves the Raw field if the
+// caller has configured SkipRaw = false.
+//
+// Memory: O(n_dup_rows) — only rows whose reference is in dupRefs are retained.
+func collectDuplicates(
+	ctx        context.Context,
+	sourceName string,
+	path       string,
+	cfg        config.CSVParserCfg,
+	dupRefs    map[string]bool,
+) ([]DuplicateGroup, error) {
+	byRef := make(map[string][]Transaction, len(dupRefs))
+	if err := ParseCSVEach(ctx, sourceName, path, cfg, func(tx Transaction, _ int) error {
+		if dupRefs[tx.Reference] {
+			byRef[tx.Reference] = append(byRef[tx.Reference], tx)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	groups := make([]DuplicateGroup, 0, len(byRef))
+	for ref, txns := range byRef {
+		groups = append(groups, DuplicateGroup{
+			Source:       sourceName,
+			Reference:    ref,
+			Transactions: txns,
+		})
+	}
+	return groups, nil
 }
 
 // matchByReference matches transactions by reference string.
@@ -287,6 +664,18 @@ func daysBetween(a, b time.Time) int {
 		diff = -diff
 	}
 	return int(diff.Hours() / 24)
+}
+
+// daysBetweenNano returns the absolute number of days between two Unix nanosecond
+// timestamps. Used in ReconcileStreaming where the right-side date is stored as
+// int64 in the bucket, avoiding time.Time reconstruction for comparison.
+func daysBetweenNano(aNano, bNano int64) int {
+	const nsPerDay = 24 * 60 * 60 * int64(1e9)
+	diff := aNano - bNano
+	if diff < 0 {
+		diff = -diff
+	}
+	return int(diff / nsPerDay)
 }
 
 // tokenize splits a string into lower-case word tokens.

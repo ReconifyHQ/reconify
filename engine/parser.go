@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"bufio"
+	"context"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -13,21 +15,37 @@ import (
 	"github.com/reconify/reconify/config"
 )
 
-// ParseCSV reads a CSV file and returns normalized transactions according to the source config.
-func ParseCSV(sourceName string, filePath string, cfg config.CSVParserCfg) ([]Transaction, error) {
+// ParseCSVEach streams a CSV file, calling fn for each parsed transaction.
+//
+// Ownership: each call receives a distinct Transaction by value. The callback
+// owns the value and may retain it without copying. No struct is reused between calls.
+//
+// Error format: all errors include filePath, row number (1-based), the original
+// field value, and the source name. Example:
+//
+//	bank.csv: row 452133: source "bank": invalid date "2023-99-01" with layout "2006-01-02"
+//
+// Context: checked between rows. Returns ctx.Err() on cancellation.
+func ParseCSVEach(
+	ctx context.Context,
+	sourceName string,
+	filePath string,
+	cfg config.CSVParserCfg,
+	fn func(tx Transaction, rowNum int) error,
+) error {
 	f, err := os.Open(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("open %q: %w", filePath, err)
+		return fmt.Errorf("open %q: %w", filePath, err)
 	}
 	defer f.Close()
 
-	r := csv.NewReader(f)
+	r := csv.NewReader(bufio.NewReaderSize(f, 1<<20))
 	r.TrimLeadingSpace = true
 
 	// Read header row
 	headers, err := r.Read()
 	if err != nil {
-		return nil, fmt.Errorf("read header: %w", err)
+		return fmt.Errorf("%s: read header: %w", filePath, err)
 	}
 	colIndex := buildColIndex(headers)
 
@@ -39,7 +57,7 @@ func ParseCSV(sourceName string, filePath string, cfg config.CSVParserCfg) ([]Tr
 		}
 	}
 
-	// Resolve decimal and thousands separators
+	// Resolve decimal separator
 	decimal := "."
 	if cfg.Decimal != "" {
 		decimal = cfg.Decimal
@@ -50,44 +68,85 @@ func ParseCSV(sourceName string, filePath string, cfg config.CSVParserCfg) ([]Tr
 		multiplier = 1
 	}
 
-	var txns []Transaction
-	rowNum := 0
+	// Date cache: capped at 1000 unique keys, then permanently disabled.
+	// Eliminates repeated time.ParseInLocation calls for files with many same-date rows.
+	// Disabled automatically when timestamp columns are detected (per-row unique values
+	// fill the cache quickly and trigger permanent fallback to direct parsing).
+	dateCache := make(map[string]time.Time)
+	cacheEnabled := true
 
+	rowNum := 0
 	for {
+		// Check for context cancellation between rows
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
 		record, err := r.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read row %d: %w", rowNum+2, err)
+			return fmt.Errorf("%s: row %d: %w", filePath, rowNum+2, err)
 		}
 		rowNum++
 
-		raw := make(map[string]string, len(headers))
-		for i, h := range headers {
-			if i < len(record) {
-				raw[h] = record[i]
-			}
+		// Date
+		dateStr := strings.TrimSpace(getCol(record, colIndex, cfg.DateCol))
+		if dateStr == "" {
+			return fmt.Errorf("%s: row %d: source %q: date column %q is empty",
+				filePath, rowNum+1, sourceName, cfg.DateCol)
 		}
 
-		// Date
-		dateStr := getCol(record, colIndex, cfg.DateCol)
-		if dateStr == "" {
-			return nil, fmt.Errorf("row %d: date column %q is empty", rowNum+1, cfg.DateCol)
-		}
-		date, err := time.ParseInLocation(cfg.DateLayout, strings.TrimSpace(dateStr), loc)
-		if err != nil {
-			return nil, fmt.Errorf("row %d: parse date %q with layout %q: %w", rowNum+1, dateStr, cfg.DateLayout, err)
+		var date time.Time
+		if cacheEnabled {
+			if t, ok := dateCache[dateStr]; ok {
+				date = t
+			} else {
+				t, parseErr := time.ParseInLocation(cfg.DateLayout, dateStr, loc)
+				if parseErr != nil {
+					return fmt.Errorf("%s: row %d: source %q: invalid date %q with layout %q: %w",
+						filePath, rowNum+1, sourceName, dateStr, cfg.DateLayout, parseErr)
+				}
+				date = t
+				if len(dateCache) >= 1000 {
+					// Permanently disable cache and free memory.
+					cacheEnabled = false
+					dateCache = nil
+				} else {
+					dateCache[dateStr] = t
+				}
+			}
+		} else {
+			t, parseErr := time.ParseInLocation(cfg.DateLayout, dateStr, loc)
+			if parseErr != nil {
+				return fmt.Errorf("%s: row %d: source %q: invalid date %q with layout %q: %w",
+					filePath, rowNum+1, sourceName, dateStr, cfg.DateLayout, parseErr)
+			}
+			date = t
 		}
 
 		// Amount
 		amtStr := getCol(record, colIndex, cfg.AmountCol)
 		if amtStr == "" {
-			return nil, fmt.Errorf("row %d: amount column %q is empty", rowNum+1, cfg.AmountCol)
+			return fmt.Errorf("%s: row %d: source %q: amount column %q is empty",
+				filePath, rowNum+1, sourceName, cfg.AmountCol)
 		}
 		amount, err := parseAmount(amtStr, decimal, cfg.Thousands, multiplier)
 		if err != nil {
-			return nil, fmt.Errorf("row %d: parse amount %q: %w", rowNum+1, amtStr, err)
+			return fmt.Errorf("%s: row %d: source %q: parse amount %q: %w",
+				filePath, rowNum+1, sourceName, amtStr, err)
+		}
+
+		// Raw map — only allocated when SkipRaw is false
+		var raw map[string]string
+		if !cfg.SkipRaw {
+			raw = make(map[string]string, len(headers))
+			for i, h := range headers {
+				if i < len(record) {
+					raw[h] = record[i]
+				}
+			}
 		}
 
 		txn := Transaction{
@@ -101,10 +160,23 @@ func ParseCSV(sourceName string, filePath string, cfg config.CSVParserCfg) ([]Tr
 			Name:      strings.TrimSpace(getCol(record, colIndex, cfg.NameCol)),
 		}
 
-		txns = append(txns, txn)
+		if err := fn(txn, rowNum); err != nil {
+			return err
+		}
 	}
 
-	return txns, nil
+	return nil
+}
+
+// ParseCSV reads a CSV file and returns normalized transactions according to the source config.
+// It is a convenience wrapper around ParseCSVEach for callers that need a complete slice.
+func ParseCSV(sourceName string, filePath string, cfg config.CSVParserCfg) ([]Transaction, error) {
+	var txns []Transaction
+	err := ParseCSVEach(context.Background(), sourceName, filePath, cfg, func(tx Transaction, _ int) error {
+		txns = append(txns, tx)
+		return nil
+	})
+	return txns, err
 }
 
 // buildColIndex builds a case-insensitive column name → index map.
