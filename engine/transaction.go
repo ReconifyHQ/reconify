@@ -42,8 +42,9 @@ type DuplicateGroup struct {
 	Transactions []Transaction `json:"transactions"`
 }
 
-// Summary holds aggregate counts and the match rate for a reconciliation run.
+// Summary holds aggregate counts, match rate, and monetary totals for a reconciliation run.
 type Summary struct {
+	// Row counts
 	TotalLeft       int     `json:"total_left"`
 	TotalRight      int     `json:"total_right"`
 	MatchedCount    int     `json:"matched"`
@@ -53,10 +54,20 @@ type Summary struct {
 	TimingDiffCount int     `json:"timing_diff_count"`
 	DuplicateCount  int     `json:"duplicate_count"`
 	MatchRatePct    float64 `json:"match_rate_pct"`
+
+	// Monetary totals (all values in minor units, e.g. cents).
+	// These are always populated regardless of --audit mode.
+	MatchedAmountLeft    int64 `json:"matched_amount_left"`    // sum of left.Amount for all matched pairs
+	MatchedAmountRight   int64 `json:"matched_amount_right"`   // sum of right.Amount for all matched pairs
+	UnmatchedAmountLeft  int64 `json:"unmatched_amount_left"`  // sum of Amount for unmatched left transactions
+	UnmatchedAmountRight int64 `json:"unmatched_amount_right"` // sum of Amount for unmatched right transactions
+	AmountDiffTotal      int64 `json:"amount_diff_total"`      // sum of abs(DiffMinor) across all amount_diff pairs
+	TotalDiscrepancy     int64 `json:"total_discrepancy"`      // UnmatchedAmountLeft + UnmatchedAmountRight + AmountDiffTotal
 }
 
 // Result is the full output of a reconciliation run.
 type Result struct {
+	RunInfo        *RunInfo         `json:"run_info,omitempty"` // nil unless --audit mode
 	PairName       string           `json:"pair"`
 	LeftSource     string           `json:"left_source"`
 	RightSource    string           `json:"right_source"`
@@ -67,4 +78,35 @@ type Result struct {
 	AmountDiff     []AmountDiffPair `json:"amount_diff"`
 	TimingDiff     []TimingDiffPair `json:"timing_diff"`
 	Duplicates     []DuplicateGroup `json:"duplicates"`
+}
+
+// ---------------------------------------------------------------------------
+// Audit envelope types
+// ---------------------------------------------------------------------------
+
+// RunInfo carries provenance metadata for a reconciliation run.
+// It is embedded in structured output formats (json, json-stream, ndjson) when
+// the --audit flag is set. It is never populated in the default path.
+type RunInfo struct {
+	RunID       string        `json:"run_id"`       // 16 hex chars derived from file hashes + timestamp
+	Timestamp   time.Time     `json:"timestamp"`    // UTC wall-clock time captured before parsing began
+	ToolVersion string        `json:"tool_version"` // set from build -ldflags Version variable
+	LeftFile    FileInfo      `json:"left_file"`
+	RightFile   FileInfo      `json:"right_file"`
+	PairConfig  PairConfigSnap `json:"pair_config"`
+}
+
+// FileInfo holds the resolved path and SHA-256 digest of an input file.
+type FileInfo struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"` // lowercase hex, 64 characters
+}
+
+// PairConfigSnap is a read-only snapshot of the pair's matching rules as they were
+// applied during this run. Embedding it in the output means an auditor reading the
+// file later knows exactly what tolerance and window were in effect.
+type PairConfigSnap struct {
+	DateWindow           string `json:"date_window"`
+	AmountToleranceMinor int64  `json:"amount_tolerance_minor"`
+	NameMode             string `json:"name_mode"`
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"text/tabwriter"
 	"time"
@@ -25,6 +26,16 @@ type ResultWriter interface {
 	// Flush finalizes the output (closes JSON arrays/objects, flushes CSV buffers,
 	// renders table). Must be called exactly once after all events.
 	Flush() error
+}
+
+// RunInfoSetter is an optional interface implemented by writers that support
+// embedding run provenance metadata in their output. ReconcileStreaming calls
+// this via type assertion before any events are written, so for streaming writers
+// (ndjson) the run_info line is guaranteed to be the first line of output.
+//
+// Writers that do not implement this interface silently skip run_info (csv, table).
+type RunInfoSetter interface {
+	SetRunInfo(info RunInfo) error
 }
 
 // NewResultWriter returns a ResultWriter for the given format name.
@@ -48,12 +59,14 @@ func NewResultWriter(format string, w io.Writer) (ResultWriter, error) {
 
 // ---------------------------------------------------------------------------
 // JSONWriter — buffers full Result struct, writes indented JSON on Flush().
-// Byte-identical to current reconcile output. Not streaming-friendly for large files.
+// Supports SetRunInfo (embeds RunInfo in Result.RunInfo) and SetDeterministic
+// (sorts all output sections before encoding for stable diff-based audit trails).
 // ---------------------------------------------------------------------------
 
 type jsonWriter struct {
-	w      io.Writer
-	result Result
+	w             io.Writer
+	result        Result
+	deterministic bool
 }
 
 func newJSONWriter(w io.Writer) *jsonWriter { return &jsonWriter{w: w} }
@@ -86,14 +99,62 @@ func (j *jsonWriter) WriteSummary(s Summary) error {
 	j.result.Summary = s
 	return nil
 }
+
+// SetMeta sets pair and source names on the result. Fixes the pre-existing bug
+// where PairName/LeftSource/RightSource were never populated in the JSON output.
+func (j *jsonWriter) SetMeta(pairName, leftSource, rightSource string) {
+	j.result.PairName = pairName
+	j.result.LeftSource = leftSource
+	j.result.RightSource = rightSource
+}
+
+// SetRunInfo stores the audit envelope for inclusion in the JSON output.
+// Implements RunInfoSetter.
+func (j *jsonWriter) SetRunInfo(info RunInfo) error {
+	j.result.RunInfo = &info
+	return nil
+}
+
+// SetDeterministic enables stable output ordering. When true, Flush() sorts all
+// result sections by a stable key before encoding. This adds O(n log n) sort time
+// on the result set — typically 4-8 seconds at 17M matched rows.
+func (j *jsonWriter) SetDeterministic(on bool) { j.deterministic = on }
+
+// sortResult sorts all result sections in place for deterministic output.
+func (j *jsonWriter) sortResult() {
+	sort.Slice(j.result.Matched, func(i, k int) bool {
+		return j.result.Matched[i].Left.ID < j.result.Matched[k].Left.ID
+	})
+	sort.Slice(j.result.UnmatchedLeft, func(i, k int) bool {
+		return j.result.UnmatchedLeft[i].ID < j.result.UnmatchedLeft[k].ID
+	})
+	sort.Slice(j.result.UnmatchedRight, func(i, k int) bool {
+		return j.result.UnmatchedRight[i].ID < j.result.UnmatchedRight[k].ID
+	})
+	sort.Slice(j.result.AmountDiff, func(i, k int) bool {
+		return j.result.AmountDiff[i].Left.ID < j.result.AmountDiff[k].Left.ID
+	})
+	sort.Slice(j.result.TimingDiff, func(i, k int) bool {
+		return j.result.TimingDiff[i].Left.ID < j.result.TimingDiff[k].Left.ID
+	})
+	sort.Slice(j.result.Duplicates, func(i, k int) bool {
+		if j.result.Duplicates[i].Reference != j.result.Duplicates[k].Reference {
+			return j.result.Duplicates[i].Reference < j.result.Duplicates[k].Reference
+		}
+		return j.result.Duplicates[i].Source < j.result.Duplicates[k].Source
+	})
+}
+
 func (j *jsonWriter) Flush() error {
+	if j.deterministic {
+		j.sortResult()
+	}
 	enc := json.NewEncoder(j.w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(j.result)
 }
 
-// GetResult returns the accumulated Result. Useful for callers that need the
-// struct directly (e.g. the Reconcile wrapper).
+// GetResult returns the accumulated Result. Used by the batch Reconcile() wrapper.
 func (j *jsonWriter) GetResult() *Result { return &j.result }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +175,7 @@ type jsonStreamSection struct {
 type jsonStreamWriter struct {
 	w        io.Writer
 	meta     struct{ PairName, LeftSource, RightSource string }
+	runInfo  *RunInfo
 	sections []jsonStreamSection // ordered; keyed by JSON field name
 	byKey    map[string]*jsonStreamSection
 	summary  *Summary
@@ -173,12 +235,13 @@ func (j *jsonStreamWriter) WriteSummary(s Summary) error {
 	return nil
 }
 func (j *jsonStreamWriter) Flush() error {
-	// Build a result-shaped object from accumulated raw messages.
-	// All sections are always present; missing ones output as empty arrays.
 	result := map[string]any{
 		"pair":         j.meta.PairName,
 		"left_source":  j.meta.LeftSource,
 		"right_source": j.meta.RightSource,
+	}
+	if j.runInfo != nil {
+		result["run_info"] = j.runInfo
 	}
 	if j.summary != nil {
 		result["summary"] = j.summary
@@ -204,9 +267,18 @@ func (j *jsonStreamWriter) SetMeta(pairName, leftSource, rightSource string) {
 	j.meta.RightSource = rightSource
 }
 
+// SetRunInfo stores the audit envelope for inclusion in the JSON-stream output.
+// Implements RunInfoSetter.
+func (j *jsonStreamWriter) SetRunInfo(info RunInfo) error {
+	j.runInfo = &info
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // NDJSONWriter — one tagged JSON envelope per event, immediately written.
 // O(1) memory. Crash-safe: each line is independently valid JSON.
+// When SetRunInfo is called, it emits a {"type":"run_info",...} line immediately,
+// before any match/unmatched events, making it the first line of output.
 // ---------------------------------------------------------------------------
 
 type ndjsonWriter struct {
@@ -226,6 +298,12 @@ func (n *ndjsonWriter) emit(typ string, data any) error {
 	return n.enc.Encode(ndjsonEnvelope{Type: typ, Data: data})
 }
 
+// SetRunInfo emits the run_info line immediately as the first line of output.
+// Implements RunInfoSetter. Must be called before ReconcileStreaming begins parsing.
+func (n *ndjsonWriter) SetRunInfo(info RunInfo) error {
+	return n.emit("run_info", info)
+}
+
 func (n *ndjsonWriter) WriteMatch(pair MatchedPair) error        { return n.emit("match", pair) }
 func (n *ndjsonWriter) WriteAmountDiff(pair AmountDiffPair) error { return n.emit("amount_diff", pair) }
 func (n *ndjsonWriter) WriteTimingDiff(pair TimingDiffPair) error { return n.emit("timing_diff", pair) }
@@ -240,14 +318,16 @@ func (n *ndjsonWriter) Flush() error                              { return nil }
 // CSVWriter — fixed schema, one row per event. O(1) memory. Versioned contract.
 //
 // Column order:
-//   type, left_id, left_date, left_amount_minor, left_ref, left_name,
-//   right_id, right_date, right_amount_minor, right_ref, right_name,
-//   diff_minor, days_diff,
-//   source, reference, dup_count,
-//   total_left, total_right, matched, unmatched_left, unmatched_right,
-//   amount_diff_count, timing_diff_count, duplicate_count, match_rate_pct
+//
+//	type, left_id, left_date, left_amount_minor, left_ref, left_name,
+//	right_id, right_date, right_amount_minor, right_ref, right_name,
+//	diff_minor, days_diff,
+//	source, reference, dup_count,
+//	total_left, total_right, matched, unmatched_left, unmatched_right,
+//	amount_diff_count, timing_diff_count, duplicate_count, match_rate_pct
 //
 // Unused columns for a given event type are empty string.
+// CSVWriter does not implement RunInfoSetter — audit users should use json formats.
 // ---------------------------------------------------------------------------
 
 var csvHeader = []string{
@@ -386,21 +466,22 @@ func (c *csvWriter) Flush() error {
 // ---------------------------------------------------------------------------
 // TableWriter — buffers all rows, renders ASCII table via text/tabwriter on Flush().
 // Not suitable for large datasets: warns at tableWarnThreshold rows.
+// TableWriter does not implement RunInfoSetter — it is a human display tool only.
 // ---------------------------------------------------------------------------
 
 const tableWarnThreshold = 10_000
 
 type tableRow struct {
-	typ    string
-	leftID string
-	leftDt string
-	leftAmt string
-	leftRef string
-	rightID string
-	rightDt string
+	typ      string
+	leftID   string
+	leftDt   string
+	leftAmt  string
+	leftRef  string
+	rightID  string
+	rightDt  string
 	rightAmt string
 	rightRef string
-	note    string
+	note     string
 }
 
 type tableWriter struct {
@@ -470,8 +551,8 @@ func (t *tableWriter) WriteTimingDiff(pair TimingDiffPair) error {
 
 func (t *tableWriter) WriteUnmatched(tx Transaction, side string) error {
 	row := tableRow{
-		typ:     "unmatched_" + side,
-		note:    "",
+		typ:  "unmatched_" + side,
+		note: "",
 	}
 	if side == "left" {
 		row.leftID = tx.ID
