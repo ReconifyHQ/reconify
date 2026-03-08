@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/reconify/reconify/config"
 	"github.com/reconify/reconify/engine"
@@ -18,6 +19,8 @@ func newReconcileCmd() *cobra.Command {
 	var rightFile string
 	var format string
 	var maxTokenBuffer int
+	var auditMode bool
+	var deterministic bool
 
 	cmd := &cobra.Command{
 		Use:   "reconcile",
@@ -94,24 +97,36 @@ Formats:
 				return err
 			}
 
-			// Propagate pair metadata to json-stream writer so it can include
-			// pair/source names in the output object.
-			if jsw, ok := w.(interface {
+			// Propagate pair/source metadata to writers that support it.
+			if sw, ok := w.(interface {
 				SetMeta(pairName, leftSource, rightSource string)
 			}); ok {
-				jsw.SetMeta(pairName, pair.Left, pair.Right)
+				sw.SetMeta(pairName, pair.Left, pair.Right)
 			}
 
-			// For the default json writer, also set metadata fields via the
-			// jsonWriter's result struct. We do this by setting it on the result
-			// directly through the GetResult method if available.
-			if jw, ok := w.(interface {
-				GetResult() *engine.Result
-			}); ok {
-				r := jw.GetResult()
-				r.PairName = pairName
-				r.LeftSource = pair.Left
-				r.RightSource = pair.Right
+			// Audit mode: hash both input files and embed run provenance in output.
+			if auditMode {
+				runStart := time.Now().UTC()
+				info, err := engine.BuildRunInfo(cliVersion, leftPath, rightPath, pair, runStart)
+				if err != nil {
+					return fmt.Errorf("audit: %w", err)
+				}
+				if setter, ok := w.(engine.RunInfoSetter); ok {
+					if err := setter.SetRunInfo(info); err != nil {
+						return fmt.Errorf("audit: set run info: %w", err)
+					}
+				}
+			}
+
+			// Deterministic mode: stable output ordering for diff-based audit trails.
+			if deterministic {
+				if sd, ok := w.(interface{ SetDeterministic(bool) }); ok {
+					sd.SetDeterministic(true)
+				} else {
+					fmt.Fprintf(os.Stderr,
+						"warning: --deterministic has no effect for --format=%q; use --format=json\n",
+						format)
+				}
 			}
 
 			idx := engine.NewMemoryIndex()
@@ -146,6 +161,10 @@ Formats:
 		`Output format: json (default), json-stream, ndjson, csv, table`)
 	cmd.Flags().IntVar(&maxTokenBuffer, "max-token-buffer", 100_000,
 		"Advisory row limit for token-mode unmatched buffer (0 = unlimited)")
+	cmd.Flags().BoolVar(&auditMode, "audit", false,
+		"Embed run provenance in output: SHA-256 file hashes, timestamp, tool version, pair config snapshot")
+	cmd.Flags().BoolVar(&deterministic, "deterministic", false,
+		"Sort output sections for stable diff-based audit trails (json format only; adds sort overhead)")
 
 	return cmd
 }

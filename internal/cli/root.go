@@ -10,10 +10,12 @@ import (
 var (
 	configFile string
 	verbose    bool
+	cliVersion string // set by Execute; used by subcommands for audit envelopes
 )
 
 // Execute runs the CLI application
 func Execute(version, buildTime string) error {
+	cliVersion = version
 	rootCmd := &cobra.Command{
 		Use:   "reconify",
 		Short: "A developer-first reconciliation engine",

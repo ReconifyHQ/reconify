@@ -56,16 +56,45 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 		matchRate = math.Round(float64(len(result.Matched))/float64(total)*10000) / 100
 	}
 
+	// Compute monetary totals from accumulated result slices.
+	var matchedAmtLeft, matchedAmtRight int64
+	for _, mp := range result.Matched {
+		matchedAmtLeft += mp.Left.Amount
+		matchedAmtRight += mp.Right.Amount
+	}
+	var unmatchedAmtLeft int64
+	for _, tx := range result.UnmatchedLeft {
+		unmatchedAmtLeft += tx.Amount
+	}
+	var unmatchedAmtRight int64
+	for _, tx := range result.UnmatchedRight {
+		unmatchedAmtRight += tx.Amount
+	}
+	var amountDiffTotal int64
+	for _, ap := range result.AmountDiff {
+		d := ap.DiffMinor
+		if d < 0 {
+			d = -d
+		}
+		amountDiffTotal += d
+	}
+
 	result.Summary = Summary{
-		TotalLeft:       len(left),
-		TotalRight:      len(right),
-		MatchedCount:    len(result.Matched),
-		UnmatchedLeft:   len(result.UnmatchedLeft),
-		UnmatchedRight:  len(result.UnmatchedRight),
-		AmountDiffCount: len(result.AmountDiff),
-		TimingDiffCount: len(result.TimingDiff),
-		DuplicateCount:  len(result.Duplicates),
-		MatchRatePct:    matchRate,
+		TotalLeft:            len(left),
+		TotalRight:           len(right),
+		MatchedCount:         len(result.Matched),
+		UnmatchedLeft:        len(result.UnmatchedLeft),
+		UnmatchedRight:       len(result.UnmatchedRight),
+		AmountDiffCount:      len(result.AmountDiff),
+		TimingDiffCount:      len(result.TimingDiff),
+		DuplicateCount:       len(result.Duplicates),
+		MatchRatePct:         matchRate,
+		MatchedAmountLeft:    matchedAmtLeft,
+		MatchedAmountRight:   matchedAmtRight,
+		UnmatchedAmountLeft:  unmatchedAmtLeft,
+		UnmatchedAmountRight: unmatchedAmtRight,
+		AmountDiffTotal:      amountDiffTotal,
+		TotalDiscrepancy:     unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal,
 	}
 
 	return result, nil
@@ -171,6 +200,13 @@ func ReconcileStreaming(
 		timingDiffCount    int
 		unmatchedLeftCount int
 		tokenUnmatchedLeft []Transaction
+
+		// Monetary accumulators (minor units). Always populated; negligible cost.
+		matchedAmtLeft    int64
+		matchedAmtRight   int64
+		unmatchedAmtLeft  int64
+		unmatchedAmtRight int64
+		amountDiffTotal   int64
 	)
 	var totalLeft int
 
@@ -190,6 +226,7 @@ func ReconcileStreaming(
 		// Empty reference: classify as unmatched immediately
 		if ltx.Reference == "" {
 			unmatchedLeftCount++
+			unmatchedAmtLeft += ltx.Amount
 			if pair.NameMode == "tokens" {
 				tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
 				return nil
@@ -220,12 +257,20 @@ func ReconcileStreaming(
 				b.used = true
 				matched = true
 				matchedCount++
+				matchedAmtLeft += ltx.Amount
+				matchedAmtRight += b.amount
 				return w.WriteMatch(MatchedPair{Left: ltx, Right: b.toTransaction(ltx.Reference)})
 			}
 			if !amtOk && dateOk {
 				b.used = true
 				matched = true
 				amountDiffCount++
+				diff := ltx.Amount - b.amount
+				if diff < 0 {
+					amountDiffTotal += -diff
+				} else {
+					amountDiffTotal += diff
+				}
 				return w.WriteAmountDiff(AmountDiffPair{
 					Left:      ltx,
 					Right:     b.toTransaction(ltx.Reference),
@@ -246,6 +291,7 @@ func ReconcileStreaming(
 
 		if !matched {
 			unmatchedLeftCount++
+			unmatchedAmtLeft += ltx.Amount
 			if pair.NameMode == "tokens" {
 				tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
 				return nil
@@ -278,6 +324,7 @@ func ReconcileStreaming(
 
 	if err := idx.IterateUnused(func(tx Transaction) error {
 		unmatchedRightCount++
+		unmatchedAmtRight += tx.Amount
 		if pair.NameMode == "tokens" {
 			tokenUnmatchedRight = append(tokenUnmatchedRight, tx)
 			return nil
@@ -309,9 +356,12 @@ func ReconcileStreaming(
 		)
 		for _, mp := range tokenMatches {
 			matchedCount++
-			// Each token match reduces unmatched counts
 			unmatchedLeftCount--
 			unmatchedRightCount--
+			matchedAmtLeft += mp.Left.Amount
+			matchedAmtRight += mp.Right.Amount
+			unmatchedAmtLeft -= mp.Left.Amount
+			unmatchedAmtRight -= mp.Right.Amount
 			if err := w.WriteMatch(mp); err != nil {
 				return err
 			}
@@ -342,15 +392,21 @@ func ReconcileStreaming(
 	}
 
 	if err := w.WriteSummary(Summary{
-		TotalLeft:       totalLeft,
-		TotalRight:      totalRight,
-		MatchedCount:    matchedCount,
-		UnmatchedLeft:   unmatchedLeftCount,
-		UnmatchedRight:  unmatchedRightCount,
-		AmountDiffCount: amountDiffCount,
-		TimingDiffCount: timingDiffCount,
-		DuplicateCount:  dupCount,
-		MatchRatePct:    matchRate,
+		TotalLeft:            totalLeft,
+		TotalRight:           totalRight,
+		MatchedCount:         matchedCount,
+		UnmatchedLeft:        unmatchedLeftCount,
+		UnmatchedRight:       unmatchedRightCount,
+		AmountDiffCount:      amountDiffCount,
+		TimingDiffCount:      timingDiffCount,
+		DuplicateCount:       dupCount,
+		MatchRatePct:         matchRate,
+		MatchedAmountLeft:    matchedAmtLeft,
+		MatchedAmountRight:   matchedAmtRight,
+		UnmatchedAmountLeft:  unmatchedAmtLeft,
+		UnmatchedAmountRight: unmatchedAmtRight,
+		AmountDiffTotal:      amountDiffTotal,
+		TotalDiscrepancy:     unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal,
 	}); err != nil {
 		return err
 	}
