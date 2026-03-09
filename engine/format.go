@@ -304,7 +304,7 @@ func (n *ndjsonWriter) SetRunInfo(info RunInfo) error {
 	return n.emit("run_info", info)
 }
 
-func (n *ndjsonWriter) WriteMatch(pair MatchedPair) error        { return n.emit("match", pair) }
+func (n *ndjsonWriter) WriteMatch(pair MatchedPair) error         { return n.emit("match", pair) }
 func (n *ndjsonWriter) WriteAmountDiff(pair AmountDiffPair) error { return n.emit("amount_diff", pair) }
 func (n *ndjsonWriter) WriteTimingDiff(pair TimingDiffPair) error { return n.emit("timing_diff", pair) }
 func (n *ndjsonWriter) WriteUnmatched(tx Transaction, side string) error {
@@ -324,7 +324,9 @@ func (n *ndjsonWriter) Flush() error                              { return nil }
 //	diff_minor, days_diff,
 //	source, reference, dup_count,
 //	total_left, total_right, matched, unmatched_left, unmatched_right,
-//	amount_diff_count, timing_diff_count, duplicate_count, match_rate_pct
+//	amount_diff_count, timing_diff_count, duplicate_count, match_rate_pct,
+//	matched_amount_left, matched_amount_right, unmatched_amount_left,
+//	unmatched_amount_right, amount_diff_total, total_discrepancy
 //
 // Unused columns for a given event type are empty string.
 // CSVWriter does not implement RunInfoSetter — audit users should use json formats.
@@ -338,6 +340,8 @@ var csvHeader = []string{
 	"source", "reference", "dup_count",
 	"total_left", "total_right", "matched", "unmatched_left", "unmatched_right",
 	"amount_diff_count", "timing_diff_count", "duplicate_count", "match_rate_pct",
+	"matched_amount_left", "matched_amount_right", "unmatched_amount_left",
+	"unmatched_amount_right", "amount_diff_total", "total_discrepancy",
 }
 
 type csvWriter struct {
@@ -455,6 +459,12 @@ func (c *csvWriter) WriteSummary(s Summary) error {
 	row[22] = fmtInt(s.TimingDiffCount)
 	row[23] = fmtInt(s.DuplicateCount)
 	row[24] = strconv.FormatFloat(s.MatchRatePct, 'f', 2, 64)
+	row[25] = fmtI64(s.MatchedAmountLeft)
+	row[26] = fmtI64(s.MatchedAmountRight)
+	row[27] = fmtI64(s.UnmatchedAmountLeft)
+	row[28] = fmtI64(s.UnmatchedAmountRight)
+	row[29] = fmtI64(s.AmountDiffTotal)
+	row[30] = fmtI64(s.TotalDiscrepancy)
 	return c.w.Write(row)
 }
 
@@ -495,7 +505,9 @@ func newTableWriter(w io.Writer) *tableWriter { return &tableWriter{w: w} }
 func (t *tableWriter) maybeWarn() {
 	if !t.warn && len(t.rows) > tableWarnThreshold {
 		t.warn = true
-		fmt.Fprintf(t.w, "warning: table mode has buffered >%d rows; for large files use --format=ndjson or --format=csv\n", tableWarnThreshold)
+		if _, err := fmt.Fprintf(t.w, "warning: table mode has buffered >%d rows; for large files use --format=ndjson or --format=csv\n", tableWarnThreshold); err != nil {
+			return
+		}
 	}
 }
 
@@ -590,11 +602,15 @@ func (t *tableWriter) WriteSummary(s Summary) error {
 
 func (t *tableWriter) Flush() error {
 	tw := tabwriter.NewWriter(t.w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "TYPE\tLEFT_ID\tLEFT_DATE\tLEFT_AMT\tLEFT_REF\tRIGHT_ID\tRIGHT_DATE\tRIGHT_AMT\tRIGHT_REF\tNOTE")
+	if _, err := fmt.Fprintln(tw, "TYPE\tLEFT_ID\tLEFT_DATE\tLEFT_AMT\tLEFT_REF\tRIGHT_ID\tRIGHT_DATE\tRIGHT_AMT\tRIGHT_REF\tNOTE"); err != nil {
+		return err
+	}
 	for _, row := range t.rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			row.typ, row.leftID, row.leftDt, row.leftAmt, row.leftRef,
-			row.rightID, row.rightDt, row.rightAmt, row.rightRef, row.note)
+			row.rightID, row.rightDt, row.rightAmt, row.rightRef, row.note); err != nil {
+			return err
+		}
 	}
 	return tw.Flush()
 }

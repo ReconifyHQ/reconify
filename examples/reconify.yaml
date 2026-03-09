@@ -1,6 +1,11 @@
 version: 1
 timezone: "UTC"
 
+index:
+  backend: auto
+  auto_max_right_file_mb: 2048
+  # spill_dir: "/tmp/reconify"
+
 sources:
   bank:
     file_pattern: "data/bank/*.csv"
@@ -39,4 +44,3 @@ pairs:
     date_window: "1d"
     amount_tolerance_minor: 0
     name_mode: "tokens"
-

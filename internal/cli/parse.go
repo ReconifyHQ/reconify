@@ -162,11 +162,15 @@ func parseTable(sourceName, filePath string, parserCfg config.CSVParserCfg, cmd 
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tDATE\tAMOUNT\tCURRENCY\tREFERENCE\tNAME\tSOURCE")
+	if _, err := fmt.Fprintln(tw, "ID\tDATE\tAMOUNT\tCURRENCY\tREFERENCE\tNAME\tSOURCE"); err != nil {
+		return err
+	}
 	for _, tx := range txns {
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
 			tx.ID, tx.Date.Format("2006-01-02"), tx.Amount,
-			tx.Currency, tx.Reference, tx.Name, tx.Source)
+			tx.Currency, tx.Reference, tx.Name, tx.Source); err != nil {
+			return err
+		}
 	}
 	if err := tw.Flush(); err != nil {
 		return err

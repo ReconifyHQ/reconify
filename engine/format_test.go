@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -211,6 +212,61 @@ func TestCSVWriter_DoesNotImplementRunInfoSetter(t *testing.T) {
 	var rw ResultWriter = w
 	if _, ok := rw.(RunInfoSetter); ok {
 		t.Error("csvWriter should not implement RunInfoSetter")
+	}
+}
+
+func TestCSVWriter_SummaryIncludesMonetaryTotals(t *testing.T) {
+	var buf bytes.Buffer
+	w := newCSVWriter(&buf)
+	if err := w.WriteSummary(Summary{
+		TotalLeft:            10,
+		TotalRight:           9,
+		MatchedCount:         7,
+		UnmatchedLeft:        2,
+		UnmatchedRight:       1,
+		AmountDiffCount:      1,
+		TimingDiffCount:      0,
+		DuplicateCount:       0,
+		MatchRatePct:         70.0,
+		MatchedAmountLeft:    1200,
+		MatchedAmountRight:   1200,
+		UnmatchedAmountLeft:  250,
+		UnmatchedAmountRight: 80,
+		AmountDiffTotal:      20,
+		TotalDiscrepancy:     350,
+	}); err != nil {
+		t.Fatalf("WriteSummary: %v", err)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	rows, err := csv.NewReader(strings.NewReader(buf.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows=%d, want 2", len(rows))
+	}
+	header := rows[0]
+	summary := rows[1]
+	idx := map[string]int{}
+	for i, col := range header {
+		idx[col] = i
+	}
+	for _, col := range []string{
+		"matched_amount_left", "matched_amount_right", "unmatched_amount_left",
+		"unmatched_amount_right", "amount_diff_total", "total_discrepancy",
+	} {
+		if _, ok := idx[col]; !ok {
+			t.Fatalf("missing column %q in CSV header", col)
+		}
+	}
+	if summary[idx["matched_amount_left"]] != "1200" {
+		t.Errorf("matched_amount_left=%q, want 1200", summary[idx["matched_amount_left"]])
+	}
+	if summary[idx["total_discrepancy"]] != "350" {
+		t.Errorf("total_discrepancy=%q, want 350", summary[idx["total_discrepancy"]])
 	}
 }
 

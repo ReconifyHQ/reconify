@@ -36,6 +36,11 @@ make build
 version: 1
 timezone: "UTC"
 
+index:
+  backend: auto                  # memory | disk | auto
+  spill_dir: "/tmp/reconify"     # optional, used by disk/auto
+  auto_max_right_file_mb: 2048   # optional, default 2048
+
 sources:
   bank:
     file_pattern: "data/bank/*.csv"
@@ -93,6 +98,16 @@ reconify reconcile --config reconify.yaml --pair bank_vs_stripe --out results.js
 ```bash
 reconify parse --config reconify.yaml --source bank --file data/bank/jan.csv
 ```
+
+## Index Backend Configuration
+
+Reconify supports multiple right-side index backends for `reconcile`:
+
+- `memory` (default): fastest, highest RAM usage
+- `disk`: lower RAM usage, slower lookups, uses SQLite temp files
+- `auto`: picks `disk` when right file size is above `index.auto_max_right_file_mb`
+
+Use this for large files where in-memory indexing causes GC pressure or OOM risk.
 
 ## How It Works
 

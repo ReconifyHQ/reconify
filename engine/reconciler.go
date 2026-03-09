@@ -17,6 +17,19 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 	if err != nil {
 		return nil, fmt.Errorf("invalid date_window: %w", err)
 	}
+	// Monetary totals are emitted in summary. To keep those totals meaningful,
+	// reject runs that mix non-empty currencies.
+	cc := currencyTracker{}
+	for _, tx := range left {
+		if err := cc.Observe(leftSource, tx); err != nil {
+			return nil, err
+		}
+	}
+	for _, tx := range right {
+		if err := cc.Observe(rightSource, tx); err != nil {
+			return nil, err
+		}
+	}
 
 	result := &Result{
 		PairName:    pairName,
@@ -27,7 +40,8 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 	// 1. Detect duplicates within each source
 	leftDups, leftDeduped := detectDuplicates(left)
 	rightDups, rightDeduped := detectDuplicates(right)
-	result.Duplicates = append(leftDups, rightDups...)
+	result.Duplicates = append(result.Duplicates, leftDups...)
+	result.Duplicates = append(result.Duplicates, rightDups...)
 
 	// 2. Match by reference
 	unmatchedLeft, unmatchedRight := matchByReference(
@@ -132,12 +146,74 @@ func ReconcileStreaming(
 	w ResultWriter,
 	maxTokenBuffer int,
 ) error {
+	return reconcileStreaming(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, nil, 0)
+}
+
+// ProgressEvent reports incremental progress for long-running reconciliations.
+// Phase is one of: "right_index", "left_match".
+type ProgressEvent struct {
+	Phase   string
+	Rows    int
+	Elapsed time.Duration
+	Done    bool
+}
+
+// ProgressFunc is invoked by ReconcileStreamingWithProgress at row intervals.
+// It runs on the calling goroutine; avoid heavy work.
+type ProgressFunc func(ProgressEvent)
+
+// ReconcileStreamingWithProgress is identical to ReconcileStreaming, but emits progress
+// updates every progressEvery rows when progress != nil. If progressEvery <= 0,
+// it defaults to 1,000,000 rows.
+func ReconcileStreamingWithProgress(
+	ctx context.Context,
+	pairName string,
+	leftSource string,
+	rightSource string,
+	leftPath string,
+	rightPath string,
+	leftCfg config.CSVParserCfg,
+	rightCfg config.CSVParserCfg,
+	pair config.Pair,
+	idx RightIndex,
+	w ResultWriter,
+	maxTokenBuffer int,
+	progress ProgressFunc,
+	progressEvery int,
+) error {
+	return reconcileStreaming(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, progress, progressEvery)
+}
+
+func reconcileStreaming(
+	ctx context.Context,
+	pairName string,
+	leftSource string,
+	rightSource string,
+	leftPath string,
+	rightPath string,
+	leftCfg config.CSVParserCfg,
+	rightCfg config.CSVParserCfg,
+	pair config.Pair,
+	idx RightIndex,
+	w ResultWriter,
+	maxTokenBuffer int,
+	progress ProgressFunc,
+	progressEvery int,
+) error {
 	dateWindowDays, err := parseDateWindow(pair.DateWindow)
 	if err != nil {
 		return fmt.Errorf("invalid date_window: %w", err)
 	}
 
 	tolerance := pair.AmountToleranceMinor
+	cc := currencyTracker{}
+	if progressEvery <= 0 {
+		progressEvery = 1_000_000
+	}
+	startRight := time.Now()
+	startLeft := time.Now()
+	nextRight := progressEvery
+	nextLeft := progressEvery
 
 	// -----------------------------------------------------------------------
 	// Pass 1: stream right CSV into index, track right duplicates
@@ -150,12 +226,19 @@ func ReconcileStreaming(
 	// rightSeen tracks occurrence count per reference, capped at 2 (saturating).
 	// rightDupRefs collects references that appeared ≥ 2 times; the full
 	// Transaction set is retrieved via a targeted re-scan after this pass.
-	rightSeen    := make(map[string]uint8)
+	rightSeen := make(map[string]uint8)
 	rightDupRefs := make(map[string]bool)
 	var totalRight int
 
 	if err := ParseCSVEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
 		totalRight++
+		if err := cc.Observe(rightSource, tx); err != nil {
+			return err
+		}
+		if progress != nil && totalRight >= nextRight {
+			progress(ProgressEvent{Phase: "right_index", Rows: totalRight, Elapsed: time.Since(startRight)})
+			nextRight += progressEvery
+		}
 		if tx.Reference == "" {
 			return idx.Add(tx)
 		}
@@ -168,6 +251,14 @@ func ReconcileStreaming(
 		return idx.Add(tx)
 	}); err != nil {
 		return fmt.Errorf("parse right source: %w", err)
+	}
+	if progress != nil {
+		progress(ProgressEvent{
+			Phase:   "right_index",
+			Rows:    totalRight,
+			Elapsed: time.Since(startRight),
+			Done:    true,
+		})
 	}
 
 	// Emit right duplicate groups via targeted re-scan of the right file.
@@ -188,10 +279,11 @@ func ReconcileStreaming(
 	// -----------------------------------------------------------------------
 	// Pass 2: stream left CSV, match against index, emit events immediately
 	// -----------------------------------------------------------------------
+	startLeft = time.Now()
 	// Lightweight left-side duplicate detection — same saturating-uint8 approach
 	// as the right side. leftFirst/leftDups are replaced by a targeted re-scan
 	// after this pass (collectDuplicates), called only when duplicates exist.
-	leftSeen    := make(map[string]uint8)
+	leftSeen := make(map[string]uint8)
 	leftDupRefs := make(map[string]bool)
 
 	var (
@@ -212,6 +304,13 @@ func ReconcileStreaming(
 
 	if err := ParseCSVEach(ctx, leftSource, leftPath, leftCfg, func(ltx Transaction, _ int) error {
 		totalLeft++
+		if err := cc.Observe(leftSource, ltx); err != nil {
+			return err
+		}
+		if progress != nil && totalLeft >= nextLeft {
+			progress(ProgressEvent{Phase: "left_match", Rows: totalLeft, Elapsed: time.Since(startLeft)})
+			nextLeft += progressEvery
+		}
 
 		// Track left duplicates (count only; full transactions retrieved in third pass)
 		if ltx.Reference != "" {
@@ -237,8 +336,10 @@ func ReconcileStreaming(
 		// Attempt reference matching.
 		// Cache left date as Unix nanos once per row — avoids recomputing
 		// it for every right-side bucket candidate.
-		buckets := idx.Get(ltx.Reference)
-		matched := false
+		buckets, err := idx.Get(ltx.Reference)
+		if err != nil {
+			return fmt.Errorf("index get reference %q: %w", ltx.Reference, err)
+		}
 		ltxDateNano := ltx.Date.UnixNano()
 		for _, b := range buckets {
 			if b.used {
@@ -254,16 +355,18 @@ func ReconcileStreaming(
 			dateOk := dateWindowDays == 0 || daysDiff <= dateWindowDays
 
 			if amtOk && dateOk {
-				b.used = true
-				matched = true
+				if err := idx.MarkUsed(b); err != nil {
+					return fmt.Errorf("mark used: %w", err)
+				}
 				matchedCount++
 				matchedAmtLeft += ltx.Amount
 				matchedAmtRight += b.amount
 				return w.WriteMatch(MatchedPair{Left: ltx, Right: b.toTransaction(ltx.Reference)})
 			}
 			if !amtOk && dateOk {
-				b.used = true
-				matched = true
+				if err := idx.MarkUsed(b); err != nil {
+					return fmt.Errorf("mark used: %w", err)
+				}
 				amountDiffCount++
 				diff := ltx.Amount - b.amount
 				if diff < 0 {
@@ -278,8 +381,9 @@ func ReconcileStreaming(
 				})
 			}
 			if amtOk && !dateOk {
-				b.used = true
-				matched = true
+				if err := idx.MarkUsed(b); err != nil {
+					return fmt.Errorf("mark used: %w", err)
+				}
 				timingDiffCount++
 				return w.WriteTimingDiff(TimingDiffPair{
 					Left:     ltx,
@@ -289,18 +393,23 @@ func ReconcileStreaming(
 			}
 		}
 
-		if !matched {
-			unmatchedLeftCount++
-			unmatchedAmtLeft += ltx.Amount
-			if pair.NameMode == "tokens" {
-				tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
-				return nil
-			}
-			return w.WriteUnmatched(ltx, "left")
+		unmatchedLeftCount++
+		unmatchedAmtLeft += ltx.Amount
+		if pair.NameMode == "tokens" {
+			tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
+			return nil
 		}
-		return nil
+		return w.WriteUnmatched(ltx, "left")
 	}); err != nil {
 		return fmt.Errorf("parse left source: %w", err)
+	}
+	if progress != nil {
+		progress(ProgressEvent{
+			Phase:   "left_match",
+			Rows:    totalLeft,
+			Elapsed: time.Since(startLeft),
+			Done:    true,
+		})
 	}
 
 	// Emit left duplicate groups via targeted re-scan of the left file.
@@ -476,11 +585,11 @@ func matchByNameTokensStreaming(
 //
 // Memory: O(n_dup_rows) — only rows whose reference is in dupRefs are retained.
 func collectDuplicates(
-	ctx        context.Context,
+	ctx context.Context,
 	sourceName string,
-	path       string,
-	cfg        config.CSVParserCfg,
-	dupRefs    map[string]bool,
+	path string,
+	cfg config.CSVParserCfg,
+	dupRefs map[string]bool,
 ) ([]DuplicateGroup, error) {
 	byRef := make(map[string][]Transaction, len(dupRefs))
 	if err := ParseCSVEach(ctx, sourceName, path, cfg, func(tx Transaction, _ int) error {
@@ -500,6 +609,30 @@ func collectDuplicates(
 		})
 	}
 	return groups, nil
+}
+
+// currencyTracker validates that all non-empty currency values in a run are the same.
+// This protects monetary summary totals from accidental cross-currency aggregation.
+type currencyTracker struct {
+	base string
+}
+
+func (c *currencyTracker) Observe(source string, tx Transaction) error {
+	cur := strings.TrimSpace(tx.Currency)
+	if cur == "" {
+		return nil
+	}
+	if c.base == "" {
+		c.base = cur
+		return nil
+	}
+	if cur != c.base {
+		return fmt.Errorf(
+			"mixed currencies are not supported for monetary totals: saw %q and %q (source=%s, id=%s, reference=%s); reconcile one currency per run",
+			c.base, cur, source, tx.ID, tx.Reference,
+		)
+	}
+	return nil
 }
 
 // matchByReference matches transactions by reference string.

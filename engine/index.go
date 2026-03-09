@@ -15,6 +15,7 @@ import "time"
 // Pointer fields retained: id, currency, name, source (4 strings).
 // Pointer fields eliminated vs. previous design: tx.Date.loc, tx.Reference (2 pointers).
 type bucket struct {
+	rowID    int64 // backend-specific stable identifier (0 for memoryIndex)
 	id       string
 	dateUnix int64 // tx.Date.UnixNano() — no *Location pointer
 	amount   int64
@@ -55,8 +56,11 @@ type RightIndex interface {
 	Add(tx Transaction) error
 
 	// Get returns all buckets matching the given reference key.
-	// Callers may set bucket.used = true to mark a bucket as consumed.
-	Get(ref string) []*bucket
+	// Implementations may return already-used buckets; callers should check b.used.
+	Get(ref string) ([]*bucket, error)
+
+	// MarkUsed marks a bucket as consumed so future lookups cannot re-match it.
+	MarkUsed(b *bucket) error
 
 	// IterateUnused calls fn for every transaction not marked as used.
 	// Iteration order is unspecified.
@@ -100,8 +104,15 @@ func (m *memoryIndex) Add(tx Transaction) error {
 	return nil
 }
 
-func (m *memoryIndex) Get(ref string) []*bucket {
-	return m.data[ref]
+func (m *memoryIndex) Get(ref string) ([]*bucket, error) {
+	return m.data[ref], nil
+}
+
+func (m *memoryIndex) MarkUsed(b *bucket) error {
+	if b != nil {
+		b.used = true
+	}
+	return nil
 }
 
 func (m *memoryIndex) IterateUnused(fn func(tx Transaction) error) error {

@@ -36,15 +36,15 @@ func writeSyntheticCSV(tb testing.TB, rows int) string {
 func benchmarkParseCSVEach(b *testing.B, rows int, skipRaw bool) {
 	path := writeSyntheticCSV(b, rows)
 	cfg := config.CSVParserCfg{
-		Type:       "csv",
-		DateCol:    "date",
-		DateLayout: "2006-01-02",
-		AmountCol:  "amount",
-		Multiplier: 100,
+		Type:        "csv",
+		DateCol:     "date",
+		DateLayout:  "2006-01-02",
+		AmountCol:   "amount",
+		Multiplier:  100,
 		CurrencyCol: "currency",
-		RefCol:     "reference",
-		NameCol:    "name",
-		SkipRaw:    skipRaw,
+		RefCol:      "reference",
+		NameCol:     "name",
+		SkipRaw:     skipRaw,
 	}
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -61,9 +61,9 @@ func benchmarkParseCSVEach(b *testing.B, rows int, skipRaw bool) {
 	}
 }
 
-func BenchmarkParseCSVEach_100k(b *testing.B)         { benchmarkParseCSVEach(b, 100_000, false) }
-func BenchmarkParseCSVEach_1M(b *testing.B)           { benchmarkParseCSVEach(b, 1_000_000, false) }
-func BenchmarkParseCSVEach_1M_SkipRaw(b *testing.B)   { benchmarkParseCSVEach(b, 1_000_000, true) }
+func BenchmarkParseCSVEach_100k(b *testing.B)       { benchmarkParseCSVEach(b, 100_000, false) }
+func BenchmarkParseCSVEach_1M(b *testing.B)         { benchmarkParseCSVEach(b, 1_000_000, false) }
+func BenchmarkParseCSVEach_1M_SkipRaw(b *testing.B) { benchmarkParseCSVEach(b, 1_000_000, true) }
 
 // TestMemoryIndex_PerRowFootprint measures the actual heap bytes consumed per
 // indexed row. This replaces estimation with measurement.
@@ -73,15 +73,15 @@ func TestMemoryIndex_PerRowFootprint(t *testing.T) {
 
 	path := writeSyntheticCSV(t, rows)
 	cfg := config.CSVParserCfg{
-		Type:       "csv",
-		DateCol:    "date",
-		DateLayout: "2006-01-02",
-		AmountCol:  "amount",
-		Multiplier: 100,
+		Type:        "csv",
+		DateCol:     "date",
+		DateLayout:  "2006-01-02",
+		AmountCol:   "amount",
+		Multiplier:  100,
 		CurrencyCol: "currency",
-		RefCol:     "reference",
-		NameCol:    "name",
-		SkipRaw:    true,
+		RefCol:      "reference",
+		NameCol:     "name",
+		SkipRaw:     true,
 	}
 
 	idx := NewMemoryIndex()
