@@ -20,7 +20,10 @@ func newReconcileCmd() *cobra.Command {
 	var format string
 	var maxTokenBuffer int
 	var auditMode bool
+	var auditFixedTimestamp string
 	var deterministic bool
+	var progress bool
+	var progressEvery int
 
 	cmd := &cobra.Command{
 		Use:   "reconcile",
@@ -106,15 +109,24 @@ Formats:
 
 			// Audit mode: hash both input files and embed run provenance in output.
 			if auditMode {
+				setter, ok := w.(engine.RunInfoSetter)
+				if !ok {
+					return fmt.Errorf("--audit is only supported for --format=json, json-stream, or ndjson (got %q)", format)
+				}
 				runStart := time.Now().UTC()
+				if auditFixedTimestamp != "" {
+					parsed, err := time.Parse(time.RFC3339Nano, auditFixedTimestamp)
+					if err != nil {
+						return fmt.Errorf("--audit-fixed-timestamp must be RFC3339 or RFC3339Nano: %w", err)
+					}
+					runStart = parsed.UTC()
+				}
 				info, err := engine.BuildRunInfo(cliVersion, leftPath, rightPath, pair, runStart)
 				if err != nil {
 					return fmt.Errorf("audit: %w", err)
 				}
-				if setter, ok := w.(engine.RunInfoSetter); ok {
-					if err := setter.SetRunInfo(info); err != nil {
-						return fmt.Errorf("audit: set run info: %w", err)
-					}
+				if err := setter.SetRunInfo(info); err != nil {
+					return fmt.Errorf("audit: set run info: %w", err)
 				}
 			}
 
@@ -127,26 +139,75 @@ Formats:
 						"warning: --deterministic has no effect for --format=%q; use --format=json\n",
 						format)
 				}
+				if auditMode && auditFixedTimestamp == "" {
+					fmt.Fprintln(os.Stderr,
+						"warning: --deterministic with --audit still varies run_info.timestamp/run_id; set --audit-fixed-timestamp for byte-identical reruns")
+				}
 			}
 
-			idx := engine.NewMemoryIndex()
+			idx, backendLabel, err := newRightIndex(cfg.Index, rightPath)
+			if err != nil {
+				return fmt.Errorf("init right index: %w", err)
+			}
 			defer idx.Close()
+			jobStart := time.Now()
+			if progress {
+				fmt.Fprintf(os.Stderr, "progress: index backend=%s\n", backendLabel)
+			}
 
-			if err := engine.ReconcileStreaming(
-				context.Background(),
-				pairName,
-				pair.Left,
-				pair.Right,
-				leftPath,
-				rightPath,
-				leftSrc.Parser,
-				rightSrc.Parser,
-				pair,
-				idx,
-				w,
-				maxTokenBuffer,
-			); err != nil {
+			progressFn := func(e engine.ProgressEvent) {
+				elapsed := e.Elapsed.Round(time.Second)
+				rate := 0.0
+				if e.Elapsed > 0 {
+					rate = float64(e.Rows) / e.Elapsed.Seconds()
+				}
+				if e.Done {
+					fmt.Fprintf(os.Stderr, "progress: %s done rows=%d elapsed=%s avg_rate=%.0f rows/s\n", e.Phase, e.Rows, elapsed, rate)
+					return
+				}
+				fmt.Fprintf(os.Stderr, "progress: %s rows=%d elapsed=%s rate=%.0f rows/s\n", e.Phase, e.Rows, elapsed, rate)
+			}
+
+			run := func() error {
+				if progress {
+					return engine.ReconcileStreamingWithProgress(
+						context.Background(),
+						pairName,
+						pair.Left,
+						pair.Right,
+						leftPath,
+						rightPath,
+						leftSrc.Parser,
+						rightSrc.Parser,
+						pair,
+						idx,
+						w,
+						maxTokenBuffer,
+						progressFn,
+						progressEvery,
+					)
+				}
+				return engine.ReconcileStreaming(
+					context.Background(),
+					pairName,
+					pair.Left,
+					pair.Right,
+					leftPath,
+					rightPath,
+					leftSrc.Parser,
+					rightSrc.Parser,
+					pair,
+					idx,
+					w,
+					maxTokenBuffer,
+				)
+			}
+
+			if err := run(); err != nil {
 				return fmt.Errorf("reconciliation failed: %w", err)
+			}
+			if progress {
+				fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 			}
 
 			return nil
@@ -163,8 +224,14 @@ Formats:
 		"Advisory row limit for token-mode unmatched buffer (0 = unlimited)")
 	cmd.Flags().BoolVar(&auditMode, "audit", false,
 		"Embed run provenance in output: SHA-256 file hashes, timestamp, tool version, pair config snapshot")
+	cmd.Flags().StringVar(&auditFixedTimestamp, "audit-fixed-timestamp", "",
+		"Optional RFC3339/RFC3339Nano timestamp to freeze run_info timestamp/run_id (use with --audit for byte-identical reruns)")
 	cmd.Flags().BoolVar(&deterministic, "deterministic", false,
 		"Sort output sections for stable diff-based audit trails (json format only; adds sort overhead)")
+	cmd.Flags().BoolVar(&progress, "progress", false,
+		"Log progress to stderr while processing large files")
+	cmd.Flags().IntVar(&progressEvery, "progress-every", 1_000_000,
+		"Progress log interval in rows (used with --progress)")
 
 	return cmd
 }
@@ -188,4 +255,48 @@ func resolveFile(explicit, pattern string) (string, error) {
 		return "", fmt.Errorf("no files match pattern %q", pattern)
 	}
 	return matches[0], nil
+}
+
+const defaultAutoMaxRightFileMB int64 = 2048
+
+func newRightIndex(indexCfg config.IndexCfg, rightPath string) (engine.RightIndex, string, error) {
+	backend := indexCfg.Backend
+	if backend == "" {
+		backend = "memory"
+	}
+
+	switch backend {
+	case "memory":
+		return engine.NewMemoryIndex(), "memory", nil
+	case "disk":
+		idx, err := engine.NewDiskIndex(indexCfg.SpillDir)
+		if err != nil {
+			return nil, "", err
+		}
+		if indexCfg.SpillDir == "" {
+			return idx, "disk(tempdir)", nil
+		}
+		return idx, fmt.Sprintf("disk(spill_dir=%s)", indexCfg.SpillDir), nil
+	case "auto":
+		thresholdMB := indexCfg.AutoMaxRightFileMB
+		if thresholdMB <= 0 {
+			thresholdMB = defaultAutoMaxRightFileMB
+		}
+		st, err := os.Stat(rightPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("stat right file for auto backend: %w", err)
+		}
+		rightMB := st.Size() / (1024 * 1024)
+		if rightMB > thresholdMB {
+			idx, err := engine.NewDiskIndex(indexCfg.SpillDir)
+			if err != nil {
+				return nil, "", err
+			}
+			return idx, fmt.Sprintf("disk(auto right_file_mb=%d threshold_mb=%d)", rightMB, thresholdMB), nil
+		}
+		return engine.NewMemoryIndex(), fmt.Sprintf("memory(auto right_file_mb=%d threshold_mb=%d)", rightMB, thresholdMB), nil
+	default:
+		// Guarded by config validation, but keep a safe runtime fallback.
+		return nil, "", fmt.Errorf("unsupported index backend %q", backend)
+	}
 }

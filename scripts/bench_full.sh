@@ -43,6 +43,8 @@ DATA_DIR="/tmp/bench-data"
 COLD_CACHE=false
 SKIP_GEN=false
 RSS_ONLY=false
+PROGRESS=true
+PROGRESS_EVERY=1000000
 BINARY="/tmp/reconify-bench-full"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
@@ -53,6 +55,8 @@ while [[ $# -gt 0 ]]; do
     --cold)      COLD_CACHE=true; shift ;;
     --skip-gen)  SKIP_GEN=true; shift ;;
     --rss-only)  RSS_ONLY=true; shift ;;
+    --no-progress) PROGRESS=false; shift ;;
+    --progress-every) PROGRESS_EVERY="$2"; shift 2 ;;
     *) echo "unknown flag: $1"; exit 1 ;;
   esac
 done
@@ -76,6 +80,7 @@ header "reconify bench_full  rows=${ROWS}  platform=${PLATFORM}"
 echo "  data dir:  ${DATA_DIR}"
 echo "  cold:      ${COLD_CACHE}"
 echo "  rss-only:  ${RSS_ONLY}"
+echo "  progress:  ${PROGRESS} (every ${PROGRESS_EVERY} rows)"
 echo ""
 
 # ── Step 1: Generate benchmark data ──────────────────────────────────────────
@@ -94,6 +99,12 @@ else
   echo "==> [1/4] Generating ${ROWS} rows per side..."
   go run "${SCRIPT_DIR}/gen_bench_data.go" --rows "$ROWS" --out "$DATA_DIR"
 fi
+
+# Normalize benchmark data dir to absolute path so BENCH_DATA_DIR resolves
+# correctly when `go test` runs package benchmarks from ./engine.
+DATA_DIR="$(cd "$DATA_DIR" && pwd)"
+LEFT_CSV="${DATA_DIR}/left.csv"
+RIGHT_CSV="${DATA_DIR}/right.csv"
 echo ""
 
 # ── Step 2: Build binary ──────────────────────────────────────────────────────
@@ -133,7 +144,7 @@ if [[ "$RSS_ONLY" == "false" ]]; then
   BENCH_DATA_DIR="$DATA_DIR" \
   go test \
     -run='^$' \
-    -bench='BenchmarkReconcileStreaming_20M|BenchmarkParseCSVEach_20M' \
+    -bench='Benchmark(ParseCSVEach_20M_Left|ReconcileStreaming_20M_Realistic)$' \
     -benchmem \
     -benchtime=1x \
     -timeout=600s \
@@ -217,14 +228,27 @@ echo ""
 
 if [[ "$PLATFORM" == "Darwin" ]]; then
   # macOS: /usr/bin/time -l reports "maximum resident set size" in bytes
-  GODEBUG=gctrace=1 \
-    /usr/bin/time -l \
-    "$BINARY" reconcile \
-      --config  "$CONFIG_YAML" \
-      --pair    bench \
-      --format  ndjson \
-      --out     /dev/null \
-    2>&1 | tee "$GC_LOG"
+  if [[ "$PROGRESS" == "true" ]]; then
+    GODEBUG=gctrace=1 \
+      /usr/bin/time -l \
+      "$BINARY" reconcile \
+        --config  "$CONFIG_YAML" \
+        --pair    bench \
+        --format  ndjson \
+        --out     /dev/null \
+        --progress \
+        --progress-every "$PROGRESS_EVERY" \
+      2>&1 | tee "$GC_LOG"
+  else
+    GODEBUG=gctrace=1 \
+      /usr/bin/time -l \
+      "$BINARY" reconcile \
+        --config  "$CONFIG_YAML" \
+        --pair    bench \
+        --format  ndjson \
+        --out     /dev/null \
+      2>&1 | tee "$GC_LOG"
+  fi
 
   echo ""
   echo "==> Peak RSS (macOS):"
@@ -232,14 +256,27 @@ if [[ "$PLATFORM" == "Darwin" ]]; then
 
 else
   # Linux: /usr/bin/time -v reports "Maximum resident set size (kbytes)"
-  GODEBUG=gctrace=1 \
-    /usr/bin/time -v \
-    "$BINARY" reconcile \
-      --config  "$CONFIG_YAML" \
-      --pair    bench \
-      --format  ndjson \
-      --out     /dev/null \
-    2>&1 | tee "$GC_LOG"
+  if [[ "$PROGRESS" == "true" ]]; then
+    GODEBUG=gctrace=1 \
+      /usr/bin/time -v \
+      "$BINARY" reconcile \
+        --config  "$CONFIG_YAML" \
+        --pair    bench \
+        --format  ndjson \
+        --out     /dev/null \
+        --progress \
+        --progress-every "$PROGRESS_EVERY" \
+      2>&1 | tee "$GC_LOG"
+  else
+    GODEBUG=gctrace=1 \
+      /usr/bin/time -v \
+      "$BINARY" reconcile \
+        --config  "$CONFIG_YAML" \
+        --pair    bench \
+        --format  ndjson \
+        --out     /dev/null \
+      2>&1 | tee "$GC_LOG"
+  fi
 
   echo ""
   echo "==> Peak RSS (Linux):"

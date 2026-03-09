@@ -92,6 +92,11 @@ The CLI reads a YAML config file. The API generates this automatically from requ
 version: 1
 timezone: Africa/Lagos
 
+index:
+  backend: auto                # memory | disk | auto
+  spill_dir: /tmp/reconify     # optional for disk/auto
+  auto_max_right_file_mb: 2048 # optional threshold for auto
+
 sources:
   bank:
     file_pattern: ./data/bank-statement.csv
@@ -125,3 +130,9 @@ pairs:
     amount_tolerance_minor: 0
     name_mode: none
 ```
+
+### Index backend options
+
+- `memory` (default): highest throughput, right-side index must fit in RAM.
+- `disk`: stores right-side index in a temporary SQLite file; lower RAM, slower point lookups.
+- `auto`: picks `disk` when right file size is above `auto_max_right_file_mb`.

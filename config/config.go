@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Version  int               `yaml:"version"`
 	Timezone string            `yaml:"timezone"`
+	Index    IndexCfg          `yaml:"index,omitempty"`
 	Sources  map[string]Source `yaml:"sources"`
 	Pairs    map[string]Pair   `yaml:"pairs"`
 }
@@ -51,6 +52,20 @@ type Pair struct {
 	NameMode             string `yaml:"name_mode"`
 }
 
+// IndexCfg controls which right-side index backend ReconcileStreaming uses.
+type IndexCfg struct {
+	// Backend is one of: memory, disk, auto.
+	// Default (empty) is memory.
+	Backend string `yaml:"backend,omitempty"`
+	// SpillDir is the directory used for disk index temporary files.
+	// Ignored when Backend=memory.
+	SpillDir string `yaml:"spill_dir,omitempty"`
+	// AutoMaxRightFileMB is the threshold (in MB) for Backend=auto.
+	// If right file size exceeds this value, disk backend is selected.
+	// Default (0) is 2048 MB.
+	AutoMaxRightFileMB int64 `yaml:"auto_max_right_file_mb,omitempty"`
+}
+
 // Load reads and parses a YAML configuration file
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -80,6 +95,11 @@ func (c *Config) Validate() []error {
 		if _, err := time.LoadLocation(c.Timezone); err != nil {
 			errs = append(errs, fmt.Errorf("timezone %q is invalid: %v", c.Timezone, err))
 		}
+	}
+
+	// Validate index settings
+	if indexErrs := validateIndex(c.Index); len(indexErrs) > 0 {
+		errs = append(errs, indexErrs...)
 	}
 
 	// Validate sources
@@ -196,6 +216,26 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 		errs = append(errs, fmt.Errorf("pairs.%s.name_mode: must be one of [none, tokens] (got %q)", name, pair.NameMode))
 	}
 
+	return errs
+}
+
+func validateIndex(index IndexCfg) []error {
+	var errs []error
+	backend := index.Backend
+	if backend == "" {
+		backend = "memory"
+	}
+	allowed := map[string]bool{
+		"memory": true,
+		"disk":   true,
+		"auto":   true,
+	}
+	if !allowed[backend] {
+		errs = append(errs, fmt.Errorf("index.backend: must be one of [memory, disk, auto] (got %q)", index.Backend))
+	}
+	if index.AutoMaxRightFileMB < 0 {
+		errs = append(errs, fmt.Errorf("index.auto_max_right_file_mb: must be >= 0 (got %d)", index.AutoMaxRightFileMB))
+	}
 	return errs
 }
 

@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,7 +18,7 @@ import (
 // best-case scenario measuring pure CPU + hash throughput with warm OS cache.
 // For a realistic mixed-rate benchmark see BenchmarkReconcileStreaming_20M_Realistic.
 func benchmarkReconcileStreaming(b *testing.B, rows int) {
-	leftPath  := writeSyntheticCSV(b, rows)
+	leftPath := writeSyntheticCSV(b, rows)
 	rightPath := writeSyntheticCSV(b, rows)
 
 	cfg := config.CSVParserCfg{
@@ -57,7 +59,8 @@ func benchmarkReconcileStreaming(b *testing.B, rows int) {
 			b.Fatal(err)
 		}
 		idx.Close()
-		b.ReportMetric(float64(rows), "rows/op")
+		b.ReportMetric(float64(rows), "left_rows/op")
+		b.ReportMetric(float64(rows*2), "total_rows/op")
 	}
 }
 
@@ -126,7 +129,7 @@ func requireBenchData(b *testing.B) (leftPath, rightPath string) {
 			"  go run scripts/gen_bench_data.go --rows 20000000 --out /tmp/bench-data\n" +
 			"  export BENCH_DATA_DIR=/tmp/bench-data")
 	}
-	leftPath  = filepath.Join(dataDir, "left.csv")
+	leftPath = filepath.Join(dataDir, "left.csv")
 	rightPath = filepath.Join(dataDir, "right.csv")
 	for _, p := range []string{leftPath, rightPath} {
 		if _, err := os.Stat(p); err != nil {
@@ -136,12 +139,40 @@ func requireBenchData(b *testing.B) (leftPath, rightPath string) {
 	return leftPath, rightPath
 }
 
+// countCSVDataRows returns the number of data rows in a CSV file.
+// The header row is excluded.
+func countCSVDataRows(path string) (int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	// Default scanner max token is 64K. These fixture rows are much smaller,
+	// but we lift the limit defensively for wider generated schemas.
+	buf := make([]byte, 0, 1024*64)
+	sc.Buffer(buf, 1024*1024)
+
+	lines := 0
+	for sc.Scan() {
+		lines++
+	}
+	if err := sc.Err(); err != nil {
+		return 0, err
+	}
+	if lines == 0 {
+		return 0, fmt.Errorf("empty CSV file: %s", path)
+	}
+	return lines - 1, nil
+}
+
 // BenchmarkParseCSVEach_20M_Left measures streaming parse throughput on a real
 // 20M-row CSV file with the bank/ledger column schema.
 // Baseline: ~1.5–2.0 M rows/sec on NVMe with warm OS cache.
 func BenchmarkParseCSVEach_20M_Left(b *testing.B) {
 	leftPath, _ := requireBenchData(b)
-	leftCfg, _  := largeFileCfgs()
+	leftCfg, _ := largeFileCfgs()
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -175,7 +206,18 @@ func BenchmarkParseCSVEach_20M_Left(b *testing.B) {
 // Peak RSS: the right-side memoryIndex holds ~20M rows × ~200 bytes ≈ 4 GB.
 func BenchmarkReconcileStreaming_20M_Realistic(b *testing.B) {
 	leftPath, rightPath := requireBenchData(b)
-	leftCfg, rightCfg  := largeFileCfgs()
+	leftCfg, rightCfg := largeFileCfgs()
+	leftRows, err := countCSVDataRows(leftPath)
+	if err != nil {
+		b.Fatalf("count left rows: %v", err)
+	}
+	rightRows, err := countCSVDataRows(rightPath)
+	if err != nil {
+		b.Fatalf("count right rows: %v", err)
+	}
+	if leftRows != rightRows {
+		b.Fatalf("row count mismatch: left=%d right=%d", leftRows, rightRows)
+	}
 
 	pair := config.Pair{
 		Left:                 "bank",
@@ -203,6 +245,7 @@ func BenchmarkReconcileStreaming_20M_Realistic(b *testing.B) {
 			b.Fatal(err)
 		}
 		idx.Close()
-		b.ReportMetric(20_000_000, "rows/op")
+		b.ReportMetric(float64(leftRows), "left_rows/op")
+		b.ReportMetric(float64(leftRows+rightRows), "total_rows/op")
 	}
 }
