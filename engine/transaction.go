@@ -88,11 +88,11 @@ type Result struct {
 // It is embedded in structured output formats (json, json-stream, ndjson) when
 // the --audit flag is set. It is never populated in the default path.
 type RunInfo struct {
-	RunID       string        `json:"run_id"`       // 16 hex chars derived from file hashes + timestamp
-	Timestamp   time.Time     `json:"timestamp"`    // UTC wall-clock time captured before parsing began
-	ToolVersion string        `json:"tool_version"` // set from build -ldflags Version variable
-	LeftFile    FileInfo      `json:"left_file"`
-	RightFile   FileInfo      `json:"right_file"`
+	RunID       string         `json:"run_id"`       // 16 hex chars derived from file hashes + timestamp
+	Timestamp   time.Time      `json:"timestamp"`    // UTC wall-clock time captured before parsing began
+	ToolVersion string         `json:"tool_version"` // set from build -ldflags Version variable
+	LeftFile    FileInfo       `json:"left_file"`
+	RightFile   FileInfo       `json:"right_file"`
 	PairConfig  PairConfigSnap `json:"pair_config"`
 }
 

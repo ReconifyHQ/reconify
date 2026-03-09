@@ -135,14 +135,18 @@ func (d *diskIndex) Add(tx Transaction) error {
 	return nil
 }
 
-func (d *diskIndex) Get(ref string) ([]*bucket, error) {
+func (d *diskIndex) Get(ref string) (buckets []*bucket, err error) {
 	rows, err := d.getSQL.Query(ref)
 	if err != nil {
 		return nil, fmt.Errorf("disk index get query: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("disk index get close rows: %w", closeErr)
+		}
+	}()
 
-	buckets := make([]*bucket, 0, 1)
+	buckets = make([]*bucket, 0, 1)
 	for rows.Next() {
 		b := &bucket{}
 		if err := rows.Scan(&b.rowID, &b.id, &b.dateUnix, &b.amount, &b.currency, &b.name, &b.source); err != nil {
@@ -170,7 +174,7 @@ func (d *diskIndex) MarkUsed(b *bucket) error {
 	return nil
 }
 
-func (d *diskIndex) IterateUnused(fn func(tx Transaction) error) error {
+func (d *diskIndex) IterateUnused(fn func(tx Transaction) error) (err error) {
 	rows, err := d.db.Query(`
 		SELECT ref, id, date_unix, amount, currency, name, source
 		FROM tx
@@ -179,7 +183,11 @@ func (d *diskIndex) IterateUnused(fn func(tx Transaction) error) error {
 	if err != nil {
 		return fmt.Errorf("iterate unused: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("iterate unused close rows: %w", closeErr)
+		}
+	}()
 
 	for rows.Next() {
 		var (

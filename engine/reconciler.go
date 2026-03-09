@@ -40,7 +40,8 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 	// 1. Detect duplicates within each source
 	leftDups, leftDeduped := detectDuplicates(left)
 	rightDups, rightDeduped := detectDuplicates(right)
-	result.Duplicates = append(leftDups, rightDups...)
+	result.Duplicates = append(result.Duplicates, leftDups...)
+	result.Duplicates = append(result.Duplicates, rightDups...)
 
 	// 2. Match by reference
 	unmatchedLeft, unmatchedRight := matchByReference(
@@ -339,7 +340,6 @@ func reconcileStreaming(
 		if err != nil {
 			return fmt.Errorf("index get reference %q: %w", ltx.Reference, err)
 		}
-		matched := false
 		ltxDateNano := ltx.Date.UnixNano()
 		for _, b := range buckets {
 			if b.used {
@@ -358,7 +358,6 @@ func reconcileStreaming(
 				if err := idx.MarkUsed(b); err != nil {
 					return fmt.Errorf("mark used: %w", err)
 				}
-				matched = true
 				matchedCount++
 				matchedAmtLeft += ltx.Amount
 				matchedAmtRight += b.amount
@@ -368,7 +367,6 @@ func reconcileStreaming(
 				if err := idx.MarkUsed(b); err != nil {
 					return fmt.Errorf("mark used: %w", err)
 				}
-				matched = true
 				amountDiffCount++
 				diff := ltx.Amount - b.amount
 				if diff < 0 {
@@ -386,7 +384,6 @@ func reconcileStreaming(
 				if err := idx.MarkUsed(b); err != nil {
 					return fmt.Errorf("mark used: %w", err)
 				}
-				matched = true
 				timingDiffCount++
 				return w.WriteTimingDiff(TimingDiffPair{
 					Left:     ltx,
@@ -396,16 +393,13 @@ func reconcileStreaming(
 			}
 		}
 
-		if !matched {
-			unmatchedLeftCount++
-			unmatchedAmtLeft += ltx.Amount
-			if pair.NameMode == "tokens" {
-				tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
-				return nil
-			}
-			return w.WriteUnmatched(ltx, "left")
+		unmatchedLeftCount++
+		unmatchedAmtLeft += ltx.Amount
+		if pair.NameMode == "tokens" {
+			tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
+			return nil
 		}
-		return nil
+		return w.WriteUnmatched(ltx, "left")
 	}); err != nil {
 		return fmt.Errorf("parse left source: %w", err)
 	}

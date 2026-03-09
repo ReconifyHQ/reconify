@@ -54,7 +54,9 @@ func hashFile(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open %q: %w", path, err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	h := sha256.New()
 	if _, err := io.Copy(h, bufio.NewReaderSize(f, 1<<20)); err != nil {
 		return "", fmt.Errorf("read %q: %w", path, err)

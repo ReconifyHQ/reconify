@@ -56,7 +56,7 @@ func TestParseCSVEach_WideSchema_Valid(t *testing.T) {
 	if got[0].Reference != "REF-001" || got[1].Reference != "REF-002" {
 		t.Errorf("unexpected refs: %q %q", got[0].Reference, got[1].Reference)
 	}
-	if got[0].Raw == nil || len(got[0].Raw) < 10 {
+	if len(got[0].Raw) < 10 {
 		t.Errorf("expected raw map with many fields, got %+v", got[0].Raw)
 	}
 }

@@ -505,7 +505,9 @@ func newTableWriter(w io.Writer) *tableWriter { return &tableWriter{w: w} }
 func (t *tableWriter) maybeWarn() {
 	if !t.warn && len(t.rows) > tableWarnThreshold {
 		t.warn = true
-		fmt.Fprintf(t.w, "warning: table mode has buffered >%d rows; for large files use --format=ndjson or --format=csv\n", tableWarnThreshold)
+		if _, err := fmt.Fprintf(t.w, "warning: table mode has buffered >%d rows; for large files use --format=ndjson or --format=csv\n", tableWarnThreshold); err != nil {
+			return
+		}
 	}
 }
 
@@ -600,11 +602,15 @@ func (t *tableWriter) WriteSummary(s Summary) error {
 
 func (t *tableWriter) Flush() error {
 	tw := tabwriter.NewWriter(t.w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "TYPE\tLEFT_ID\tLEFT_DATE\tLEFT_AMT\tLEFT_REF\tRIGHT_ID\tRIGHT_DATE\tRIGHT_AMT\tRIGHT_REF\tNOTE")
+	if _, err := fmt.Fprintln(tw, "TYPE\tLEFT_ID\tLEFT_DATE\tLEFT_AMT\tLEFT_REF\tRIGHT_ID\tRIGHT_DATE\tRIGHT_AMT\tRIGHT_REF\tNOTE"); err != nil {
+		return err
+	}
 	for _, row := range t.rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			row.typ, row.leftID, row.leftDt, row.leftAmt, row.leftRef,
-			row.rightID, row.rightDt, row.rightAmt, row.rightRef, row.note)
+			row.rightID, row.rightDt, row.rightAmt, row.rightRef, row.note); err != nil {
+			return err
+		}
 	}
 	return tw.Flush()
 }

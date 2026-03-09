@@ -49,7 +49,7 @@ func TestReconcileStreaming_MonetaryTotalsInvariant(t *testing.T) {
 		"id,date,amount,currency,reference,name",
 		"l1,2024-01-01,1.00,USD,REF-MATCH,Left Match",
 		"l2,2024-01-01,2.00,USD,REF-DIFF,Left Diff",
-		"l3,2024-01-01,0.50,USD,REF-LONLY,Left Only",
+		"l3,2024-01-01,0.50,USD,REF-L_ONLY,Left Only",
 	}, "\n") + "\n"
 	rightCSV := strings.Join([]string{
 		"id,date,amount,currency,reference,name",
@@ -374,7 +374,7 @@ func TestReconcile_MonetaryTotals_TotalDiscrepancyInvariant(t *testing.T) {
 	left := []Transaction{
 		makeTx("l1", 100, "REF-MATCH"),
 		makeTx("l2", 200, "REF-DIFF"),
-		makeTx("l3", 50, "REF-LONLY"),
+		makeTx("l3", 50, "REF-L_ONLY"),
 	}
 	right := []Transaction{
 		makeTx("r1", 100, "REF-MATCH"),

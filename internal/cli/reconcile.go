@@ -89,7 +89,11 @@ Formats:
 				if err != nil {
 					return fmt.Errorf("create output file: %w", err)
 				}
-				defer out.Close()
+				defer func() {
+					if closeErr := out.Close(); closeErr != nil {
+						fmt.Fprintf(os.Stderr, "warning: close output file: %v\n", closeErr)
+					}
+				}()
 			}
 
 			// All formats route through ReconcileStreaming.
@@ -149,7 +153,11 @@ Formats:
 			if err != nil {
 				return fmt.Errorf("init right index: %w", err)
 			}
-			defer idx.Close()
+			defer func() {
+				if closeErr := idx.Close(); closeErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: close index backend: %v\n", closeErr)
+				}
+			}()
 			jobStart := time.Now()
 			if progress {
 				fmt.Fprintf(os.Stderr, "progress: index backend=%s\n", backendLabel)

@@ -37,7 +37,9 @@ func ParseCSVEach(
 	if err != nil {
 		return fmt.Errorf("open %q: %w", filePath, err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	r := csv.NewReader(bufio.NewReaderSize(f, 1<<20))
 	r.TrimLeadingSpace = true
