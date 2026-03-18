@@ -77,6 +77,7 @@ This validates that required columns exist and that sample data can be parsed.`,
 
 			cmd.PrintErrf("Checking source %q against file %q...\n", sourceName, filePath)
 
+			// Verify that the source in the command exist in the config file
 			source, ok := cfg.Sources[sourceName]
 			if !ok {
 				return fmt.Errorf("source %q not found in config", sourceName)
@@ -88,6 +89,7 @@ This validates that required columns exist and that sample data can be parsed.`,
 			}
 			defer file.Close()
 
+			// csv file reader
 			reader := csv.NewReader(file)
 
 			// Read headers row
