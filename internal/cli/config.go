@@ -108,33 +108,43 @@ This validates that required columns exist and that sample data can be parsed.`,
 			if !headerSet[source.Parser.DateCol] {
 				cmd.PrintErrf("[x] date_col %q not found in CSV headers\n", source.Parser.DateCol)
 				valid = false
+			} else {
+				cmd.PrintErrf("[ok] date_col %q found\n", source.Parser.DateCol)
 			}
 
 			if !headerSet[source.Parser.AmountCol] {
 				cmd.PrintErrf("[x] amount_col %q not found in CSV headers\n", source.Parser.AmountCol)
 				valid = false
+			} else {
+				cmd.PrintErrf("[ok] amount_col %q found\n", source.Parser.AmountCol)
 			}
 
 			if source.Parser.CurrencyCol != "" && !headerSet[source.Parser.CurrencyCol] {
 				cmd.PrintErrf("[x] currency_col %q not found in CSV headers\n", source.Parser.CurrencyCol)
 				valid = false
+			} else {
+				cmd.PrintErrf("[ok] currency_col %q found\n", source.Parser.CurrencyCol)
 			}
 
 			if source.Parser.NameCol != "" && !headerSet[source.Parser.NameCol] {
 				cmd.PrintErrf("[x] name_col %q not found in CSV headers\n", source.Parser.NameCol)
 				valid = false
+			} else {
+				cmd.PrintErrf("[ok] name_col %q found\n", source.Parser.NameCol)
 			}
 
 			if source.Parser.RefCol != "" && !headerSet[source.Parser.RefCol] {
 				cmd.PrintErrf("[x] ref_col %q not found in CSV headers\n", source.Parser.RefCol)
 				valid = false
+			} else {
+				cmd.PrintErrf("[ok] ref_col %q found\n", source.Parser.RefCol)
 			}
 
 			if !valid {
 				return fmt.Errorf("source %q does not match file %q", sourceName, filePath)
 			}
 
-			cmd.PrintErrf("[ok] source %q matches file %q\n", sourceName, filePath)
+			cmd.PrintErrf("[OK] source %q matches file %q\n", sourceName, filePath)
 
 			return nil
 		},
