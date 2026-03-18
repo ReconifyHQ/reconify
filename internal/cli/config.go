@@ -87,7 +87,9 @@ This validates that required columns exist and that sample data can be parsed.`,
 			if err != nil {
 				return fmt.Errorf("failed to open file: %w", err)
 			}
-			defer file.Close()
+			defer func() {
+				_ = file.Close()
+			}()
 
 			// csv file reader
 			reader := csv.NewReader(file)
