@@ -2,7 +2,9 @@
 package cli
 
 import (
+	"encoding/csv"
 	"fmt"
+	"os"
 
 	"github.com/reconify/reconify/config"
 	"github.com/spf13/cobra"
@@ -68,14 +70,69 @@ This validates that required columns exist and that sample data can be parsed.`,
 			}
 
 			cfgPath := getConfigPath()
-			_, err := config.Load(cfgPath)
+			cfg, err := config.Load(cfgPath)
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
 
-			// TODO: Implement source checking logic
 			cmd.PrintErrf("Checking source %q against file %q...\n", sourceName, filePath)
-			cmd.PrintErrf("⚠️  Source checking not yet implemented\n")
+
+			source, ok := cfg.Sources[sourceName]
+			if !ok {
+				return fmt.Errorf("source %q not found in config", sourceName)
+			}
+
+			file, err := os.Open(filePath)
+			if err != nil {
+				return fmt.Errorf("failed to open file: %w", err)
+			}
+			defer file.Close()
+
+			reader := csv.NewReader(file)
+
+			// Read headers row
+			headers, err := reader.Read()
+			if err != nil {
+				return fmt.Errorf("failed to read file: %w", err)
+			}
+
+			headerSet := make(map[string]bool)
+			for _, header := range headers {
+				headerSet[header] = true
+			}
+
+			valid := true
+
+			if !headerSet[source.Parser.DateCol] {
+				cmd.PrintErrf("[x] date_col %q not found in CSV headers\n", source.Parser.DateCol)
+				valid = false
+			}
+
+			if !headerSet[source.Parser.AmountCol] {
+				cmd.PrintErrf("[x] amount_col %q not found in CSV headers\n", source.Parser.AmountCol)
+				valid = false
+			}
+
+			if source.Parser.CurrencyCol != "" && !headerSet[source.Parser.CurrencyCol] {
+				cmd.PrintErrf("[x] currency_col %q not found in CSV headers\n", source.Parser.CurrencyCol)
+				valid = false
+			}
+
+			if source.Parser.NameCol != "" && !headerSet[source.Parser.NameCol] {
+				cmd.PrintErrf("[x] name_col %q not found in CSV headers\n", source.Parser.NameCol)
+				valid = false
+			}
+
+			if source.Parser.RefCol != "" && !headerSet[source.Parser.RefCol] {
+				cmd.PrintErrf("[x] ref_col %q not found in CSV headers\n", source.Parser.RefCol)
+				valid = false
+			}
+
+			if !valid {
+				return fmt.Errorf("source %q does not match file %q", sourceName, filePath)
+			}
+
+			cmd.PrintErrf("[ok] source %q matches file %q\n", sourceName, filePath)
 
 			return nil
 		},
