@@ -420,3 +420,75 @@ func TestReconcile_MonetaryTotals_EmptyInputs(t *testing.T) {
 		t.Errorf("expected all monetary totals to be 0 for empty inputs, got %+v", s)
 	}
 }
+
+// makeTxDate is like makeTx but with a custom date.
+func makeTxDate(id string, amount int64, ref string, date time.Time) Transaction {
+	return Transaction{
+		ID:        id,
+		Date:      date,
+		Amount:    amount,
+		Currency:  "USD",
+		Reference: ref,
+		Name:      "Test " + id,
+		Source:    "test",
+	}
+}
+
+var dateWindowBase = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+func TestReconcile_DateWindow_WithinWindow(t *testing.T) {
+	left := []Transaction{makeTxDate("l1", 100, "REF-1", dateWindowBase)}
+	right := []Transaction{makeTxDate("r1", 100, "REF-1", dateWindowBase.Add(24*time.Hour))}
+
+	res, err := Reconcile("p", "left", "right", left, right, config.Pair{DateWindow: "1d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 || len(res.TimingDiff) != 0 {
+		t.Errorf("got matched=%d timing_diff=%d, want matched=1 timing_diff=0", len(res.Matched), len(res.TimingDiff))
+	}
+}
+
+func TestReconcile_DateWindow_ExactBoundary(t *testing.T) {
+	// diff == window: should still match (<=, not <)
+	left := []Transaction{makeTxDate("l1", 100, "REF-1", dateWindowBase)}
+	right := []Transaction{makeTxDate("r1", 100, "REF-1", dateWindowBase.Add(48*time.Hour))}
+
+	res, err := Reconcile("p", "left", "right", left, right, config.Pair{DateWindow: "2d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 || len(res.TimingDiff) != 0 {
+		t.Errorf("got matched=%d timing_diff=%d, want matched=1 timing_diff=0", len(res.Matched), len(res.TimingDiff))
+	}
+}
+
+func TestReconcile_DateWindow_BeyondWindow(t *testing.T) {
+	left := []Transaction{makeTxDate("l1", 100, "REF-1", dateWindowBase)}
+	right := []Transaction{makeTxDate("r1", 100, "REF-1", dateWindowBase.Add(72*time.Hour))}
+
+	res, err := Reconcile("p", "left", "right", left, right, config.Pair{DateWindow: "2d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.TimingDiff) != 1 || len(res.Matched) != 0 {
+		t.Errorf("got matched=%d timing_diff=%d, want matched=0 timing_diff=1", len(res.Matched), len(res.TimingDiff))
+	}
+	if res.TimingDiff[0].DaysDiff != 3 {
+		t.Errorf("DaysDiff = %d, want 3", res.TimingDiff[0].DaysDiff)
+	}
+}
+
+func TestReconcile_DateWindow_Zero_NoLimit(t *testing.T) {
+	// "0d" disables the window — any date gap should still match
+	left := []Transaction{makeTxDate("l1", 100, "REF-1", dateWindowBase)}
+	right := []Transaction{makeTxDate("r1", 100, "REF-1", dateWindowBase.AddDate(0, 3, 0))}
+
+	res, err := Reconcile("p", "left", "right", left, right, config.Pair{DateWindow: "0d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 || len(res.TimingDiff) != 0 {
+		t.Errorf("got matched=%d timing_diff=%d, want matched=1 timing_diff=0", len(res.Matched), len(res.TimingDiff))
+	}
+}
