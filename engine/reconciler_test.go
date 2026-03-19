@@ -420,3 +420,94 @@ func TestReconcile_MonetaryTotals_EmptyInputs(t *testing.T) {
 		t.Errorf("expected all monetary totals to be 0 for empty inputs, got %+v", s)
 	}
 }
+
+// makeTxNamed returns a Transaction with no reference and a specific name.
+func makeTxNamed(id string, amount int64, name string) Transaction {
+	return Transaction{
+		ID:       id,
+		Date:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:   amount,
+		Currency: "USD",
+		Name:     name,
+		Source:   "test",
+	}
+}
+
+func TestReconcile_NameTokens_Matches(t *testing.T) {
+	// Jaccard("stripe payment invoice", "stripe payment invoice") = 1.0 > 0.5
+	left := []Transaction{makeTxNamed("l1", 100, "stripe payment invoice")}
+	right := []Transaction{makeTxNamed("r1", 100, "stripe payment invoice")}
+	pair := config.Pair{DateWindow: "0d", NameMode: "tokens"}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 || len(res.UnmatchedLeft) != 0 {
+		t.Errorf("got matched=%d unmatched_left=%d, want matched=1 unmatched_left=0", len(res.Matched), len(res.UnmatchedLeft))
+	}
+}
+
+func TestReconcile_NameTokens_InsufficientOverlap(t *testing.T) {
+	// Jaccard("stripe payment", "paypal transfer") = 0.0, not > 0.5
+	left := []Transaction{makeTxNamed("l1", 100, "stripe payment")}
+	right := []Transaction{makeTxNamed("r1", 100, "paypal transfer")}
+	pair := config.Pair{DateWindow: "0d", NameMode: "tokens"}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 0 || len(res.UnmatchedLeft) != 1 {
+		t.Errorf("got matched=%d unmatched_left=%d, want matched=0 unmatched_left=1", len(res.Matched), len(res.UnmatchedLeft))
+	}
+}
+
+func TestReconcile_NameTokens_ReferenceTakesPriority(t *testing.T) {
+	// l1 matches r1 by reference; r1 must not be available for token matching afterwards.
+	// l2 has no reference but same name as r1 — should be unmatched since r1 is consumed.
+	left := []Transaction{
+		makeTx("l1", 100, "REF-1"),
+		makeTxNamed("l2", 100, "Test l1"),
+	}
+	right := []Transaction{makeTx("r1", 100, "REF-1")}
+	pair := config.Pair{DateWindow: "0d", NameMode: "tokens"}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 || len(res.UnmatchedLeft) != 1 {
+		t.Errorf("got matched=%d unmatched_left=%d, want matched=1 unmatched_left=1", len(res.Matched), len(res.UnmatchedLeft))
+	}
+}
+
+func TestReconcile_NameTokens_AmountToleranceApplies(t *testing.T) {
+	// Names overlap well but amount diff exceeds tolerance — should not match.
+	left := []Transaction{makeTxNamed("l1", 100, "stripe payment invoice")}
+	right := []Transaction{makeTxNamed("r1", 200, "stripe payment invoice")}
+	pair := config.Pair{DateWindow: "0d", NameMode: "tokens", AmountToleranceMinor: 0}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 0 || len(res.UnmatchedLeft) != 1 {
+		t.Errorf("got matched=%d unmatched_left=%d, want matched=0 unmatched_left=1", len(res.Matched), len(res.UnmatchedLeft))
+	}
+}
+
+func TestReconcile_NameTokens_EmptyName(t *testing.T) {
+	// Empty name on left — should go straight to unmatched.
+	left := []Transaction{makeTxNamed("l1", 100, "")}
+	right := []Transaction{makeTxNamed("r1", 100, "stripe payment")}
+	pair := config.Pair{DateWindow: "0d", NameMode: "tokens"}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 0 || len(res.UnmatchedLeft) != 1 {
+		t.Errorf("got matched=%d unmatched_left=%d, want matched=0 unmatched_left=1", len(res.Matched), len(res.UnmatchedLeft))
+	}
+}
