@@ -448,6 +448,21 @@ func TestReconcile_NameTokens_Matches(t *testing.T) {
 	}
 }
 
+func TestReconcile_NameTokens_PartialOverlap(t *testing.T) {
+	// Jaccard("stripe payment invoice service", "stripe payment invoice") = 3/4 = 0.75 > 0.5
+	left := []Transaction{makeTxNamed("l1", 100, "stripe payment invoice service")}
+	right := []Transaction{makeTxNamed("r1", 100, "stripe payment invoice")}
+	pair := config.Pair{DateWindow: "0d", NameMode: "tokens"}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 || len(res.UnmatchedLeft) != 0 {
+		t.Errorf("got matched=%d unmatched_left=%d, want matched=1 unmatched_left=0", len(res.Matched), len(res.UnmatchedLeft))
+	}
+}
+
 func TestReconcile_NameTokens_InsufficientOverlap(t *testing.T) {
 	// Jaccard("stripe payment", "paypal transfer") = 0.0, not > 0.5
 	left := []Transaction{makeTxNamed("l1", 100, "stripe payment")}
