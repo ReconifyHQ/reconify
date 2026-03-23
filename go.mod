@@ -1,4 +1,4 @@
-module github.com/reconify/reconify
+module github.com/reconifyhq/reconify
 
 go 1.24.0
 
