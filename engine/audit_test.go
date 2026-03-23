@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/reconify/reconify/config"
+	"github.com/reconifyhq/reconify/config"
 )
 
 func TestHashFile_KnownGood(t *testing.T) {

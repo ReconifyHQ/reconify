@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/reconify/reconify/config"
+	"github.com/reconifyhq/reconify/config"
 )
 
 // ParseCSVEach streams a CSV file, calling fn for each parsed transaction.

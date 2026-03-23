@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/reconify/reconify/config"
+	"github.com/reconifyhq/reconify/config"
 )
 
 func TestParseCSVEach_WideSchema_Valid(t *testing.T) {

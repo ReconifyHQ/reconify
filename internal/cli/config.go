@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/reconify/reconify/config"
+	"github.com/reconifyhq/reconify/config"
 	"github.com/spf13/cobra"
 )
 

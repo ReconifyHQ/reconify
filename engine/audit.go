@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/reconify/reconify/config"
+	"github.com/reconifyhq/reconify/config"
 )
 
 // BuildRunInfo hashes both input files and constructs a RunInfo value.

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/reconify/reconify/config"
+	"github.com/reconifyhq/reconify/config"
 )
 
 // Reconcile runs the reconciliation algorithm between two slices of transactions.

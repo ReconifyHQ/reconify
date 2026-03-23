@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/reconify/reconify/config"
-	"github.com/reconify/reconify/engine"
+	"github.com/reconifyhq/reconify/config"
+	"github.com/reconifyhq/reconify/engine"
 	"github.com/spf13/cobra"
 )
 

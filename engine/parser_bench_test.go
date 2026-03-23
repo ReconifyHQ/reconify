@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/reconify/reconify/config"
+	"github.com/reconifyhq/reconify/config"
 )
 
 // writeSyntheticCSV writes n rows to a temp file and returns the path.

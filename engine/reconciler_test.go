@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/reconify/reconify/config"
+	"github.com/reconifyhq/reconify/config"
 )
 
 // makeTx is a test helper that returns a Transaction with the minimum fields set.

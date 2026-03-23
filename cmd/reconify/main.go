@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/reconify/reconify/internal/cli"
+	"github.com/reconifyhq/reconify/internal/cli"
 )
 
 var (
