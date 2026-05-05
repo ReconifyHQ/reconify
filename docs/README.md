@@ -1,24 +1,21 @@
-# Reconify Documentation
+# Reconify Docs
 
-Reconify is an open-source reconciliation engine for financial data. It parses CSV files from multiple sources, normalizes transactions, and matches them using configurable rules.
+This directory contains the Reconify documentation website. It is a Fumadocs app built on Next.js and reads Markdown/MDX from `content/docs`.
 
-## Documentation
-
-| Directory | What it covers |
-|---|---|
-| [engine/](./engine/) | Reconciliation engine internals — types, matching algorithm, CSV parsing |
-
-## Quick Start
+Run the development server:
 
 ```bash
-# Build the CLI
-go build -o reconify ./cmd/reconify
-
-# Validate config
-./reconify config validate --config reconify.yaml
-
-# Run reconciliation
-./reconify reconcile --config reconify.yaml --pair bank_vs_stripe --out results.json
+npm install
+npm run dev
 ```
 
-See the [main README](../README.md) for full usage instructions.
+Open http://localhost:3000/docs.
+
+## Structure
+
+| Path | Purpose |
+|---|---|
+| `content/docs` | Documentation pages in Markdown/MDX |
+| `app/docs` | Fumadocs routes and layout |
+| `app/api/search/route.ts` | Local document search route |
+| `lib/source.ts` | Content source adapter |

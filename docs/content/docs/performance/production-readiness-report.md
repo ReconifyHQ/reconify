@@ -1,3 +1,9 @@
+---
+title: Production Readiness
+description: Production-readiness findings, risks, scaling pressure, and recommended reliability work.
+icon: ShieldCheck
+---
+
 # Reconify Production Readiness Report
 
 Date: March 9, 2026
