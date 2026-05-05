@@ -15,7 +15,7 @@ Reconify ingests financial data from multiple sources (banks, PSPs, ledgers, spr
 ## Installation
 
 ```bash
-go install github.com/reconify/reconify/cmd/reconify@latest
+go install github.com/reconifyhq/reconify/cmd/reconify@latest
 ```
 
 Or download a pre-built binary from [Releases](https://github.com/ReconifyHQ/reconify/releases).
@@ -127,8 +127,8 @@ The `engine` and `config` packages are public and can be imported by other Go mo
 
 ```go
 import (
-    "github.com/reconify/reconify/config"
-    "github.com/reconify/reconify/engine"
+    "github.com/reconifyhq/reconify/config"
+    "github.com/reconifyhq/reconify/engine"
 )
 
 // Load config
@@ -151,6 +151,10 @@ For a managed experience with a web dashboard, async processing, multi-user auth
 ### Prerequisites
 
 - Go 1.24+
+
+### Agent Experience
+
+Reconify includes agent-facing project context in [AGENTS.md](AGENTS.md), tool-specific adapters for Claude, Codex, Gemini, and Copilot, and reusable workflows under [.agents/skills/](.agents/skills/). Use [llms.txt](llms.txt) as the compact index for AI tools.
 
 ### Build
 

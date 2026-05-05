@@ -1,0 +1,42 @@
+# Reconify
+
+Reconify is a Go CLI and library for reconciling financial CSV data from banks, PSPs, ledgers, and spreadsheets.
+
+## Start
+
+- Project orientation: AGENTS.md
+- Human README: README.md
+- Contributor guide: CONTRIBUTING.md
+- CLI entrypoint: cmd/reconify/main.go
+- CLI commands: internal/cli/
+- Config model: config/config.go
+- Reconciliation engine: engine/
+- Example config: examples/reconify.yaml
+
+## Agent Workflows
+
+- Canonical skills: .agents/skills/
+- CLI workflow: .agents/skills/reconify-cli/SKILL.md
+- Config workflow: .agents/skills/reconify-config/SKILL.md
+- Performance workflow: .agents/skills/reconify-performance/SKILL.md
+
+## Tool Adapters
+
+- Claude: CLAUDE.md and .claude/skills/
+- Codex: AGENTS.md and .codex/skills/
+- Gemini: GEMINI.md
+- Copilot: .github/copilot-instructions.md
+
+## Commands
+
+- Quick tests: go test ./...
+- Race and coverage: make test
+- Lint: make lint
+- Build CLI: make build
+- Inspect CLI: go run ./cmd/reconify --help
+
+## Docs
+
+- Engine internals: docs/engine/README.md
+- Performance notes: docs/performance/README.md
+- Production readiness notes: docs/performance/PRODUCTION_READINESS_REPORT.md
