@@ -1,6 +1,6 @@
 # Reconify Documentation
 
-Reconify is an open-source reconciliation engine for financial data. It parses CSV files from multiple sources, normalizes transactions, and matches them using configurable rules.
+Reconify is an open-source reconciliation engine for financial data. It parses CSV, JSON/NDJSON, and XLSX files from multiple sources, normalizes transactions, and matches them using configurable rules.
 
 ## Documentation
 

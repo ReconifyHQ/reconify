@@ -139,8 +139,8 @@ func ReconcileStreaming(
 	rightSource string,
 	leftPath string,
 	rightPath string,
-	leftCfg config.CSVParserCfg,
-	rightCfg config.CSVParserCfg,
+	leftCfg config.ParserCfg,
+	rightCfg config.ParserCfg,
 	pair config.Pair,
 	idx RightIndex,
 	w ResultWriter,
@@ -172,8 +172,8 @@ func ReconcileStreamingWithProgress(
 	rightSource string,
 	leftPath string,
 	rightPath string,
-	leftCfg config.CSVParserCfg,
-	rightCfg config.CSVParserCfg,
+	leftCfg config.ParserCfg,
+	rightCfg config.ParserCfg,
 	pair config.Pair,
 	idx RightIndex,
 	w ResultWriter,
@@ -191,8 +191,8 @@ func reconcileStreaming(
 	rightSource string,
 	leftPath string,
 	rightPath string,
-	leftCfg config.CSVParserCfg,
-	rightCfg config.CSVParserCfg,
+	leftCfg config.ParserCfg,
+	rightCfg config.ParserCfg,
 	pair config.Pair,
 	idx RightIndex,
 	w ResultWriter,
@@ -230,7 +230,7 @@ func reconcileStreaming(
 	rightDupRefs := make(map[string]bool)
 	var totalRight int
 
-	if err := ParseCSVEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
+	if err := ParseEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
 		totalRight++
 		if err := cc.Observe(rightSource, tx); err != nil {
 			return err
@@ -302,7 +302,7 @@ func reconcileStreaming(
 	)
 	var totalLeft int
 
-	if err := ParseCSVEach(ctx, leftSource, leftPath, leftCfg, func(ltx Transaction, _ int) error {
+	if err := ParseEach(ctx, leftSource, leftPath, leftCfg, func(ltx Transaction, _ int) error {
 		totalLeft++
 		if err := cc.Observe(leftSource, ltx); err != nil {
 			return err
@@ -576,7 +576,7 @@ func matchByNameTokensStreaming(
 	return matches, remainLeft, remainRight
 }
 
-// collectDuplicates re-scans a CSV file and returns a DuplicateGroup for every
+// collectDuplicates re-scans an input file and returns a DuplicateGroup for every
 // reference in dupRefs. It is invoked only when duplicates were detected during
 // the primary pass; for datasets with no duplicates this function is never called.
 //
@@ -588,11 +588,11 @@ func collectDuplicates(
 	ctx context.Context,
 	sourceName string,
 	path string,
-	cfg config.CSVParserCfg,
+	cfg config.ParserCfg,
 	dupRefs map[string]bool,
 ) ([]DuplicateGroup, error) {
 	byRef := make(map[string][]Transaction, len(dupRefs))
-	if err := ParseCSVEach(ctx, sourceName, path, cfg, func(tx Transaction, _ int) error {
+	if err := ParseEach(ctx, sourceName, path, cfg, func(tx Transaction, _ int) error {
 		if dupRefs[tx.Reference] {
 			byRef[tx.Reference] = append(byRef[tx.Reference], tx)
 		}
