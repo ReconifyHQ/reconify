@@ -198,6 +198,25 @@ func TestParseEach_JSONArray(t *testing.T) {
 	}
 }
 
+func TestParseEach_JSONArrayRejectsTrailingContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "input.json")
+	content := `[
+		{"date":"2024-01-31","description":"Payment A","amount":"123.45","ref_id":"REF-001","currency":"USD"}
+	] {"date":"2024-02-01","description":"Payment B","amount":"2.50","ref_id":"REF-002","currency":"USD"}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Parse("bank", path, baseParserCfg("json"))
+	if err == nil {
+		t.Fatal("expected trailing JSON error, got nil")
+	}
+	if !strings.Contains(err.Error(), "trailing JSON after array") {
+		t.Fatalf("error %q does not contain trailing JSON message", err.Error())
+	}
+}
+
 func TestParseEach_NDJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "input.ndjson")

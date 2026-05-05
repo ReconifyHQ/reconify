@@ -314,6 +314,12 @@ func parseJSONEach(
 		if _, err := dec.Token(); err != nil {
 			return fmt.Errorf("%s: close JSON array: %w", filePath, err)
 		}
+		if _, err := dec.Token(); err != io.EOF {
+			if err != nil {
+				return fmt.Errorf("%s: trailing JSON after array: %w", filePath, err)
+			}
+			return fmt.Errorf("%s: trailing JSON after array", filePath)
+		}
 		return nil
 	}
 
