@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/reconifyhq/reconify/config"
@@ -35,8 +37,10 @@ configured rules. Outputs results in the requested format.
 Formats:
   json         (default) Indented JSON object; buffers full result in memory.
                For files >500k rows, prefer json-stream, ndjson, or csv.
-  json-stream  Streaming JSON object; same structure as json but encodes
-               each event immediately. Lower GC pressure for large files.
+  json-stream  Streaming JSON object; encodes each event to bytes immediately,
+               releasing Go structs early. Lower GC pressure than json, but
+               JSON bytes still accumulate; not O(1) memory. For O(1) memory,
+               use ndjson or csv.
                Note: output is invalid JSON if the process is interrupted.
   ndjson       One tagged JSON line per event; O(1) memory; crash-safe.
   csv          Fixed-schema CSV; O(1) memory.
@@ -55,6 +59,11 @@ Formats:
 			if errs := cfg.Validate(); len(errs) > 0 {
 				return fmt.Errorf("config validation failed: %v", errs[0])
 			}
+			cfgAbs, err := filepath.Abs(cfgPath)
+			if err != nil {
+				return fmt.Errorf("resolve config path: %w", err)
+			}
+			configDir := filepath.Dir(cfgAbs)
 
 			pair, ok := cfg.Pairs[pairName]
 			if !ok {
@@ -71,35 +80,25 @@ Formats:
 			}
 
 			// Resolve file paths: explicit flags override glob patterns
-			leftPath, err := resolveFile(leftFile, leftSrc.FilePattern)
+			leftPath, err := resolveFile(leftFile, leftSrc.FilePattern, configDir)
 			if err != nil {
 				return fmt.Errorf("left source: %w", err)
 			}
-			rightPath, err := resolveFile(rightFile, rightSrc.FilePattern)
+			rightPath, err := resolveFile(rightFile, rightSrc.FilePattern, configDir)
 			if err != nil {
 				return fmt.Errorf("right source: %w", err)
 			}
 
-			// Open output destination
-			var out *os.File
-			if outputPath == "-" || outputPath == "" {
-				out = os.Stdout
-			} else {
-				out, err = os.Create(outputPath)
-				if err != nil {
-					return fmt.Errorf("create output file: %w", err)
-				}
-				defer func() {
-					if closeErr := out.Close(); closeErr != nil {
-						fmt.Fprintf(os.Stderr, "warning: close output file: %v\n", closeErr)
-					}
-				}()
+			output, err := openReconcileOutput(outputPath, auditMode)
+			if err != nil {
+				return err
 			}
+			defer output.Cleanup()
 
 			// All formats route through ReconcileStreaming.
 			// The caller creates the index and passes it in — ReconcileStreaming
 			// never assumes a specific RightIndex implementation.
-			w, err := engine.NewResultWriter(format, out)
+			w, err := engine.NewResultWriter(format, output.File)
 			if err != nil {
 				return err
 			}
@@ -112,6 +111,7 @@ Formats:
 			}
 
 			// Audit mode: hash both input files and embed run provenance in output.
+			var auditInfo engine.RunInfo
 			if auditMode {
 				setter, ok := w.(engine.RunInfoSetter)
 				if !ok {
@@ -129,6 +129,7 @@ Formats:
 				if err != nil {
 					return fmt.Errorf("audit: %w", err)
 				}
+				auditInfo = info
 				if err := setter.SetRunInfo(info); err != nil {
 					return fmt.Errorf("audit: set run info: %w", err)
 				}
@@ -214,6 +215,14 @@ Formats:
 			if err := run(); err != nil {
 				return fmt.Errorf("reconciliation failed: %w", err)
 			}
+			if auditMode {
+				if err := engine.VerifyAuditFiles(auditInfo); err != nil {
+					return fmt.Errorf("audit: %w", err)
+				}
+			}
+			if err := output.Commit(); err != nil {
+				return err
+			}
 			if progress {
 				fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 			}
@@ -244,8 +253,167 @@ Formats:
 	return cmd
 }
 
+type reconcileOutput struct {
+	File         *os.File
+	finalPath    string
+	tempPath     string
+	copyToStdout bool
+	directStdout bool
+	closed       bool
+	committed    bool
+}
+
+func openReconcileOutput(outputPath string, auditMode bool) (*reconcileOutput, error) {
+	if outputPath == "-" || outputPath == "" {
+		if !auditMode {
+			return &reconcileOutput{File: os.Stdout, directStdout: true, committed: true}, nil
+		}
+		tmp, err := os.CreateTemp("", "reconify-audit-output-*")
+		if err != nil {
+			return nil, fmt.Errorf("create temporary audit output: %w", err)
+		}
+		return &reconcileOutput{File: tmp, tempPath: tmp.Name(), copyToStdout: true}, nil
+	}
+
+	dir := filepath.Dir(outputPath)
+	base := filepath.Base(outputPath)
+	if fi, err := os.Lstat(outputPath); err == nil {
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("output path %q is a symlink; refusing to follow it (remove the symlink first)", outputPath)
+		}
+		if !fi.Mode().IsRegular() {
+			return nil, fmt.Errorf("output path %q exists and is not a regular file", outputPath)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("inspect output path %q: %w", outputPath, err)
+	}
+
+	tmp, err := os.CreateTemp(dir, "."+base+".tmp-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temporary output file: %w", err)
+	}
+	return &reconcileOutput{File: tmp, finalPath: outputPath, tempPath: tmp.Name()}, nil
+}
+
+func (o *reconcileOutput) Commit() error {
+	if o.committed {
+		return nil
+	}
+	if err := o.close(); err != nil {
+		return err
+	}
+
+	if o.copyToStdout {
+		if err := copyFileToStdout(o.tempPath); err != nil {
+			return err
+		}
+		o.committed = true
+		if err := os.Remove(o.tempPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove temporary audit output: %w", err)
+		}
+		o.tempPath = ""
+		return nil
+	}
+
+	if err := ensureOutputPathIsReplaceable(o.finalPath); err != nil {
+		return err
+	}
+	if err := replaceOutputFile(o.tempPath, o.finalPath); err != nil {
+		return err
+	}
+	o.committed = true
+	return nil
+}
+
+func (o *reconcileOutput) Cleanup() {
+	if o == nil || o.directStdout {
+		return
+	}
+	if err := o.close(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: close output file: %v\n", err)
+	}
+	if o.tempPath != "" && !o.committed {
+		if err := os.Remove(o.tempPath); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "warning: remove temporary output file: %v\n", err)
+		}
+	}
+}
+
+func (o *reconcileOutput) close() error {
+	if o.closed || o.directStdout {
+		return nil
+	}
+	o.closed = true
+	if err := o.File.Close(); err != nil {
+		return fmt.Errorf("close output file: %w", err)
+	}
+	return nil
+}
+
+func copyFileToStdout(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open verified audit output: %w", err)
+	}
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: close verified audit output: %v\n", closeErr)
+		}
+	}()
+	if _, err := io.Copy(os.Stdout, f); err != nil {
+		return fmt.Errorf("write verified audit output to stdout: %w", err)
+	}
+	return nil
+}
+
+func ensureOutputPathIsReplaceable(path string) error {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect output path %q: %w", path, err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("output path %q is a symlink; refusing to follow it (remove the symlink first)", path)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("output path %q exists and is not a regular file", path)
+	}
+	return nil
+}
+
+func replaceOutputFile(tempPath, finalPath string) error {
+	if err := os.Rename(tempPath, finalPath); err == nil {
+		return nil
+	} else if err := replaceExistingOutputFile(tempPath, finalPath, err); err != nil {
+		return err
+	}
+	return nil
+}
+
+func replaceExistingOutputFile(tempPath, finalPath string, renameErr error) error {
+	fi, err := os.Lstat(finalPath)
+	if err != nil {
+		return fmt.Errorf("replace output file: %w", renameErr)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("output path %q is a symlink; refusing to follow it (remove the symlink first)", finalPath)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("output path %q exists and is not a regular file", finalPath)
+	}
+	if err := os.Remove(finalPath); err != nil {
+		return fmt.Errorf("remove existing output file: %w", err)
+	}
+	if err := os.Rename(tempPath, finalPath); err != nil {
+		return fmt.Errorf("replace output file: %w", err)
+	}
+	return nil
+}
+
 // resolveFile returns an explicit path if provided, otherwise resolves the first glob match.
-func resolveFile(explicit, pattern string) (string, error) {
+func resolveFile(explicit, pattern, configDir string) (string, error) {
 	if explicit != "" {
 		if _, err := os.Stat(explicit); err != nil {
 			return "", fmt.Errorf("file %q not found", explicit)
@@ -255,14 +423,58 @@ func resolveFile(explicit, pattern string) (string, error) {
 	if pattern == "" {
 		return "", fmt.Errorf("no file specified and no file_pattern configured")
 	}
-	matches, err := filepath.Glob(pattern)
+	resolvedPattern := pattern
+	if !filepath.IsAbs(resolvedPattern) {
+		resolvedPattern = filepath.Join(configDir, resolvedPattern)
+	}
+	matches, err := filepath.Glob(resolvedPattern)
 	if err != nil {
-		return "", fmt.Errorf("glob %q: %w", pattern, err)
+		return "", fmt.Errorf("glob %q: %w", resolvedPattern, err)
 	}
 	if len(matches) == 0 {
-		return "", fmt.Errorf("no files match pattern %q", pattern)
+		return "", fmt.Errorf("no files match pattern %q", resolvedPattern)
 	}
-	return matches[0], nil
+	if filepath.IsAbs(pattern) {
+		return matches[0], nil
+	}
+	for _, match := range matches {
+		inside, err := pathWithinDir(configDir, match)
+		if err != nil {
+			return "", err
+		}
+		if inside {
+			return match, nil
+		}
+	}
+	return "", fmt.Errorf("file_pattern %q resolves outside config directory %q", pattern, configDir)
+}
+
+func pathWithinDir(dir, path string) (bool, error) {
+	dirAbs, err := filepath.Abs(dir)
+	if err != nil {
+		return false, fmt.Errorf("resolve config directory: %w", err)
+	}
+	dirAbs, err = filepath.EvalSymlinks(dirAbs)
+	if err != nil {
+		return false, fmt.Errorf("resolve config directory symlinks: %w", err)
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return false, fmt.Errorf("resolve matched file: %w", err)
+	}
+	pathAbs, err = filepath.EvalSymlinks(pathAbs)
+	if err != nil {
+		return false, fmt.Errorf("resolve matched file symlinks: %w", err)
+	}
+	rel, err := filepath.Rel(dirAbs, pathAbs)
+	if err != nil {
+		return false, fmt.Errorf("compare matched file to config directory: %w", err)
+	}
+	return rel == "." || (rel != ".." && !filepath.IsAbs(rel) && !startsWithParent(rel)), nil
+}
+
+func startsWithParent(path string) bool {
+	return path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator))
 }
 
 const defaultAutoMaxRightFileMB int64 = 2048

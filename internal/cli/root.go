@@ -25,7 +25,7 @@ It ingests financial data from multiple sources, normalizes them, and compares t
 	}
 
 	// Global flags
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "reconify.yaml", "Path to configuration file")
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Path to configuration file")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 
 	// Add subcommands

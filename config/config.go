@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -199,6 +200,8 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 			errs = append(errs, fmt.Errorf("pairs.%s.date_window: invalid format (expected format like '1d', '2d'): %v", name, err))
 		} else if unit != "d" && unit != "D" {
 			errs = append(errs, fmt.Errorf("pairs.%s.date_window: unit must be 'd' or 'D' (got %q)", name, unit))
+		} else if days < 0 {
+			errs = append(errs, fmt.Errorf("pairs.%s.date_window: must be >= 0d (got %q)", name, pair.DateWindow))
 		}
 	}
 
@@ -235,6 +238,9 @@ func validateIndex(index IndexCfg) []error {
 	}
 	if index.AutoMaxRightFileMB < 0 {
 		errs = append(errs, fmt.Errorf("index.auto_max_right_file_mb: must be >= 0 (got %d)", index.AutoMaxRightFileMB))
+	}
+	if index.SpillDir != "" && strings.Contains(index.SpillDir, "..") {
+		errs = append(errs, fmt.Errorf("index.spill_dir: must not contain '..' (got %q)", index.SpillDir))
 	}
 	return errs
 }

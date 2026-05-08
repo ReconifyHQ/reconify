@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"text/tabwriter"
 	"time"
@@ -56,15 +55,10 @@ Formats:
 				return fmt.Errorf("source %q not found in config (available: %v)", sourceName, sourceNames(cfg.Sources))
 			}
 
-			// Resolve file: use --file directly, or fall back to source glob pattern
-			resolvedPath := filePath
-			if _, statErr := os.Stat(resolvedPath); os.IsNotExist(statErr) {
-				matches, globErr := filepath.Glob(source.FilePattern)
-				if globErr != nil || len(matches) == 0 {
-					return fmt.Errorf("file %q not found", filePath)
-				}
-				resolvedPath = matches[0]
+			if _, err := os.Stat(filePath); err != nil {
+				return fmt.Errorf("file %q not found", filePath)
 			}
+			resolvedPath := filePath
 
 			switch format {
 			case "json":
@@ -133,9 +127,9 @@ func parseCSVOut(sourceName, filePath string, parserCfg config.CSVParserCfg, cmd
 			tx.ID,
 			tx.Date.Format(time.RFC3339),
 			strconv.FormatInt(tx.Amount, 10),
-			tx.Currency,
-			tx.Reference,
-			tx.Name,
+			engine.SanitizeCSVField(tx.Currency),
+			engine.SanitizeCSVField(tx.Reference),
+			engine.SanitizeCSVField(tx.Name),
 			tx.Source,
 		})
 	})

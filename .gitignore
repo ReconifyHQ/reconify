@@ -49,3 +49,7 @@ testdata/*.yaml
 # Build artifacts
 dist/
 build/
+
+# Auditing
+
+.deepsec/

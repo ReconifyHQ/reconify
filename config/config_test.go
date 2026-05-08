@@ -68,3 +68,29 @@ func TestConfigValidate_IndexAutoMaxRightFileMBNegative(t *testing.T) {
 		t.Fatal("expected validation error for negative auto_max_right_file_mb")
 	}
 }
+
+func TestConfigValidate_DateWindowNegative(t *testing.T) {
+	cfg := baseValidConfig()
+	cfg.Pairs["p"] = Pair{
+		Left:                 "left",
+		Right:                "right",
+		DateWindow:           "-1d",
+		AmountToleranceMinor: 0,
+		NameMode:             "none",
+	}
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for negative date_window")
+	}
+}
+
+func TestConfigValidate_IndexSpillDirRejectsParentTraversal(t *testing.T) {
+	cfg := baseValidConfig()
+	cfg.Index = IndexCfg{Backend: "disk", SpillDir: "../tmp"}
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for spill_dir containing '..'")
+	}
+}
