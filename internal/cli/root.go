@@ -8,9 +8,10 @@ import (
 )
 
 var (
-	configFile string
-	verbose    bool
-	cliVersion string // set by Execute; used by subcommands for audit envelopes
+	configFile     string
+	configExplicit bool
+	verbose        bool
+	cliVersion     string // set by Execute; used by subcommands for audit envelopes
 )
 
 // Execute runs the CLI application
@@ -25,8 +26,12 @@ It ingests financial data from multiple sources, normalizes them, and compares t
 	}
 
 	// Global flags
-	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Path to configuration file")
+	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "reconify.yaml", "Path to configuration file")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		_ = args
+		configExplicit = cmd.Root().PersistentFlags().Changed("config")
+	}
 
 	// Add subcommands
 	rootCmd.AddCommand(newConfigCmd())
@@ -38,11 +43,11 @@ It ingests financial data from multiple sources, normalizes them, and compares t
 
 // getConfigPath returns the config file path, checking environment variable if not set
 func getConfigPath() string {
-	if configFile != "" {
+	if configExplicit {
 		return configFile
 	}
 	if envConfig := os.Getenv("RECONIFY_CONFIG"); envConfig != "" {
 		return envConfig
 	}
-	return "reconify.yaml"
+	return configFile
 }
