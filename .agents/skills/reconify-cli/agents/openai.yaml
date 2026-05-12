@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reconify CLI"
+  short_description: "Work with the Reconify command-line interface."
+  default_prompt: "Inspect, document, or test the Reconify CLI."

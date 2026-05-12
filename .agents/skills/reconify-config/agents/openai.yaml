@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reconify Config"
+  short_description: "Create and validate Reconify YAML configuration."
+  default_prompt: "Create, inspect, or validate a Reconify config."

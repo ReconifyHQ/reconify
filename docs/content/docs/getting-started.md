@@ -13,13 +13,13 @@ Reconify is a developer-first reconciliation engine for finance, ops, and accoun
 Install the CLI with Go:
 
 ```bash
-go install github.com/reconify/reconify/cmd/reconify@latest
+go install github.com/reconifyhq/reconify/cmd/reconify@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/ReconifyHQ/reconify.git
+git clone https://github.com/reconifyhq/reconify.git
 cd reconify
 make build
 ```
