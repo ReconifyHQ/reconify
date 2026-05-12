@@ -31,7 +31,7 @@ func newReconcileCmd() *cobra.Command {
 		Use:   "reconcile",
 		Short: "Run a reconciliation between two sources",
 		Long: `Execute a reconciliation between two configured sources.
-Reads CSV files, normalizes them, and matches transactions according to
+Reads configured input files, normalizes them, and matches transactions according to
 configured rules. Outputs results in the requested format.
 
 Formats:
@@ -233,8 +233,8 @@ Formats:
 
 	cmd.Flags().StringVar(&pairName, "pair", "", "Pair name to reconcile (required)")
 	cmd.Flags().StringVarP(&outputPath, "out", "o", "-", "Output file path (use '-' for stdout)")
-	cmd.Flags().StringVar(&leftFile, "left-file", "", "Explicit path to left source CSV file")
-	cmd.Flags().StringVar(&rightFile, "right-file", "", "Explicit path to right source CSV file")
+	cmd.Flags().StringVar(&leftFile, "left-file", "", "Explicit path to left source input file")
+	cmd.Flags().StringVar(&rightFile, "right-file", "", "Explicit path to right source input file")
 	cmd.Flags().StringVar(&format, "format", "json",
 		`Output format: json (default), json-stream, ndjson, csv, table`)
 	cmd.Flags().IntVar(&maxTokenBuffer, "max-token-buffer", 100_000,

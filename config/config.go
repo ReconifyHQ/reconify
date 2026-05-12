@@ -21,12 +21,12 @@ type Config struct {
 
 // Source defines a data source configuration
 type Source struct {
-	FilePattern string       `yaml:"file_pattern"`
-	Parser      CSVParserCfg `yaml:"parser"`
+	FilePattern string    `yaml:"file_pattern"`
+	Parser      ParserCfg `yaml:"parser"`
 }
 
-// CSVParserCfg defines CSV parsing configuration
-type CSVParserCfg struct {
+// ParserCfg defines source parsing configuration for CSV, JSON, and XLSX files.
+type ParserCfg struct {
 	Type        string `yaml:"type"`
 	DateCol     string `yaml:"date_col"`
 	DateLayout  string `yaml:"date_layout"`
@@ -38,11 +38,15 @@ type CSVParserCfg struct {
 	CurrencyCol string `yaml:"currency_col,omitempty"`
 	NameCol     string `yaml:"name_col,omitempty"`
 	RefCol      string `yaml:"ref_col,omitempty"`
+	Sheet       string `yaml:"sheet,omitempty"`
 	// SkipRaw skips the per-row Raw map[string]string allocation.
 	// Set to true for large files to reduce allocator pressure.
 	// Default false preserves the Raw field on every Transaction.
 	SkipRaw bool `yaml:"skip_raw,omitempty"`
 }
+
+// CSVParserCfg is kept as an alias for existing Go callers.
+type CSVParserCfg = ParserCfg
 
 // Pair defines a reconciliation pair configuration
 type Pair struct {
@@ -132,8 +136,10 @@ func validateSource(name string, source Source) []error {
 	}
 
 	parser := source.Parser
-	if parser.Type != "csv" {
-		errs = append(errs, fmt.Errorf("sources.%s.parser.type: must be 'csv' (got %q)", name, parser.Type))
+	switch strings.ToLower(strings.TrimSpace(parser.Type)) {
+	case "", "auto", "csv", "json", "xlsx":
+	default:
+		errs = append(errs, fmt.Errorf("sources.%s.parser.type: must be one of [csv, json, xlsx, auto] (got %q)", name, parser.Type))
 	}
 
 	if parser.DateCol == "" {

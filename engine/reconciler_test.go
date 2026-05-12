@@ -125,6 +125,61 @@ func TestReconcileStreaming_MonetaryTotalsInvariant(t *testing.T) {
 	}
 }
 
+func TestReconcileStreaming_MixedJSONAndXLSXInputs(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.json")
+	rightPath := filepath.Join(dir, "right.xlsx")
+
+	leftJSON := `[
+		{"date":"2024-01-01","amount":"1.00","currency":"USD","ref_id":"REF-MATCH","description":"Left Match"},
+		{"date":"2024-01-01","amount":"2.00","currency":"USD","ref_id":"REF-LEFT","description":"Left Only"}
+	]`
+	if err := os.WriteFile(leftPath, []byte(leftJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeWorkbook(t, rightPath, "Transactions", [][]string{
+		{"date", "amount", "currency", "ref_id", "description"},
+		{"2024-01-01", "1.00", "USD", "REF-MATCH", "Right Match"},
+		{"2024-01-01", "3.00", "USD", "REF-RIGHT", "Right Only"},
+	})
+
+	leftCfg := baseParserCfg("json")
+	rightCfg := baseParserCfg("xlsx")
+	rightCfg.Sheet = "Transactions"
+	pair := config.Pair{DateWindow: "0d", AmountToleranceMinor: 0, NameMode: "none"}
+
+	var out bytes.Buffer
+	w := newJSONWriter(&out)
+	w.SetMeta("p", "left", "right")
+	idx := NewMemoryIndex()
+	defer idx.Close()
+
+	if err := ReconcileStreaming(
+		context.Background(),
+		"p",
+		"left",
+		"right",
+		leftPath,
+		rightPath,
+		leftCfg,
+		rightCfg,
+		pair,
+		idx,
+		w,
+		0,
+	); err != nil {
+		t.Fatalf("ReconcileStreaming error: %v", err)
+	}
+
+	var res Result
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if res.Summary.MatchedCount != 1 || res.Summary.UnmatchedLeft != 1 || res.Summary.UnmatchedRight != 1 {
+		t.Fatalf("unexpected summary: %+v", res.Summary)
+	}
+}
+
 func TestReconcileStreaming_FailsOnMixedCurrency(t *testing.T) {
 	dir := t.TempDir()
 	leftPath := filepath.Join(dir, "left.csv")

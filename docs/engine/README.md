@@ -15,17 +15,23 @@ type Transaction struct {
     Reference string            // payment reference, order ID, etc.
     Name      string            // description / merchant name
     Source    string            // source name from config
-    Raw       map[string]string // original CSV row, all columns
+    Raw       map[string]string // original input row/object fields
 }
 ```
 
 **Amounts are always stored in minor units.** A value of `150000` means NGN 1,500.00. The multiplier in the parser config controls the conversion (typically `100` for 2 decimal places).
 
-## CSV parser (`parser.go`)
+## Input parser (`parser.go`)
+
+`Parse(sourceName, filePath string, cfg ParserCfg) ([]Transaction, error)`
+
+`ParseEach(ctx, sourceName, filePath string, cfg ParserCfg, fn func(Transaction, int) error) error`
 
 `ParseCSV(sourceName, filePath string, cfg CSVParserCfg) ([]Transaction, error)`
 
 - Column lookup is **case-insensitive**
+- CSV and XLSX use the first row as headers
+- JSON supports top-level arrays and NDJSON objects
 - Decimal and thousands separators are configurable
 - Parenthetical negatives are supported: `(1,234.56)` → `-123456`
 - Missing optional columns (reference, name, currency) are silently ignored
@@ -34,7 +40,8 @@ type Transaction struct {
 
 | Field | Required | Description |
 |---|---|---|
-| `type` | yes | must be `csv` |
+| `type` | no | `csv`, `json`, `xlsx`, or `auto`; empty defaults to extension inference |
+| `sheet` | no | XLSX sheet name; defaults to the first sheet |
 | `date_col` | yes | column name for the transaction date |
 | `date_layout` | yes | Go time layout, e.g. `2006-01-02` |
 | `amount_col` | yes | column name for the amount |

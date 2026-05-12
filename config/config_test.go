@@ -92,5 +92,28 @@ func TestConfigValidate_IndexSpillDirRejectsParentTraversal(t *testing.T) {
 	errs := cfg.Validate()
 	if len(errs) == 0 {
 		t.Fatal("expected validation error for spill_dir containing '..'")
+func TestConfigValidate_ParserTypes(t *testing.T) {
+	for _, parserType := range []string{"", "auto", "csv", "json", "xlsx"} {
+		t.Run(parserType, func(t *testing.T) {
+			cfg := baseValidConfig()
+			left := cfg.Sources["left"]
+			left.Parser.Type = parserType
+			cfg.Sources["left"] = left
+			if errs := cfg.Validate(); len(errs) > 0 {
+				t.Fatalf("expected valid parser type %q, got errors: %v", parserType, errs)
+			}
+		})
+	}
+}
+
+func TestConfigValidate_ParserTypeInvalid(t *testing.T) {
+	cfg := baseValidConfig()
+	left := cfg.Sources["left"]
+	left.Parser.Type = "xml"
+	cfg.Sources["left"] = left
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for invalid parser type")
 	}
 }
