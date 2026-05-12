@@ -2,11 +2,12 @@
 package cli
 
 import (
-	"encoding/csv"
+	"context"
 	"fmt"
-	"os"
+	"strings"
 
 	"github.com/reconifyhq/reconify/config"
+	"github.com/reconifyhq/reconify/engine"
 	"github.com/spf13/cobra"
 )
 
@@ -57,8 +58,8 @@ func newConfigCheckSourceCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "check-source",
-		Short: "Check if a CSV file matches a source configuration",
-		Long: `Check if a CSV file's structure matches the expected configuration for a source.
+		Short: "Check if an input file matches a source configuration",
+		Long: `Check if an input file's structure matches the expected configuration for a source.
 This validates that required columns exist and that sample data can be parsed.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args // avoid unused variable warning
@@ -83,60 +84,48 @@ This validates that required columns exist and that sample data can be parsed.`,
 				return fmt.Errorf("source %q not found in config", sourceName)
 			}
 
-			file, err := os.Open(filePath)
-			if err != nil {
-				return fmt.Errorf("failed to open file: %w", err)
-			}
-			defer func() {
-				_ = file.Close()
-			}()
-
-			// csv file reader
-			reader := csv.NewReader(file)
-
-			// Read headers row
-			headers, err := reader.Read()
+			headers, err := engine.ReadInputHeaders(context.Background(), filePath, source.Parser)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
 
 			headerSet := make(map[string]bool)
 			for _, header := range headers {
-				headerSet[header] = true
+				headerSet[strings.ToLower(strings.TrimSpace(header))] = true
 			}
 
 			valid := true
 
-			if !headerSet[source.Parser.DateCol] {
-				cmd.PrintErrf("[x] date_col %q not found in CSV headers\n", source.Parser.DateCol)
+			if !hasHeader(headerSet, source.Parser.DateCol) {
+				cmd.PrintErrf("[x] date_col %q not found in input fields\n", source.Parser.DateCol)
 				valid = false
 			} else {
 				cmd.PrintErrf("[ok] date_col %q found\n", source.Parser.DateCol)
 			}
 
-			if !headerSet[source.Parser.AmountCol] {
-				cmd.PrintErrf("[x] amount_col %q not found in CSV headers\n", source.Parser.AmountCol)
+			if !hasHeader(headerSet, source.Parser.AmountCol) {
+				cmd.PrintErrf("[x] amount_col %q not found in input fields\n", source.Parser.AmountCol)
 				valid = false
 			} else {
 				cmd.PrintErrf("[ok] amount_col %q found\n", source.Parser.AmountCol)
 			}
 
-			if source.Parser.CurrencyCol != "" && !headerSet[source.Parser.CurrencyCol] {
-				cmd.PrintErrf("[x] currency_col %q not found in CSV headers\n", source.Parser.CurrencyCol)
+			if source.Parser.CurrencyCol != "" && !hasHeader(headerSet, source.Parser.CurrencyCol) {
+				cmd.PrintErrf("[x] currency_col %q not found in input fields\n", source.Parser.CurrencyCol)
 				valid = false
 			} else {
 				cmd.PrintErrf("[ok] currency_col %q found\n", source.Parser.CurrencyCol)
 			}
 
-			if source.Parser.NameCol != "" && !headerSet[source.Parser.NameCol] {
-				cmd.PrintErrf("[x] name_col %q not found in CSV headers\n", source.Parser.NameCol)
+			if source.Parser.NameCol != "" && !hasHeader(headerSet, source.Parser.NameCol) {
+				cmd.PrintErrf("[x] name_col %q not found in input fields\n", source.Parser.NameCol)
 				valid = false
 			} else {
 				cmd.PrintErrf("[ok] name_col %q found\n", source.Parser.NameCol)
 			}
 
-			if source.Parser.RefCol != "" && !headerSet[source.Parser.RefCol] {
-				cmd.PrintErrf("[x] ref_col %q not found in CSV headers\n", source.Parser.RefCol)
+			if source.Parser.RefCol != "" && !hasHeader(headerSet, source.Parser.RefCol) {
+				cmd.PrintErrf("[x] ref_col %q not found in input fields\n", source.Parser.RefCol)
 				valid = false
 			} else {
 				cmd.PrintErrf("[ok] ref_col %q found\n", source.Parser.RefCol)
@@ -153,7 +142,11 @@ This validates that required columns exist and that sample data can be parsed.`,
 	}
 
 	cmd.Flags().StringVar(&sourceName, "source", "", "Source name to check")
-	cmd.Flags().StringVar(&filePath, "file", "", "CSV file path to validate")
+	cmd.Flags().StringVar(&filePath, "file", "", "Input file path to validate")
 
 	return cmd
+}
+
+func hasHeader(headers map[string]bool, name string) bool {
+	return headers[strings.ToLower(strings.TrimSpace(name))]
 }
