@@ -92,6 +92,10 @@ func TestConfigValidate_IndexSpillDirRejectsParentTraversal(t *testing.T) {
 	errs := cfg.Validate()
 	if len(errs) == 0 {
 		t.Fatal("expected validation error for spill_dir containing '..'")
+
+	}
+}
+
 func TestConfigValidate_ParserTypes(t *testing.T) {
 	for _, parserType := range []string{"", "auto", "csv", "json", "xlsx"} {
 		t.Run(parserType, func(t *testing.T) {
