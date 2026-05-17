@@ -270,6 +270,62 @@ func TestCSVWriter_SummaryIncludesMonetaryTotals(t *testing.T) {
 	}
 }
 
+func TestSanitizeCSVField(t *testing.T) {
+	tests := map[string]string{
+		"":         "",
+		"safe":     "safe",
+		"=SUM(A1)": "'=SUM(A1)",
+		"+SUM(A1)": "'+SUM(A1)",
+		"-SUM(A1)": "'-SUM(A1)",
+		"@cmd":     "'@cmd",
+		"\t=cmd":   "'\t=cmd",
+		"\r=cmd":   "'\r=cmd",
+	}
+	for in, want := range tests {
+		if got := SanitizeCSVField(in); got != want {
+			t.Errorf("SanitizeCSVField(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCSVWriter_SanitizesFormulaFields(t *testing.T) {
+	var buf bytes.Buffer
+	w := newCSVWriter(&buf)
+	if err := w.WriteMatch(MatchedPair{
+		Left: Transaction{
+			ID:        "left-1",
+			Date:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			Reference: "=SUM(A1:A2)",
+			Name:      "@malicious",
+		},
+		Right: Transaction{
+			ID:        "right-1",
+			Date:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			Reference: "+SUM(A1:A2)",
+			Name:      "-malicious",
+		},
+	}); err != nil {
+		t.Fatalf("WriteMatch: %v", err)
+	}
+	if err := w.WriteDuplicate(DuplicateGroup{Source: "left", Reference: "=DUP", Transactions: []Transaction{{ID: "left-1"}}}); err != nil {
+		t.Fatalf("WriteDuplicate: %v", err)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	rows, err := csv.NewReader(strings.NewReader(buf.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if rows[1][4] != "'=SUM(A1:A2)" || rows[1][5] != "'@malicious" || rows[1][9] != "'+SUM(A1:A2)" || rows[1][10] != "'-malicious" {
+		t.Fatalf("match row was not sanitized: %#v", rows[1])
+	}
+	if rows[2][14] != "'=DUP" {
+		t.Fatalf("duplicate reference was not sanitized: %#v", rows[2])
+	}
+}
+
 // -----------------------------------------------------------------------------
 // tableWriter — must NOT implement RunInfoSetter
 // -----------------------------------------------------------------------------

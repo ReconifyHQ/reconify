@@ -1,6 +1,12 @@
+---
+title: Reconciliation Engine
+description: Transaction normalization, CSV parsing, duplicate detection, and matching internals.
+icon: GitCompareArrows
+---
+
 # Reconciliation Engine
 
-The engine is a Go package at `internal/engine/`. It is the single source of truth for all reconciliation logic — the CLI and the API both use it.
+The engine is a Go package at `engine/`. It is the single source of truth for all reconciliation logic.
 
 ## Transaction model
 

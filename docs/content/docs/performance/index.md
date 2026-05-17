@@ -1,3 +1,9 @@
+---
+title: Engine Performance
+description: Streaming reconciliation design, benchmark results, memory behavior, and scaling guidance.
+icon: Gauge
+---
+
 # Reconify Engine Performance
 
 This document explains how the streaming reconciliation engine is designed, what
