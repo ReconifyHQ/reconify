@@ -160,7 +160,9 @@ func (j *jsonWriter) GetResult() *Result { return &j.result }
 // ---------------------------------------------------------------------------
 // JSONStreamWriter — buffers JSON bytes per section; immediate encoding on
 // each event. More GC-friendly than JSONWriter since Go structs are released
-// after encoding. Structurally identical output to JSONWriter.
+// after encoding, but JSON bytes still accumulate. This is not O(1) memory; use
+// NDJSONWriter or CSVWriter when memory must stay constant with result size.
+// Structurally identical output to JSONWriter.
 //
 // Note: if the process is interrupted mid-stream, output will be invalid JSON
 // (unclosed arrays/object). NDJSON does not have this problem — each line is
@@ -372,20 +374,33 @@ func fmtDate(t time.Time) string { return t.Format(time.RFC3339) }
 func fmtI64(v int64) string      { return strconv.FormatInt(v, 10) }
 func fmtInt(v int) string        { return strconv.Itoa(v) }
 
+// SanitizeCSVField prevents spreadsheet formula injection by prefixing cells
+// that start with a formula trigger character with a single quote.
+func SanitizeCSVField(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
+}
+
 func txLeft(row []string, tx Transaction) {
 	row[1] = tx.ID
 	row[2] = fmtDate(tx.Date)
 	row[3] = fmtI64(tx.Amount)
-	row[4] = tx.Reference
-	row[5] = tx.Name
+	row[4] = SanitizeCSVField(tx.Reference)
+	row[5] = SanitizeCSVField(tx.Name)
 }
 
 func txRight(row []string, tx Transaction) {
 	row[6] = tx.ID
 	row[7] = fmtDate(tx.Date)
 	row[8] = fmtI64(tx.Amount)
-	row[9] = tx.Reference
-	row[10] = tx.Name
+	row[9] = SanitizeCSVField(tx.Reference)
+	row[10] = SanitizeCSVField(tx.Name)
 }
 
 func (c *csvWriter) WriteMatch(pair MatchedPair) error {
@@ -440,7 +455,7 @@ func (c *csvWriter) WriteDuplicate(group DuplicateGroup) error {
 	}
 	row := emptyRow("duplicate")
 	row[13] = group.Source
-	row[14] = group.Reference
+	row[14] = SanitizeCSVField(group.Reference)
 	row[15] = fmtInt(len(group.Transactions))
 	return c.w.Write(row)
 }
