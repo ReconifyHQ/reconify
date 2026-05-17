@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-17
+
+### Added
+
+- **`reconify config init`** — Interactive wizard (powered by Huh TUI) that reads source file headers, asks you to map transaction fields, and writes a validated `reconify.yaml`. Flags: `--out` (destination path, default `reconify.yaml`) and `--force` (overwrite existing file).
+- **Multi-format input parsing** — The parser now supports JSON arrays (`.json`), NDJSON/JSON-L (`.ndjson`), and Excel workbooks (`.xlsx`, `.xlsm`) in addition to CSV. Format is auto-detected from the file extension when `parser_type` is `auto` or unset.
+- **Fumadocs documentation site** — New `docs/` site built with Fumadocs and Next.js, covering getting started, configuration reference, engine internals, and performance.
+
+### Fixed
+
+- Trailing content after a JSON array is now rejected with a descriptive parse error instead of being silently ignored.
+- Reconcile audit `hashFile` now captures file size and modification time alongside the SHA-256 hash, surfacing metadata divergence in audit output.
+- CSV output fields are sanitised against spreadsheet formula injection — values starting with `=`, `+`, `-`, `@`, `\t`, or `\r` are escaped via `SanitizeCSVField`.
+
+### Changed
+
+- `JSONStreamWriter` documentation clarified: it is not O(1) memory. Use `NDJSONWriter` or `CSVWriter` when memory must stay constant with result size.
+
+## [0.1.1] - 2026-03-23
+
+### Fixed
+
+- Corrected Go module path to `github.com/reconifyhq/reconify` across all import references.
+
+## [0.1.0] - 2026-03-23
+
 ### Added
 
 #### CLI Commands
