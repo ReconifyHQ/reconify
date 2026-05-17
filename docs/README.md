@@ -11,7 +11,11 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000/docs.
+# Create config interactively
+./reconify config init
+
+# Validate config
+./reconify config validate --config reconify.yaml
 
 ## Structure
 
