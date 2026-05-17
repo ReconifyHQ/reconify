@@ -20,6 +20,7 @@ func newConfigCmd() *cobra.Command {
 
 	cmd.AddCommand(newConfigValidateCmd())
 	cmd.AddCommand(newConfigCheckSourceCmd())
+	cmd.AddCommand(newConfigInitCmd())
 
 	return cmd
 }

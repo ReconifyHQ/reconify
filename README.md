@@ -32,6 +32,12 @@ make build
 
 1. Create a configuration file `reconify.yaml`:
 
+```bash
+reconify config init
+```
+
+Or write one manually:
+
 ```yaml
 version: 1
 timezone: "UTC"
@@ -168,7 +174,7 @@ For a managed experience with a web dashboard, async processing, multi-user auth
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.24.2+
 
 ### Agent Experience
 

@@ -14,6 +14,9 @@ Reconify is an open-source reconciliation engine for financial data. It parses C
 # Build the CLI
 go build -o reconify ./cmd/reconify
 
+# Create config interactively
+./reconify config init
+
 # Validate config
 ./reconify config validate --config reconify.yaml
 
