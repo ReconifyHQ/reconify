@@ -6,7 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"math"
+	"math/bits"
 	"os"
 	"strconv"
 	"strings"
@@ -151,6 +151,12 @@ func ParseCSVEach(
 			}
 		}
 
+		reference := strings.TrimSpace(getCol(record, colIndex, cfg.RefCol))
+		groupKey := reference
+		if cfg.GroupCol != "" {
+			groupKey = strings.TrimSpace(getCol(record, colIndex, cfg.GroupCol))
+		}
+
 		txn := Transaction{
 			ID:        fmt.Sprintf("%s-%d", sourceName, rowNum),
 			Date:      date,
@@ -158,8 +164,9 @@ func ParseCSVEach(
 			Source:    sourceName,
 			Raw:       raw,
 			Currency:  strings.TrimSpace(getCol(record, colIndex, cfg.CurrencyCol)),
-			Reference: strings.TrimSpace(getCol(record, colIndex, cfg.RefCol)),
+			Reference: reference,
 			Name:      strings.TrimSpace(getCol(record, colIndex, cfg.NameCol)),
+			GroupKey:  groupKey,
 		}
 
 		if err := fn(txn, rowNum); err != nil {
@@ -204,7 +211,8 @@ func getCol(record []string, colIndex map[string]int, colName string) string {
 
 // parseAmount parses an amount string to int64 minor units.
 // It removes the thousands separator, normalizes the decimal separator to ".",
-// parses as float64, multiplies by the multiplier, and rounds.
+// then parses using integer/string arithmetic (no float64 round-trip) to avoid
+// precision loss on large or high-precision amounts.
 func parseAmount(s string, decimal string, thousands string, multiplier int64) (int64, error) {
 	s = strings.TrimSpace(s)
 
@@ -226,10 +234,67 @@ func parseAmount(s string, decimal string, thousands string, multiplier int64) (
 	// Remove any currency symbols or spaces that might remain
 	s = strings.TrimSpace(s)
 
-	f, err := strconv.ParseFloat(s, 64)
+	if s == "" {
+		return 0, fmt.Errorf("not a number: %q", s)
+	}
+
+	negative := false
+	switch s[0] {
+	case '-':
+		negative = true
+		s = s[1:]
+	case '+':
+		s = s[1:]
+	}
+	if s == "" {
+		return 0, fmt.Errorf("not a number: %q", s)
+	}
+
+	intPart, fracPart := s, ""
+	if i := strings.IndexByte(s, '.'); i >= 0 {
+		intPart, fracPart = s[:i], s[i+1:]
+		if strings.ContainsRune(fracPart, '.') {
+			return 0, fmt.Errorf("not a number: %q", s)
+		}
+	}
+	if intPart == "" {
+		intPart = "0"
+	}
+	if len(fracPart) > 18 {
+		return 0, fmt.Errorf("not a number: %q", s)
+	}
+
+	intVal, err := strconv.ParseInt(intPart, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("not a number: %q", s)
 	}
 
-	return int64(math.Round(f * float64(multiplier))), nil
+	var fracScaled int64
+	if fracPart != "" {
+		fracVal, err := strconv.ParseInt(fracPart, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("not a number: %q", s)
+		}
+		denom := int64(1)
+		for i := 0; i < len(fracPart); i++ {
+			denom *= 10
+		}
+		// fracVal*multiplier can exceed int64 (e.g. 18 fractional digits with a
+		// multiplier >= 100), so do the multiply/divide as a 128-bit operation via
+		// math/bits rather than int64 arithmetic that would silently wrap. The true
+		// quotient is always < multiplier (fracVal < denom by construction), so it
+		// fits safely back into int64/uint64 once divided.
+		hi, lo := bits.Mul64(uint64(fracVal), uint64(multiplier))
+		q, r := bits.Div64(hi, lo, uint64(denom))
+		if 2*r >= uint64(denom) {
+			q++
+		}
+		fracScaled = int64(q)
+	}
+
+	amount := intVal*multiplier + fracScaled
+	if negative {
+		amount = -amount
+	}
+	return amount, nil
 }

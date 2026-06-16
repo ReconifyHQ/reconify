@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/reconifyhq/reconify/config"
@@ -65,19 +66,20 @@ Formats:
 			if !ok {
 				return fmt.Errorf("left source %q not found in config", pair.Left)
 			}
-			rightSrc, ok := cfg.Sources[pair.Right]
-			if !ok {
-				return fmt.Errorf("right source %q not found in config", pair.Right)
+
+			// Counterparts() resolves either pair.Right (single counterpart, the
+			// historical config shape) or pair.Rights (1-N sources). Config
+			// validation already guarantees exactly one of the two is set and that
+			// every name exists in cfg.Sources.
+			counterparts := pair.Counterparts()
+			if len(counterparts) == 0 {
+				return fmt.Errorf("pair %q has no right or rights configured", pairName)
 			}
 
-			// Resolve file paths: explicit flags override glob patterns
+			// Resolve left file path: explicit flag overrides the glob pattern.
 			leftPath, err := resolveFile(leftFile, leftSrc.FilePattern)
 			if err != nil {
 				return fmt.Errorf("left source: %w", err)
-			}
-			rightPath, err := resolveFile(rightFile, rightSrc.FilePattern)
-			if err != nil {
-				return fmt.Errorf("right source: %w", err)
 			}
 
 			// Open output destination
@@ -105,33 +107,18 @@ Formats:
 			}
 
 			// Propagate pair/source metadata to writers that support it.
+			rightLabel := strings.Join(counterparts, ",")
 			if sw, ok := w.(interface {
 				SetMeta(pairName, leftSource, rightSource string)
 			}); ok {
-				sw.SetMeta(pairName, pair.Left, pair.Right)
+				sw.SetMeta(pairName, pair.Left, rightLabel)
 			}
 
 			// Audit mode: hash both input files and embed run provenance in output.
-			if auditMode {
-				setter, ok := w.(engine.RunInfoSetter)
-				if !ok {
-					return fmt.Errorf("--audit is only supported for --format=json, json-stream, or ndjson (got %q)", format)
-				}
-				runStart := time.Now().UTC()
-				if auditFixedTimestamp != "" {
-					parsed, err := time.Parse(time.RFC3339Nano, auditFixedTimestamp)
-					if err != nil {
-						return fmt.Errorf("--audit-fixed-timestamp must be RFC3339 or RFC3339Nano: %w", err)
-					}
-					runStart = parsed.UTC()
-				}
-				info, err := engine.BuildRunInfo(cliVersion, leftPath, rightPath, pair, runStart)
-				if err != nil {
-					return fmt.Errorf("audit: %w", err)
-				}
-				if err := setter.SetRunInfo(info); err != nil {
-					return fmt.Errorf("audit: set run info: %w", err)
-				}
+			// Not yet supported for multi-counterpart (rights) pairs — BuildRunInfo's
+			// envelope assumes a single right file/source.
+			if auditMode && len(counterparts) > 1 {
+				return fmt.Errorf("--audit is not yet supported for multi-counterpart (rights) pairs")
 			}
 
 			// Deterministic mode: stable output ordering for diff-based audit trails.
@@ -149,40 +136,92 @@ Formats:
 				}
 			}
 
-			idx, backendLabel, err := newRightIndex(cfg.Index, rightPath)
-			if err != nil {
-				return fmt.Errorf("init right index: %w", err)
-			}
-			defer func() {
-				if closeErr := idx.Close(); closeErr != nil {
-					fmt.Fprintf(os.Stderr, "warning: close index backend: %v\n", closeErr)
-				}
-			}()
 			jobStart := time.Now()
-			if progress {
-				fmt.Fprintf(os.Stderr, "progress: index backend=%s\n", backendLabel)
-			}
 
-			progressFn := func(e engine.ProgressEvent) {
-				elapsed := e.Elapsed.Round(time.Second)
-				rate := 0.0
-				if e.Elapsed > 0 {
-					rate = float64(e.Rows) / e.Elapsed.Seconds()
+			if len(counterparts) == 1 {
+				// Single-counterpart path: byte-identical to pre-1-N-source behavior.
+				// Never touches the multi-source code path below.
+				rightSrc, ok := cfg.Sources[counterparts[0]]
+				if !ok {
+					return fmt.Errorf("right source %q not found in config", counterparts[0])
 				}
-				if e.Done {
-					fmt.Fprintf(os.Stderr, "progress: %s done rows=%d elapsed=%s avg_rate=%.0f rows/s\n", e.Phase, e.Rows, elapsed, rate)
-					return
+				rightPath, err := resolveFile(rightFile, rightSrc.FilePattern)
+				if err != nil {
+					return fmt.Errorf("right source: %w", err)
 				}
-				fmt.Fprintf(os.Stderr, "progress: %s rows=%d elapsed=%s rate=%.0f rows/s\n", e.Phase, e.Rows, elapsed, rate)
-			}
 
-			run := func() error {
+				if auditMode {
+					setter, ok := w.(engine.RunInfoSetter)
+					if !ok {
+						return fmt.Errorf("--audit is only supported for --format=json, json-stream, or ndjson (got %q)", format)
+					}
+					runStart := time.Now().UTC()
+					if auditFixedTimestamp != "" {
+						parsed, err := time.Parse(time.RFC3339Nano, auditFixedTimestamp)
+						if err != nil {
+							return fmt.Errorf("--audit-fixed-timestamp must be RFC3339 or RFC3339Nano: %w", err)
+						}
+						runStart = parsed.UTC()
+					}
+					info, err := engine.BuildRunInfo(cliVersion, leftPath, rightPath, pair, runStart)
+					if err != nil {
+						return fmt.Errorf("audit: %w", err)
+					}
+					if err := setter.SetRunInfo(info); err != nil {
+						return fmt.Errorf("audit: set run info: %w", err)
+					}
+				}
+
+				idx, backendLabel, err := newRightIndex(cfg.Index, rightPath)
+				if err != nil {
+					return fmt.Errorf("init right index: %w", err)
+				}
+				defer func() {
+					if closeErr := idx.Close(); closeErr != nil {
+						fmt.Fprintf(os.Stderr, "warning: close index backend: %v\n", closeErr)
+					}
+				}()
 				if progress {
-					return engine.ReconcileStreamingWithProgress(
+					fmt.Fprintf(os.Stderr, "progress: index backend=%s\n", backendLabel)
+				}
+
+				progressFn := func(e engine.ProgressEvent) {
+					elapsed := e.Elapsed.Round(time.Second)
+					rate := 0.0
+					if e.Elapsed > 0 {
+						rate = float64(e.Rows) / e.Elapsed.Seconds()
+					}
+					if e.Done {
+						fmt.Fprintf(os.Stderr, "progress: %s done rows=%d elapsed=%s avg_rate=%.0f rows/s\n", e.Phase, e.Rows, elapsed, rate)
+						return
+					}
+					fmt.Fprintf(os.Stderr, "progress: %s rows=%d elapsed=%s rate=%.0f rows/s\n", e.Phase, e.Rows, elapsed, rate)
+				}
+
+				run := func() error {
+					if progress {
+						return engine.ReconcileStreamingWithProgress(
+							context.Background(),
+							pairName,
+							pair.Left,
+							counterparts[0],
+							leftPath,
+							rightPath,
+							leftSrc.Parser,
+							rightSrc.Parser,
+							pair,
+							idx,
+							w,
+							maxTokenBuffer,
+							progressFn,
+							progressEvery,
+						)
+					}
+					return engine.ReconcileStreaming(
 						context.Background(),
 						pairName,
 						pair.Left,
-						pair.Right,
+						counterparts[0],
 						leftPath,
 						rightPath,
 						leftSrc.Parser,
@@ -191,29 +230,70 @@ Formats:
 						idx,
 						w,
 						maxTokenBuffer,
-						progressFn,
-						progressEvery,
 					)
 				}
-				return engine.ReconcileStreaming(
+
+				if err := run(); err != nil {
+					return fmt.Errorf("reconciliation failed: %w", err)
+				}
+			} else {
+				// Multi-counterpart (1-N source) path: each counterpart resolves its
+				// file via its own source's file_pattern; --right-file (a single
+				// explicit override) does not apply here.
+				if rightFile != "" {
+					return fmt.Errorf("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
+				}
+				if progress {
+					fmt.Fprintln(os.Stderr, "warning: --progress is not yet supported for multi-counterpart (rights) pairs; ignoring")
+				}
+
+				cps := make([]engine.CounterpartStream, 0, len(counterparts))
+				var indexes []engine.RightIndex
+				defer func() {
+					for _, idx := range indexes {
+						if closeErr := idx.Close(); closeErr != nil {
+							fmt.Fprintf(os.Stderr, "warning: close index backend: %v\n", closeErr)
+						}
+					}
+				}()
+
+				for _, name := range counterparts {
+					src, ok := cfg.Sources[name]
+					if !ok {
+						return fmt.Errorf("right source %q not found in config", name)
+					}
+					path, err := resolveFile("", src.FilePattern)
+					if err != nil {
+						return fmt.Errorf("counterpart %q: %w", name, err)
+					}
+					idx, _, err := newRightIndex(cfg.Index, path)
+					if err != nil {
+						return fmt.Errorf("init index for counterpart %q: %w", name, err)
+					}
+					indexes = append(indexes, idx)
+					cps = append(cps, engine.CounterpartStream{
+						SourceName: name,
+						RightPath:  path,
+						RightCfg:   src.Parser,
+						Index:      idx,
+					})
+				}
+
+				if err := engine.ReconcileStreamingMultiSource(
 					context.Background(),
 					pairName,
 					pair.Left,
-					pair.Right,
 					leftPath,
-					rightPath,
 					leftSrc.Parser,
-					rightSrc.Parser,
+					cps,
 					pair,
-					idx,
 					w,
 					maxTokenBuffer,
-				)
+				); err != nil {
+					return fmt.Errorf("reconciliation failed: %w", err)
+				}
 			}
 
-			if err := run(); err != nil {
-				return fmt.Errorf("reconciliation failed: %w", err)
-			}
 			if progress {
 				fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 			}

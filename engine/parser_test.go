@@ -96,6 +96,77 @@ func TestParseCSVEach_SkipRaw(t *testing.T) {
 	}
 }
 
+func TestParseAmount_Precision(t *testing.T) {
+	tests := []struct {
+		name       string
+		amount     string
+		decimal    string
+		thousands  string
+		multiplier int64
+		want       int64
+	}{
+		{
+			name:       "large integer beyond float64 53-bit mantissa",
+			amount:     "9007199254740993", // 2^53 + 1, not exactly representable as float64
+			decimal:    ".",
+			multiplier: 1,
+			want:       9007199254740993,
+		},
+		{
+			name:       "large amount with cents beyond float64 precision",
+			amount:     "123456789012345.67",
+			decimal:    ".",
+			multiplier: 100,
+			want:       12345678901234567,
+		},
+		{
+			name:       "ordinary cents rounding",
+			amount:     "19.995",
+			decimal:    ".",
+			multiplier: 100,
+			want:       2000, // rounds half away from zero
+		},
+		{
+			name:       "negative with parentheses-stripped sign",
+			amount:     "-1234.56",
+			decimal:    ".",
+			multiplier: 100,
+			want:       -123456,
+		},
+		{
+			name:       "thousands separator removed",
+			amount:     "1,234,567.89",
+			decimal:    ".",
+			thousands:  ",",
+			multiplier: 100,
+			want:       123456789,
+		},
+		{
+			// fracVal*multiplier (999999999999999999 * 100 ≈ 1e20) overflows int64
+			// (~9.22e18) if computed with plain int64 multiplication. The fix uses
+			// math/bits 128-bit multiply/divide so this rounds correctly instead of
+			// silently wrapping to a wrong (and wrong-signed) amount.
+			name:       "18 fractional digits does not overflow int64 multiply",
+			amount:     "0.999999999999999999",
+			decimal:    ".",
+			multiplier: 100,
+			want:       100, // rounds up to 1.00 in minor units
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseAmount(tc.amount, tc.decimal, tc.thousands, tc.multiplier)
+			if err != nil {
+				t.Fatalf("parseAmount(%q) error: %v", tc.amount, err)
+			}
+			if got != tc.want {
+				t.Errorf("parseAmount(%q) = %d, want %d", tc.amount, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseCSVEach_DirtyDataErrors(t *testing.T) {
 	tests := []struct {
 		name    string

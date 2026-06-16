@@ -32,6 +32,26 @@ sources:
       name_col: "Description"
       ref_col: "Reference"
 
+  paypal:
+    file_pattern: "data/paypal/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      tz: "UTC"
+      amount_col: "Amount"
+      decimal: "."
+      thousands: ","
+      multiplier: 100
+      currency_col: "Currency"
+      name_col: "Description"
+      # ref_col is the matching key (e.g. a unique transaction id). group_col is
+      # an optional separate grouping key for duplicate detection only — useful
+      # when several rows (e.g. installments) share an invoice number but each
+      # has its own unique reference. Falls back to ref_col when omitted.
+      ref_col: "Reference"
+      group_col: "InvoiceNumber"
+
 pairs:
   bank_vs_stripe:
     left: bank
@@ -39,3 +59,18 @@ pairs:
     date_window: "1d"
     amount_tolerance_minor: 0
     name_mode: "tokens"
+    # name_match_threshold is the minimum Jaccard token-overlap score (0 < x < 1)
+    # a candidate must exceed for a name_mode=tokens match. Optional; defaults
+    # to 0.5. 1.0 is rejected — the comparison is strict and a score never
+    # exceeds 1.0, so that value would never match anything.
+    name_match_threshold: 0.5
+
+  # 1-N source example: reconcile bank against several counterparts in order.
+  # Unmatched left transactions from one pass feed into the next — bank rows
+  # not found in stripe are then checked against paypal. rights and right are
+  # mutually exclusive; use rights for more than one counterpart.
+  bank_vs_multiple:
+    left: bank
+    rights: [stripe, paypal]
+    date_window: "1d"
+    amount_tolerance_minor: 0
