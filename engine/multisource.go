@@ -140,11 +140,11 @@ func ReconcileStreamingMultiSource(
 	names := make([]string, 0, len(counterparts))
 
 	var (
-		totalLeft, totalRight                                                int
-		matchedCount, amountDiffCount, timingDiffCount, unmatchedRightCount  int
-		matchedAmtLeft, matchedAmtRight, unmatchedAmtRight, amountDiffTotal  int64
-		dupTxnCount                                                          int
-		leftover                                                             []Transaction
+		totalLeft, totalRight                                               int
+		matchedCount, amountDiffCount, timingDiffCount, unmatchedRightCount int
+		matchedAmtLeft, matchedAmtRight, unmatchedAmtRight, amountDiffTotal int64
+		dupTxnCount                                                         int
+		leftover                                                            []Transaction
 	)
 
 	for i, cp := range counterparts {

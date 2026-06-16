@@ -30,11 +30,20 @@ func TestHashFile_KnownGood(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hashFile error: %v", err)
 	}
-	if got != expected {
-		t.Errorf("hashFile = %q, want %q", got, expected)
+	if got.SHA256 != expected {
+		t.Errorf("hashFile SHA256 = %q, want %q", got.SHA256, expected)
 	}
-	if len(got) != 64 {
-		t.Errorf("hash length = %d, want 64", len(got))
+	if len(got.SHA256) != 64 {
+		t.Errorf("hash length = %d, want 64", len(got.SHA256))
+	}
+	if got.Path != path {
+		t.Errorf("Path = %q, want %q", got.Path, path)
+	}
+	if got.Size != int64(len(content)) {
+		t.Errorf("Size = %d, want %d", got.Size, len(content))
+	}
+	if got.ModTime.IsZero() {
+		t.Error("ModTime is zero")
 	}
 }
 
@@ -57,8 +66,8 @@ func TestHashFile_Empty(t *testing.T) {
 	}
 	// SHA-256 of empty input is well-known
 	empty := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	if got != empty {
-		t.Errorf("hash of empty file = %q, want %q", got, empty)
+	if got.SHA256 != empty {
+		t.Errorf("hash of empty file = %q, want %q", got.SHA256, empty)
 	}
 }
 
@@ -100,6 +109,12 @@ func TestBuildRunInfo_FieldPopulation(t *testing.T) {
 	if len(info.LeftFile.SHA256) != 64 {
 		t.Errorf("LeftFile.SHA256 length = %d, want 64", len(info.LeftFile.SHA256))
 	}
+	if info.LeftFile.Size == 0 {
+		t.Error("LeftFile.Size was not populated")
+	}
+	if info.LeftFile.ModTime.IsZero() {
+		t.Error("LeftFile.ModTime was not populated")
+	}
 	if len(info.RightFile.SHA256) != 64 {
 		t.Errorf("RightFile.SHA256 length = %d, want 64", len(info.RightFile.SHA256))
 	}
@@ -114,6 +129,30 @@ func TestBuildRunInfo_FieldPopulation(t *testing.T) {
 	}
 	if len(info.RunID) != 16 {
 		t.Errorf("RunID length = %d, want 16", len(info.RunID))
+	}
+}
+
+func TestVerifyAuditFiles_DetectsChangedFile(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.csv")
+	rightPath := filepath.Join(dir, "right.csv")
+	if err := os.WriteFile(leftPath, []byte("left\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rightPath, []byte("right\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := BuildRunInfo("v1", leftPath, rightPath, config.Pair{}, time.Now())
+	if err != nil {
+		t.Fatalf("BuildRunInfo error: %v", err)
+	}
+	if err := os.WriteFile(leftPath, []byte("left changed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := VerifyAuditFiles(info); err == nil {
+		t.Fatal("expected audit verification error after changing left file")
 	}
 }
 

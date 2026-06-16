@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"text/tabwriter"
 	"time"
@@ -23,8 +22,8 @@ func newParseCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "parse",
-		Short: "Parse a CSV file according to source configuration",
-		Long: `Parse a CSV file using a configured source parser.
+		Short: "Parse an input file according to source configuration",
+		Long: `Parse a CSV, JSON, or XLSX input file using a configured source parser.
 Streams parsed transactions to stdout in the requested format.
 
 Formats:
@@ -56,15 +55,10 @@ Formats:
 				return fmt.Errorf("source %q not found in config (available: %v)", sourceName, sourceNames(cfg.Sources))
 			}
 
-			// Resolve file: use --file directly, or fall back to source glob pattern
-			resolvedPath := filePath
-			if _, statErr := os.Stat(resolvedPath); os.IsNotExist(statErr) {
-				matches, globErr := filepath.Glob(source.FilePattern)
-				if globErr != nil || len(matches) == 0 {
-					return fmt.Errorf("file %q not found", filePath)
-				}
-				resolvedPath = matches[0]
+			if _, err := os.Stat(filePath); err != nil {
+				return fmt.Errorf("file %q not found", filePath)
 			}
+			resolvedPath := filePath
 
 			switch format {
 			case "json":
@@ -82,17 +76,17 @@ Formats:
 	}
 
 	cmd.Flags().StringVar(&sourceName, "source", "", "Source name to use for parsing (required)")
-	cmd.Flags().StringVar(&filePath, "file", "", "CSV file path to parse (required)")
+	cmd.Flags().StringVar(&filePath, "file", "", "Input file path to parse (required)")
 	cmd.Flags().StringVar(&format, "format", "ndjson", `Output format: ndjson (default), csv, table, json`)
 
 	return cmd
 }
 
 // parseNDJSON streams transactions as NDJSON (one JSON object per line).
-func parseNDJSON(sourceName, filePath string, parserCfg config.CSVParserCfg, cmd *cobra.Command) error {
+func parseNDJSON(sourceName, filePath string, parserCfg config.ParserCfg, cmd *cobra.Command) error {
 	enc := json.NewEncoder(os.Stdout)
 	count := 0
-	err := engine.ParseCSVEach(context.Background(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
+	err := engine.ParseEach(context.Background(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
 		count++
 		return enc.Encode(tx)
 	})
@@ -104,8 +98,8 @@ func parseNDJSON(sourceName, filePath string, parserCfg config.CSVParserCfg, cmd
 }
 
 // parseJSON loads all transactions and writes a JSON array.
-func parseJSON(sourceName, filePath string, parserCfg config.CSVParserCfg, cmd *cobra.Command) error {
-	txns, err := engine.ParseCSV(sourceName, filePath, parserCfg)
+func parseJSON(sourceName, filePath string, parserCfg config.ParserCfg, cmd *cobra.Command) error {
+	txns, err := engine.Parse(sourceName, filePath, parserCfg)
 	if err != nil {
 		return fmt.Errorf("parse failed: %w", err)
 	}
@@ -121,21 +115,21 @@ func parseJSON(sourceName, filePath string, parserCfg config.CSVParserCfg, cmd *
 var txCSVHeader = []string{"id", "date", "amount_minor", "currency", "reference", "name", "source"}
 
 // parseCSVOut streams transactions as CSV rows.
-func parseCSVOut(sourceName, filePath string, parserCfg config.CSVParserCfg, cmd *cobra.Command) error {
+func parseCSVOut(sourceName, filePath string, parserCfg config.ParserCfg, cmd *cobra.Command) error {
 	w := csv.NewWriter(os.Stdout)
 	if err := w.Write(txCSVHeader); err != nil {
 		return err
 	}
 	count := 0
-	err := engine.ParseCSVEach(context.Background(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
+	err := engine.ParseEach(context.Background(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
 		count++
 		return w.Write([]string{
 			tx.ID,
 			tx.Date.Format(time.RFC3339),
 			strconv.FormatInt(tx.Amount, 10),
-			tx.Currency,
-			tx.Reference,
-			tx.Name,
+			engine.SanitizeCSVField(tx.Currency),
+			engine.SanitizeCSVField(tx.Reference),
+			engine.SanitizeCSVField(tx.Name),
 			tx.Source,
 		})
 	})
@@ -151,9 +145,9 @@ func parseCSVOut(sourceName, filePath string, parserCfg config.CSVParserCfg, cmd
 }
 
 // parseTable buffers all transactions and renders an ASCII table.
-func parseTable(sourceName, filePath string, parserCfg config.CSVParserCfg, cmd *cobra.Command) error {
+func parseTable(sourceName, filePath string, parserCfg config.ParserCfg, cmd *cobra.Command) error {
 	var txns []engine.Transaction
-	err := engine.ParseCSVEach(context.Background(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
+	err := engine.ParseEach(context.Background(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
 		txns = append(txns, tx)
 		return nil
 	})

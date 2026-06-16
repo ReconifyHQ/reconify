@@ -112,10 +112,12 @@ type RunInfo struct {
 	PairConfig  PairConfigSnap `json:"pair_config"`
 }
 
-// FileInfo holds the resolved path and SHA-256 digest of an input file.
+// FileInfo holds the resolved path, SHA-256 digest, and stat metadata of an input file.
 type FileInfo struct {
-	Path   string `json:"path"`
-	SHA256 string `json:"sha256"` // lowercase hex, 64 characters
+	Path    string    `json:"path"`
+	SHA256  string    `json:"sha256"` // lowercase hex, 64 characters
+	Size    int64     `json:"size_bytes"`
+	ModTime time.Time `json:"mod_time"`
 }
 
 // PairConfigSnap is a read-only snapshot of the pair's matching rules as they were

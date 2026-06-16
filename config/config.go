@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -20,12 +21,12 @@ type Config struct {
 
 // Source defines a data source configuration
 type Source struct {
-	FilePattern string       `yaml:"file_pattern"`
-	Parser      CSVParserCfg `yaml:"parser"`
+	FilePattern string    `yaml:"file_pattern"`
+	Parser      ParserCfg `yaml:"parser"`
 }
 
-// CSVParserCfg defines CSV parsing configuration
-type CSVParserCfg struct {
+// ParserCfg defines source parsing configuration for CSV, JSON, and XLSX files.
+type ParserCfg struct {
 	Type        string `yaml:"type"`
 	DateCol     string `yaml:"date_col"`
 	DateLayout  string `yaml:"date_layout"`
@@ -42,11 +43,15 @@ type CSVParserCfg struct {
 	// (e.g. an invoice number shared by several installment payments that each
 	// have a unique RefCol value). Falls back to RefCol when empty.
 	GroupCol string `yaml:"group_col,omitempty"`
+	Sheet    string `yaml:"sheet,omitempty"`
 	// SkipRaw skips the per-row Raw map[string]string allocation.
 	// Set to true for large files to reduce allocator pressure.
 	// Default false preserves the Raw field on every Transaction.
 	SkipRaw bool `yaml:"skip_raw,omitempty"`
 }
+
+// CSVParserCfg is kept as an alias for existing Go callers.
+type CSVParserCfg = ParserCfg
 
 // Pair defines a reconciliation pair configuration
 type Pair struct {
@@ -161,8 +166,10 @@ func validateSource(name string, source Source) []error {
 	}
 
 	parser := source.Parser
-	if parser.Type != "csv" {
-		errs = append(errs, fmt.Errorf("sources.%s.parser.type: must be 'csv' (got %q)", name, parser.Type))
+	switch strings.ToLower(strings.TrimSpace(parser.Type)) {
+	case "", "auto", "csv", "json", "xlsx":
+	default:
+		errs = append(errs, fmt.Errorf("sources.%s.parser.type: must be one of [csv, json, xlsx, auto] (got %q)", name, parser.Type))
 	}
 
 	if parser.DateCol == "" {
@@ -238,6 +245,8 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 			errs = append(errs, fmt.Errorf("pairs.%s.date_window: invalid format (expected format like '1d', '2d'): %v", name, err))
 		} else if unit != "d" && unit != "D" {
 			errs = append(errs, fmt.Errorf("pairs.%s.date_window: unit must be 'd' or 'D' (got %q)", name, unit))
+		} else if days < 0 {
+			errs = append(errs, fmt.Errorf("pairs.%s.date_window: must be >= 0d (got %q)", name, pair.DateWindow))
 		}
 	}
 
@@ -281,6 +290,9 @@ func validateIndex(index IndexCfg) []error {
 	}
 	if index.AutoMaxRightFileMB < 0 {
 		errs = append(errs, fmt.Errorf("index.auto_max_right_file_mb: must be >= 0 (got %d)", index.AutoMaxRightFileMB))
+	}
+	if index.SpillDir != "" && strings.Contains(index.SpillDir, "..") {
+		errs = append(errs, fmt.Errorf("index.spill_dir: must not contain '..' (got %q)", index.SpillDir))
 	}
 	return errs
 }
