@@ -13,6 +13,10 @@ type Transaction struct {
 	Name      string            `json:"name"`
 	Source    string            `json:"source"` // source name from config
 	Raw       map[string]string `json:"raw,omitempty"`
+	// GroupKey is the duplicate-detection grouping key, independent of Reference
+	// (the matching key). Populated from the parser's group_col, falling back to
+	// Reference when group_col is not configured.
+	GroupKey string `json:"group_key,omitempty"`
 }
 
 // MatchedPair is a left+right pair that reconciled cleanly.
@@ -52,8 +56,12 @@ type Summary struct {
 	UnmatchedRight  int     `json:"unmatched_right"`
 	AmountDiffCount int     `json:"amount_diff_count"`
 	TimingDiffCount int     `json:"timing_diff_count"`
-	DuplicateCount  int     `json:"duplicate_count"`
+	DuplicateCount  int     `json:"duplicate_count"` // total transactions across all duplicate groups, not group count
 	MatchRatePct    float64 `json:"match_rate_pct"`
+	// ReconciledRatePct is (matched + amount_diff + timing_diff) / total. MatchRatePct
+	// only counts exact matches, so a run that is 100% reconciled but entirely within
+	// AmountDiff/TimingDiff tolerance still reports MatchRatePct=0; use this field instead.
+	ReconciledRatePct float64 `json:"reconciled_rate_pct"`
 
 	// Monetary totals (all values in minor units, e.g. cents).
 	// These are always populated regardless of --audit mode.
@@ -78,6 +86,14 @@ type Result struct {
 	AmountDiff     []AmountDiffPair `json:"amount_diff"`
 	TimingDiff     []TimingDiffPair `json:"timing_diff"`
 	Duplicates     []DuplicateGroup `json:"duplicates"`
+	// Warnings are non-fatal observations about the run (e.g. empty-currency rows
+	// mixed with a non-empty base currency). They never affect matching or totals.
+	Warnings []string `json:"warnings,omitempty"`
+	// BySource gives a per-counterpart breakdown for 1-N source runs (see
+	// ReconcileMultiSource), keyed by counterpart source name. Nil/empty for
+	// ordinary single-counterpart runs. Summary above remains the aggregate
+	// across all counterparts so single-number consumers are unaffected.
+	BySource map[string]Summary `json:"by_source,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

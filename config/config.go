@@ -38,7 +38,12 @@ type ParserCfg struct {
 	CurrencyCol string `yaml:"currency_col,omitempty"`
 	NameCol     string `yaml:"name_col,omitempty"`
 	RefCol      string `yaml:"ref_col,omitempty"`
-	Sheet       string `yaml:"sheet,omitempty"`
+	// GroupCol is the duplicate/grouping key column. It is independent of RefCol:
+	// RefCol is the matching key, GroupCol is the key used to detect duplicates
+	// (e.g. an invoice number shared by several installment payments that each
+	// have a unique RefCol value). Falls back to RefCol when empty.
+	GroupCol string `yaml:"group_col,omitempty"`
+	Sheet    string `yaml:"sheet,omitempty"`
 	// SkipRaw skips the per-row Raw map[string]string allocation.
 	// Set to true for large files to reduce allocator pressure.
 	// Default false preserves the Raw field on every Transaction.
@@ -55,6 +60,31 @@ type Pair struct {
 	DateWindow           string `yaml:"date_window"`
 	AmountToleranceMinor int64  `yaml:"amount_tolerance_minor"`
 	NameMode             string `yaml:"name_mode"`
+	// NameMatchThreshold is the minimum Jaccard token-overlap score (0 < x < 1)
+	// a candidate must exceed (strictly) for a name_mode=tokens match. Defaults
+	// to 0.5 when unset. 1.0 is rejected by validation: since the comparison is
+	// strict (score > threshold) and a Jaccard score never exceeds 1.0, a
+	// threshold of exactly 1.0 would silently match nothing.
+	NameMatchThreshold float64 `yaml:"name_match_threshold,omitempty"`
+	// Rights lists multiple counterpart sources reconciled against Left in order:
+	// unmatched left transactions from one pass feed into the next. Mutually
+	// exclusive with Right — set exactly one of the two. Use Counterparts() to
+	// read the resolved list regardless of which field was set.
+	Rights []string `yaml:"rights,omitempty"`
+}
+
+// Counterparts returns the ordered list of counterpart source names for this pair,
+// regardless of whether Right or Rights was configured. Single-counterpart configs
+// (Right set, Rights empty) return a one-element slice — callers should treat that
+// as equivalent to today's behavior.
+func (p Pair) Counterparts() []string {
+	if len(p.Rights) > 0 {
+		return p.Rights
+	}
+	if p.Right != "" {
+		return []string{p.Right}
+	}
+	return nil
 }
 
 // IndexCfg controls which right-side index backend ReconcileStreaming uses.
@@ -188,14 +218,23 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 		errs = append(errs, fmt.Errorf("pairs.%s.left: unknown source %q (available: %v)", name, pair.Left, getSourceNames(sources)))
 	}
 
-	if pair.Right == "" {
-		errs = append(errs, fmt.Errorf("pairs.%s.right: required field is missing", name))
-	} else if _, exists := sources[pair.Right]; !exists {
-		errs = append(errs, fmt.Errorf("pairs.%s.right: unknown source %q (available: %v)", name, pair.Right, getSourceNames(sources)))
+	if pair.Right != "" && len(pair.Rights) > 0 {
+		errs = append(errs, fmt.Errorf("pairs.%s: right and rights are mutually exclusive — set exactly one", name))
+	} else if pair.Right == "" && len(pair.Rights) == 0 {
+		errs = append(errs, fmt.Errorf("pairs.%s: one of right or rights is required", name))
 	}
 
-	if pair.Left == pair.Right {
-		errs = append(errs, fmt.Errorf("pairs.%s: left and right cannot be the same source", name))
+	for _, counterpart := range pair.Counterparts() {
+		if counterpart == "" {
+			errs = append(errs, fmt.Errorf("pairs.%s.rights: entries cannot be empty", name))
+			continue
+		}
+		if _, exists := sources[counterpart]; !exists {
+			errs = append(errs, fmt.Errorf("pairs.%s: unknown source %q (available: %v)", name, counterpart, getSourceNames(sources)))
+		}
+		if counterpart == pair.Left {
+			errs = append(errs, fmt.Errorf("pairs.%s: left and right cannot be the same source", name))
+		}
 	}
 
 	// Validate date_window format (e.g., "1d", "2d", "7d")
@@ -223,6 +262,13 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 	}
 	if pair.NameMode != "" && !allowedNameModes[pair.NameMode] {
 		errs = append(errs, fmt.Errorf("pairs.%s.name_mode: must be one of [none, tokens] (got %q)", name, pair.NameMode))
+	}
+
+	// Validate name_match_threshold. 1.0 is rejected, not just >1: the match
+	// comparison is strict (score > threshold) and a Jaccard score never exceeds
+	// 1.0, so a threshold of exactly 1.0 would be silently unreachable.
+	if pair.NameMatchThreshold != 0 && (pair.NameMatchThreshold <= 0 || pair.NameMatchThreshold >= 1) {
+		errs = append(errs, fmt.Errorf("pairs.%s.name_match_threshold: must be > 0 and < 1 (got %v)", name, pair.NameMatchThreshold))
 	}
 
 	return errs

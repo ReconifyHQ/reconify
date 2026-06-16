@@ -475,3 +475,228 @@ func TestReconcile_MonetaryTotals_EmptyInputs(t *testing.T) {
 		t.Errorf("expected all monetary totals to be 0 for empty inputs, got %+v", s)
 	}
 }
+
+// makeTxGroup is like makeTx but also sets GroupKey, for duplicate-annotation tests.
+func makeTxGroup(id string, amount int64, ref, group string) Transaction {
+	tx := makeTx(id, amount, ref)
+	tx.GroupKey = group
+	return tx
+}
+
+// TestReconcile_DuplicatesAreNonGating reproduces the installment scenario: three
+// rows share a GroupKey (invoice number) but have distinct References (transaction
+// IDs) and amounts. All three must match normally AND be reported once as a
+// duplicate group — never one or the other.
+func TestReconcile_DuplicatesAreNonGating(t *testing.T) {
+	left := []Transaction{
+		makeTxGroup("l1", 100, "REF-1", "INV-1"),
+		makeTxGroup("l2", 200, "REF-2", "INV-1"),
+		makeTxGroup("l3", 300, "REF-3", "INV-1"),
+	}
+	right := []Transaction{
+		makeTxGroup("r1", 100, "REF-1", "INV-1"),
+		makeTxGroup("r2", 200, "REF-2", "INV-1"),
+		makeTxGroup("r3", 300, "REF-3", "INV-1"),
+	}
+	pair := config.Pair{DateWindow: "0d", AmountToleranceMinor: 0}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(res.Matched) != 3 {
+		t.Fatalf("Matched = %d, want 3 (all installments should match)", len(res.Matched))
+	}
+	if len(res.UnmatchedLeft) != 0 || len(res.UnmatchedRight) != 0 {
+		t.Fatalf("expected no unmatched rows, got left=%d right=%d", len(res.UnmatchedLeft), len(res.UnmatchedRight))
+	}
+
+	// Duplicate annotation runs once per side, so we expect two groups (left + right),
+	// each with all 3 transactions for GroupKey INV-1.
+	if len(res.Duplicates) != 2 {
+		t.Fatalf("Duplicates groups = %d, want 2 (one per side)", len(res.Duplicates))
+	}
+	for _, g := range res.Duplicates {
+		if g.Reference != "INV-1" {
+			t.Errorf("duplicate group key = %q, want INV-1", g.Reference)
+		}
+		if len(g.Transactions) != 3 {
+			t.Errorf("duplicate group size = %d, want 3", len(g.Transactions))
+		}
+	}
+
+	// A3: DuplicateCount counts transactions, not groups (2 groups but 6 transactions).
+	if res.Summary.DuplicateCount != 6 {
+		t.Errorf("DuplicateCount = %d, want 6 (transaction count, not group count)", res.Summary.DuplicateCount)
+	}
+}
+
+// TestReconcile_BestCandidateNotFirstCandidate reproduces the scenario where a
+// worse candidate appears before a better one in the right-side slice for the same
+// reference: the exact match must win even though the amount-diff candidate comes first.
+func TestReconcile_BestCandidateNotFirstCandidate(t *testing.T) {
+	left := []Transaction{makeTx("l1", 100, "REF-1")}
+	right := []Transaction{
+		makeTx("r-diff", 150, "REF-1"),  // amount-diff candidate, listed first
+		makeTx("r-exact", 100, "REF-1"), // exact candidate, listed second
+	}
+	pair := config.Pair{DateWindow: "0d", AmountToleranceMinor: 0}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(res.AmountDiff) != 0 {
+		t.Fatalf("AmountDiff = %d, want 0 (exact match should have been preferred)", len(res.AmountDiff))
+	}
+	if len(res.Matched) != 1 {
+		t.Fatalf("Matched = %d, want 1", len(res.Matched))
+	}
+	if res.Matched[0].Right.ID != "r-exact" {
+		t.Errorf("matched right ID = %q, want %q", res.Matched[0].Right.ID, "r-exact")
+	}
+	if len(res.UnmatchedRight) != 1 || res.UnmatchedRight[0].ID != "r-diff" {
+		t.Fatalf("expected r-diff to remain unmatched, got %+v", res.UnmatchedRight)
+	}
+}
+
+// TestReconcileStreaming_BestCandidateNotFirstCandidate is the streaming-path
+// equivalent of TestReconcile_BestCandidateNotFirstCandidate — the same two-pass
+// best-candidate selection must apply in ReconcileStreaming's matching loop.
+func TestReconcileStreaming_BestCandidateNotFirstCandidate(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.csv")
+	rightPath := filepath.Join(dir, "right.csv")
+
+	leftCSV := "id,date,amount,currency,reference,name\n" +
+		"l1,2024-01-01,1.00,USD,REF-1,Left\n"
+	rightCSV := "id,date,amount,currency,reference,name\n" +
+		"r-diff,2024-01-01,1.50,USD,REF-1,Diff\n" +
+		"r-exact,2024-01-01,1.00,USD,REF-1,Exact\n"
+
+	if err := os.WriteFile(leftPath, []byte(leftCSV), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rightPath, []byte(rightCSV), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	parserCfg := config.CSVParserCfg{
+		Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount",
+		Decimal: ".", Multiplier: 100, CurrencyCol: "currency", RefCol: "reference", NameCol: "name",
+	}
+	pair := config.Pair{DateWindow: "0d", AmountToleranceMinor: 0}
+
+	var out bytes.Buffer
+	w := newJSONWriter(&out)
+	w.SetMeta("p", "left", "right")
+	idx := NewMemoryIndex()
+	defer idx.Close()
+
+	if err := ReconcileStreaming(
+		context.Background(), "p", "left", "right", leftPath, rightPath,
+		parserCfg, parserCfg, pair, idx, w, 0,
+	); err != nil {
+		t.Fatalf("ReconcileStreaming error: %v", err)
+	}
+
+	var res Result
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if len(res.AmountDiff) != 0 {
+		t.Fatalf("AmountDiff = %d, want 0 (exact match should have been preferred)", len(res.AmountDiff))
+	}
+	if len(res.Matched) != 1 || res.Matched[0].Right.Name != "Exact" {
+		t.Fatalf("expected exact match against the 'Exact' row, got %+v", res.Matched)
+	}
+}
+
+// TestReconcile_ReconciledRatePct verifies the additive ReconciledRatePct field
+// counts AmountDiff/TimingDiff outcomes alongside exact matches, while MatchRatePct
+// (exact matches only) is unaffected.
+func TestReconcile_ReconciledRatePct(t *testing.T) {
+	left := []Transaction{
+		makeTx("l1", 100, "REF-1"),
+		makeTx("l2", 200, "REF-2"),
+	}
+	right := []Transaction{
+		makeTx("r1", 150, "REF-1"), // amount diff (within no tolerance -> diff)
+		makeTx("r2", 200, "REF-2"), // exact match
+	}
+	pair := config.Pair{DateWindow: "0d", AmountToleranceMinor: 0}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.Summary.MatchRatePct != 50 {
+		t.Errorf("MatchRatePct = %v, want 50 (only the exact match counts)", res.Summary.MatchRatePct)
+	}
+	if res.Summary.ReconciledRatePct != 100 {
+		t.Errorf("ReconciledRatePct = %v, want 100 (match + amount_diff)", res.Summary.ReconciledRatePct)
+	}
+}
+
+// TestReconcile_NameMatchThreshold verifies that the configured threshold (rather
+// than a hardcoded 0.5) governs whether a token-mode candidate counts as a match.
+func TestReconcile_NameMatchThreshold(t *testing.T) {
+	// "Acme Corp Payment" vs "Acme Corp Invoice" share 2 of 4 total unique tokens
+	// (acme, corp) -> Jaccard = 2/4 = 0.5. With the default threshold (>0.5),
+	// this does not match. With a lower configured threshold, it does.
+	left := []Transaction{{
+		ID: "l1", Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 100, Currency: "USD", Name: "Acme Corp Payment", Source: "test",
+	}}
+	right := []Transaction{{
+		ID: "r1", Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 100, Currency: "USD", Name: "Acme Corp Invoice", Source: "test",
+	}}
+
+	strict := config.Pair{DateWindow: "0d", AmountToleranceMinor: 0, NameMode: "tokens"}
+	res, err := Reconcile("p", "left", "right", left, right, strict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 0 {
+		t.Fatalf("default threshold: Matched = %d, want 0 (score 0.5 is not > 0.5)", len(res.Matched))
+	}
+
+	lenient := config.Pair{DateWindow: "0d", AmountToleranceMinor: 0, NameMode: "tokens", NameMatchThreshold: 0.4}
+	res, err = Reconcile("p", "left", "right", left, right, lenient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 {
+		t.Fatalf("lenient threshold: Matched = %d, want 1 (score 0.5 > 0.4)", len(res.Matched))
+	}
+}
+
+// TestReconcile_EmptyCurrencyWarning verifies that rows with an empty currency,
+// mixed with a non-empty base currency, are still included in monetary totals
+// (no behavior change) but surface a warning rather than being silently absorbed.
+func TestReconcile_EmptyCurrencyWarning(t *testing.T) {
+	left := []Transaction{makeTx("l1", 100, "REF-1")}
+	right := []Transaction{makeTx("r1", 100, "REF-1")}
+	right[0].Currency = "" // empty currency mixed with left's USD
+
+	pair := config.Pair{DateWindow: "0d", AmountToleranceMinor: 0}
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Behavior unchanged: the empty-currency row still counts toward totals.
+	if res.Summary.MatchedAmountRight != 100 {
+		t.Errorf("MatchedAmountRight = %d, want 100 (empty currency rows still count)", res.Summary.MatchedAmountRight)
+	}
+	if len(res.Warnings) == 0 {
+		t.Fatal("expected a warning about the empty-currency row, got none")
+	}
+	if !strings.Contains(res.Warnings[0], "empty currency") {
+		t.Errorf("warning = %q, want it to mention empty currency", res.Warnings[0])
+	}
+}

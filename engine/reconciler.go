@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -37,37 +38,60 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 		RightSource: rightSource,
 	}
 
-	// 1. Detect duplicates within each source
-	leftDups, leftDeduped := detectDuplicates(left)
-	rightDups, rightDeduped := detectDuplicates(right)
-	result.Duplicates = append(result.Duplicates, leftDups...)
-	result.Duplicates = append(result.Duplicates, rightDups...)
+	threshold := resolveNameMatchThreshold(pair.NameMatchThreshold)
 
-	// 2. Match by reference
+	// 1. Match by reference. Duplicates (same GroupKey) participate in matching
+	// normally — see annotateDuplicates below for the read-only report.
 	unmatchedLeft, unmatchedRight := matchByReference(
 		result,
-		leftDeduped,
-		rightDeduped,
+		left,
+		right,
 		pair.AmountToleranceMinor,
 		dateWindowDays,
 	)
 
-	// 3. Optional name-token matching for remaining unmatched
+	// 2. Optional name-token matching for remaining unmatched
 	if pair.NameMode == "tokens" {
-		unmatchedLeft, unmatchedRight = matchByNameTokens(result, unmatchedLeft, unmatchedRight, pair.AmountToleranceMinor, dateWindowDays)
+		unmatchedLeft, unmatchedRight = matchByNameTokens(result, unmatchedLeft, unmatchedRight, pair.AmountToleranceMinor, dateWindowDays, threshold)
 	}
 
 	result.UnmatchedLeft = unmatchedLeft
 	result.UnmatchedRight = unmatchedRight
+	result.Warnings = cc.Warnings()
+
+	// 3. Duplicate annotation — a read-only report keyed on GroupKey. It never
+	// changes which transactions matched above.
+	result.Duplicates = append(result.Duplicates, annotateDuplicates(left)...)
+	result.Duplicates = append(result.Duplicates, annotateDuplicates(right)...)
 
 	// 4. Populate summary
-	total := len(left)
-	if len(right) > total {
-		total = len(right)
+	result.Summary = buildSummary(len(left), len(right), result)
+
+	return result, nil
+}
+
+// buildSummary computes aggregate counts, rates, and monetary totals from a fully
+// populated Result (Matched/UnmatchedLeft/UnmatchedRight/AmountDiff/TimingDiff/
+// Duplicates already set). totalLeft/totalRight are the original input row counts —
+// callers that aggregate multiple passes (ReconcileMultiSource) pass the true
+// original totals here, not a sum of intermediate per-pass unmatched counts.
+func buildSummary(totalLeft, totalRight int, result *Result) Summary {
+	total := totalLeft
+	if totalRight > total {
+		total = totalRight
 	}
 	matchRate := 0.0
 	if total > 0 {
 		matchRate = math.Round(float64(len(result.Matched))/float64(total)*10000) / 100
+	}
+	reconciledCount := len(result.Matched) + len(result.AmountDiff) + len(result.TimingDiff)
+	reconciledRate := 0.0
+	if total > 0 {
+		reconciledRate = math.Round(float64(reconciledCount)/float64(total)*10000) / 100
+	}
+	dupTxnCount := 0
+	for _, g := range result.Duplicates {
+		dupTxnCount += len(g.Transactions)
 	}
 
 	// Compute monetary totals from accumulated result slices.
@@ -93,16 +117,17 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 		amountDiffTotal += d
 	}
 
-	result.Summary = Summary{
-		TotalLeft:            len(left),
-		TotalRight:           len(right),
+	return Summary{
+		TotalLeft:            totalLeft,
+		TotalRight:           totalRight,
 		MatchedCount:         len(result.Matched),
 		UnmatchedLeft:        len(result.UnmatchedLeft),
 		UnmatchedRight:       len(result.UnmatchedRight),
 		AmountDiffCount:      len(result.AmountDiff),
 		TimingDiffCount:      len(result.TimingDiff),
-		DuplicateCount:       len(result.Duplicates),
+		DuplicateCount:       dupTxnCount,
 		MatchRatePct:         matchRate,
+		ReconciledRatePct:    reconciledRate,
 		MatchedAmountLeft:    matchedAmtLeft,
 		MatchedAmountRight:   matchedAmtRight,
 		UnmatchedAmountLeft:  unmatchedAmtLeft,
@@ -110,8 +135,6 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 		AmountDiffTotal:      amountDiffTotal,
 		TotalDiscrepancy:     unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal,
 	}
-
-	return result, nil
 }
 
 // ReconcileStreaming is the canonical streaming reconciliation function.
@@ -222,12 +245,14 @@ func reconcileStreaming(
 	rightCfgNoRaw := rightCfg
 	rightCfgNoRaw.SkipRaw = true
 
-	// Lightweight right-side duplicate detection.
-	// rightSeen tracks occurrence count per reference, capped at 2 (saturating).
-	// rightDupRefs collects references that appeared ≥ 2 times; the full
+	// Lightweight right-side duplicate detection, keyed on GroupKey (defaults to
+	// Reference when group_col is not configured). This is a read-only annotation —
+	// it never gates which transactions reach the index/matching below.
+	// rightSeen tracks occurrence count per group key, capped at 2 (saturating).
+	// rightDupKeys collects group keys that appeared ≥ 2 times; the full
 	// Transaction set is retrieved via a targeted re-scan after this pass.
 	rightSeen := make(map[string]uint8)
-	rightDupRefs := make(map[string]bool)
+	rightDupKeys := make(map[string]bool)
 	var totalRight int
 
 	if err := ParseEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
@@ -239,14 +264,13 @@ func reconcileStreaming(
 			progress(ProgressEvent{Phase: "right_index", Rows: totalRight, Elapsed: time.Since(startRight)})
 			nextRight += progressEvery
 		}
-		if tx.Reference == "" {
-			return idx.Add(tx)
-		}
-		if rightSeen[tx.Reference] < 2 {
-			rightSeen[tx.Reference]++
-		}
-		if rightSeen[tx.Reference] == 2 {
-			rightDupRefs[tx.Reference] = true
+		if tx.GroupKey != "" {
+			if rightSeen[tx.GroupKey] < 2 {
+				rightSeen[tx.GroupKey]++
+			}
+			if rightSeen[tx.GroupKey] == 2 {
+				rightDupKeys[tx.GroupKey] = true
+			}
 		}
 		return idx.Add(tx)
 	}); err != nil {
@@ -264,12 +288,14 @@ func reconcileStreaming(
 	// Emit right duplicate groups via targeted re-scan of the right file.
 	// collectDuplicates is only called when duplicates actually exist;
 	// for datasets with no duplicates this is a no-op.
-	if len(rightDupRefs) > 0 {
-		groups, err := collectDuplicates(ctx, rightSource, rightPath, rightCfg, rightDupRefs)
+	dupTxnCount := 0
+	if len(rightDupKeys) > 0 {
+		groups, err := collectDuplicates(ctx, rightSource, rightPath, rightCfg, rightDupKeys)
 		if err != nil {
 			return fmt.Errorf("collect right duplicates: %w", err)
 		}
 		for _, g := range groups {
+			dupTxnCount += len(g.Transactions)
 			if err := w.WriteDuplicate(g); err != nil {
 				return err
 			}
@@ -280,11 +306,13 @@ func reconcileStreaming(
 	// Pass 2: stream left CSV, match against index, emit events immediately
 	// -----------------------------------------------------------------------
 	startLeft = time.Now()
-	// Lightweight left-side duplicate detection — same saturating-uint8 approach
-	// as the right side. leftFirst/leftDups are replaced by a targeted re-scan
-	// after this pass (collectDuplicates), called only when duplicates exist.
+	// Lightweight left-side duplicate detection, keyed on GroupKey — same
+	// saturating-uint8 approach as the right side. leftFirst/leftDups are
+	// replaced by a targeted re-scan after this pass (collectDuplicates),
+	// called only when duplicates exist.
 	leftSeen := make(map[string]uint8)
-	leftDupRefs := make(map[string]bool)
+	leftDupKeys := make(map[string]bool)
+	threshold := resolveNameMatchThreshold(pair.NameMatchThreshold)
 
 	var (
 		matchedCount       int
@@ -313,12 +341,12 @@ func reconcileStreaming(
 		}
 
 		// Track left duplicates (count only; full transactions retrieved in third pass)
-		if ltx.Reference != "" {
-			if leftSeen[ltx.Reference] < 2 {
-				leftSeen[ltx.Reference]++
+		if ltx.GroupKey != "" {
+			if leftSeen[ltx.GroupKey] < 2 {
+				leftSeen[ltx.GroupKey]++
 			}
-			if leftSeen[ltx.Reference] == 2 {
-				leftDupRefs[ltx.Reference] = true
+			if leftSeen[ltx.GroupKey] == 2 {
+				leftDupKeys[ltx.GroupKey] = true
 			}
 		}
 
@@ -333,64 +361,51 @@ func reconcileStreaming(
 			return w.WriteUnmatched(ltx, "left")
 		}
 
-		// Attempt reference matching.
-		// Cache left date as Unix nanos once per row — avoids recomputing
-		// it for every right-side bucket candidate.
-		buckets, err := idx.Get(ltx.Reference)
+		// Attempt reference matching via the shared two-pass best-candidate
+		// selection (see decideMatch) — an exact match always wins immediately;
+		// otherwise the best amount-diff or best timing-diff candidate is chosen
+		// by smallest diff, so a worse candidate earlier in the bucket list never
+		// wins over a better one later in it.
+		decision, err := decideMatch(ltx, idx, tolerance, dateWindowDays)
 		if err != nil {
-			return fmt.Errorf("index get reference %q: %w", ltx.Reference, err)
+			return err
 		}
-		ltxDateNano := ltx.Date.UnixNano()
-		for _, b := range buckets {
-			if b.used {
-				continue
-			}
 
-			amtDiff := ltx.Amount - b.amount
-			if amtDiff < 0 {
-				amtDiff = -amtDiff
+		switch decision.outcome {
+		case outcomeExact:
+			if err := idx.MarkUsed(decision.right); err != nil {
+				return fmt.Errorf("mark used: %w", err)
 			}
-			daysDiff := daysBetweenNano(ltxDateNano, b.dateUnix)
-			amtOk := amtDiff <= tolerance
-			dateOk := dateWindowDays == 0 || daysDiff <= dateWindowDays
-
-			if amtOk && dateOk {
-				if err := idx.MarkUsed(b); err != nil {
-					return fmt.Errorf("mark used: %w", err)
-				}
-				matchedCount++
-				matchedAmtLeft += ltx.Amount
-				matchedAmtRight += b.amount
-				return w.WriteMatch(MatchedPair{Left: ltx, Right: b.toTransaction(ltx.Reference)})
+			matchedCount++
+			matchedAmtLeft += ltx.Amount
+			matchedAmtRight += decision.right.amount
+			return w.WriteMatch(MatchedPair{Left: ltx, Right: decision.right.toTransaction(ltx.Reference)})
+		case outcomeAmountDiff:
+			if err := idx.MarkUsed(decision.right); err != nil {
+				return fmt.Errorf("mark used: %w", err)
 			}
-			if !amtOk && dateOk {
-				if err := idx.MarkUsed(b); err != nil {
-					return fmt.Errorf("mark used: %w", err)
-				}
-				amountDiffCount++
-				diff := ltx.Amount - b.amount
-				if diff < 0 {
-					amountDiffTotal += -diff
-				} else {
-					amountDiffTotal += diff
-				}
-				return w.WriteAmountDiff(AmountDiffPair{
-					Left:      ltx,
-					Right:     b.toTransaction(ltx.Reference),
-					DiffMinor: ltx.Amount - b.amount,
-				})
+			amountDiffCount++
+			diff := decision.amountDiffMinor
+			if diff < 0 {
+				amountDiffTotal += -diff
+			} else {
+				amountDiffTotal += diff
 			}
-			if amtOk && !dateOk {
-				if err := idx.MarkUsed(b); err != nil {
-					return fmt.Errorf("mark used: %w", err)
-				}
-				timingDiffCount++
-				return w.WriteTimingDiff(TimingDiffPair{
-					Left:     ltx,
-					Right:    b.toTransaction(ltx.Reference),
-					DaysDiff: daysDiff,
-				})
+			return w.WriteAmountDiff(AmountDiffPair{
+				Left:      ltx,
+				Right:     decision.right.toTransaction(ltx.Reference),
+				DiffMinor: decision.amountDiffMinor,
+			})
+		case outcomeTimingDiff:
+			if err := idx.MarkUsed(decision.right); err != nil {
+				return fmt.Errorf("mark used: %w", err)
 			}
+			timingDiffCount++
+			return w.WriteTimingDiff(TimingDiffPair{
+				Left:     ltx,
+				Right:    decision.right.toTransaction(ltx.Reference),
+				DaysDiff: decision.daysDiff,
+			})
 		}
 
 		unmatchedLeftCount++
@@ -413,12 +428,13 @@ func reconcileStreaming(
 	}
 
 	// Emit left duplicate groups via targeted re-scan of the left file.
-	if len(leftDupRefs) > 0 {
-		groups, err := collectDuplicates(ctx, leftSource, leftPath, leftCfg, leftDupRefs)
+	if len(leftDupKeys) > 0 {
+		groups, err := collectDuplicates(ctx, leftSource, leftPath, leftCfg, leftDupKeys)
 		if err != nil {
 			return fmt.Errorf("collect left duplicates: %w", err)
 		}
 		for _, g := range groups {
+			dupTxnCount += len(g.Transactions)
 			if err := w.WriteDuplicate(g); err != nil {
 				return err
 			}
@@ -461,7 +477,7 @@ func reconcileStreaming(
 		// Run Jaccard secondary matching on the buffered unmatched transactions.
 		// Returns matched pairs plus the remaining (still unmatched) left/right slices.
 		tokenMatches, remainLeft, remainRight := matchByNameTokensStreaming(
-			tokenUnmatchedLeft, tokenUnmatchedRight, tolerance, dateWindowDays,
+			tokenUnmatchedLeft, tokenUnmatchedRight, tolerance, dateWindowDays, threshold,
 		)
 		for _, mp := range tokenMatches {
 			matchedCount++
@@ -490,7 +506,6 @@ func reconcileStreaming(
 	// -----------------------------------------------------------------------
 	// Summary
 	// -----------------------------------------------------------------------
-	dupCount := len(leftDupRefs) + len(rightDupRefs)
 	total := totalLeft
 	if totalRight > total {
 		total = totalRight
@@ -498,6 +513,15 @@ func reconcileStreaming(
 	matchRate := 0.0
 	if total > 0 {
 		matchRate = math.Round(float64(matchedCount)/float64(total)*10000) / 100
+	}
+	reconciledCount := matchedCount + amountDiffCount + timingDiffCount
+	reconciledRate := 0.0
+	if total > 0 {
+		reconciledRate = math.Round(float64(reconciledCount)/float64(total)*10000) / 100
+	}
+
+	for _, warning := range cc.Warnings() {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
 	}
 
 	if err := w.WriteSummary(Summary{
@@ -508,8 +532,9 @@ func reconcileStreaming(
 		UnmatchedRight:       unmatchedRightCount,
 		AmountDiffCount:      amountDiffCount,
 		TimingDiffCount:      timingDiffCount,
-		DuplicateCount:       dupCount,
+		DuplicateCount:       dupTxnCount,
 		MatchRatePct:         matchRate,
+		ReconciledRatePct:    reconciledRate,
 		MatchedAmountLeft:    matchedAmtLeft,
 		MatchedAmountRight:   matchedAmtRight,
 		UnmatchedAmountLeft:  unmatchedAmtLeft,
@@ -530,6 +555,7 @@ func matchByNameTokensStreaming(
 	left, right []Transaction,
 	tolerance int64,
 	windowDays int,
+	threshold float64,
 ) (matches []MatchedPair, remainLeft, remainRight []Transaction) {
 	usedRight := make(map[string]bool)
 
@@ -561,7 +587,7 @@ func matchByNameTokensStreaming(
 				bestIdx = i
 			}
 		}
-		if bestScore > 0.5 && bestIdx >= 0 {
+		if bestScore > threshold && bestIdx >= 0 {
 			matches = append(matches, MatchedPair{Left: ltx, Right: right[bestIdx]})
 			usedRight[right[bestIdx].ID] = true
 		} else {
@@ -576,35 +602,124 @@ func matchByNameTokensStreaming(
 	return matches, remainLeft, remainRight
 }
 
+// matchOutcome classifies the result of decideMatch.
+type matchOutcome int
+
+const (
+	outcomeUnmatched matchOutcome = iota
+	outcomeExact
+	outcomeAmountDiff
+	outcomeTimingDiff
+)
+
+// matchDecision is the result of matching one left transaction against a
+// RightIndex bucket list. For non-unmatched outcomes, right is the winning
+// bucket — callers must call idx.MarkUsed(right) themselves once they've
+// decided to act on it (decideMatch never mutates the index).
+type matchDecision struct {
+	outcome         matchOutcome
+	right           *bucket
+	amountDiffMinor int64
+	daysDiff        int
+}
+
+// decideMatch runs the two-pass best-candidate selection against ltx.Reference's
+// bucket list in idx: an exact match (amount within tolerance and date within
+// window) always wins immediately. Otherwise the best amount-diff candidate and
+// best timing-diff candidate are tracked by smallest diff, so a worse candidate
+// earlier in the bucket list never wins over a better one later in it. This is
+// the single shared implementation used by both ReconcileStreaming and the
+// multi-source streaming driver — keeping best-candidate selection in one place
+// avoids the two paths drifting apart.
+func decideMatch(ltx Transaction, idx RightIndex, tolerance int64, dateWindowDays int) (matchDecision, error) {
+	if ltx.Reference == "" {
+		return matchDecision{outcome: outcomeUnmatched}, nil
+	}
+	buckets, err := idx.Get(ltx.Reference)
+	if err != nil {
+		return matchDecision{}, fmt.Errorf("index get reference %q: %w", ltx.Reference, err)
+	}
+
+	ltxDateNano := ltx.Date.UnixNano()
+	var exact *bucket
+	var bestAmountDiff *bucket
+	var bestAmountDiffAbs int64
+	var bestTimingDiff *bucket
+	var bestTimingDiffDays int
+
+	for _, b := range buckets {
+		if b.used {
+			continue
+		}
+
+		amtDiff := ltx.Amount - b.amount
+		if amtDiff < 0 {
+			amtDiff = -amtDiff
+		}
+		daysDiff := daysBetweenNano(ltxDateNano, b.dateUnix)
+		amtOk := amtDiff <= tolerance
+		dateOk := dateWindowDays == 0 || daysDiff <= dateWindowDays
+
+		if amtOk && dateOk {
+			exact = b
+			break
+		}
+		if !amtOk && dateOk {
+			if bestAmountDiff == nil || amtDiff < bestAmountDiffAbs {
+				bestAmountDiff = b
+				bestAmountDiffAbs = amtDiff
+			}
+			continue
+		}
+		if amtOk && !dateOk {
+			if bestTimingDiff == nil || daysDiff < bestTimingDiffDays {
+				bestTimingDiff = b
+				bestTimingDiffDays = daysDiff
+			}
+		}
+	}
+
+	switch {
+	case exact != nil:
+		return matchDecision{outcome: outcomeExact, right: exact}, nil
+	case bestAmountDiff != nil:
+		return matchDecision{outcome: outcomeAmountDiff, right: bestAmountDiff, amountDiffMinor: ltx.Amount - bestAmountDiff.amount}, nil
+	case bestTimingDiff != nil:
+		return matchDecision{outcome: outcomeTimingDiff, right: bestTimingDiff, daysDiff: bestTimingDiffDays}, nil
+	default:
+		return matchDecision{outcome: outcomeUnmatched}, nil
+	}
+}
+
 // collectDuplicates re-scans an input file and returns a DuplicateGroup for every
-// reference in dupRefs. It is invoked only when duplicates were detected during
+// group key in dupKeys. It is invoked only when duplicates were detected during
 // the primary pass; for datasets with no duplicates this function is never called.
 //
 // Using the original cfg (not rightCfgNoRaw) preserves the Raw field if the
 // caller has configured SkipRaw = false.
 //
-// Memory: O(n_dup_rows) — only rows whose reference is in dupRefs are retained.
+// Memory: O(n_dup_rows) — only rows whose group key is in dupKeys are retained.
 func collectDuplicates(
 	ctx context.Context,
 	sourceName string,
 	path string,
 	cfg config.ParserCfg,
-	dupRefs map[string]bool,
+	dupKeys map[string]bool,
 ) ([]DuplicateGroup, error) {
-	byRef := make(map[string][]Transaction, len(dupRefs))
+	byKey := make(map[string][]Transaction, len(dupKeys))
 	if err := ParseEach(ctx, sourceName, path, cfg, func(tx Transaction, _ int) error {
-		if dupRefs[tx.Reference] {
-			byRef[tx.Reference] = append(byRef[tx.Reference], tx)
+		if dupKeys[tx.GroupKey] {
+			byKey[tx.GroupKey] = append(byKey[tx.GroupKey], tx)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	groups := make([]DuplicateGroup, 0, len(byRef))
-	for ref, txns := range byRef {
+	groups := make([]DuplicateGroup, 0, len(byKey))
+	for key, txns := range byKey {
 		groups = append(groups, DuplicateGroup{
 			Source:       sourceName,
-			Reference:    ref,
+			Reference:    key,
 			Transactions: txns,
 		})
 	}
@@ -613,13 +728,20 @@ func collectDuplicates(
 
 // currencyTracker validates that all non-empty currency values in a run are the same.
 // This protects monetary summary totals from accidental cross-currency aggregation.
+// Rows with an empty currency are still included in monetary totals (no currency to
+// validate against), but are counted per-source so callers can warn about the mix.
 type currencyTracker struct {
-	base string
+	base       string
+	emptyCount map[string]int
 }
 
 func (c *currencyTracker) Observe(source string, tx Transaction) error {
 	cur := strings.TrimSpace(tx.Currency)
 	if cur == "" {
+		if c.emptyCount == nil {
+			c.emptyCount = make(map[string]int)
+		}
+		c.emptyCount[source]++
 		return nil
 	}
 	if c.base == "" {
@@ -633,6 +755,28 @@ func (c *currencyTracker) Observe(source string, tx Transaction) error {
 		)
 	}
 	return nil
+}
+
+// Warnings returns human-readable warnings for sources that mixed empty-currency
+// rows with a non-empty base currency. Empty-currency rows still count toward
+// monetary totals; this only adds visibility, it never changes validation behavior.
+func (c *currencyTracker) Warnings() []string {
+	if c.base == "" || len(c.emptyCount) == 0 {
+		return nil
+	}
+	sources := make([]string, 0, len(c.emptyCount))
+	for source := range c.emptyCount {
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+	warnings := make([]string, 0, len(sources))
+	for _, source := range sources {
+		warnings = append(warnings, fmt.Sprintf(
+			"source %q: %d row(s) had an empty currency and were included in monetary totals alongside currency %q",
+			source, c.emptyCount[source], c.base,
+		))
+	}
+	return warnings
 }
 
 // matchByReference matches transactions by reference string.
@@ -666,8 +810,18 @@ func matchByReference(
 			continue
 		}
 
-		matched := false
-		for _, rtx := range candidates {
+		// Two-pass best-candidate selection: an exact match always wins immediately.
+		// Otherwise track the best amount-diff and best timing-diff candidates by
+		// smallest diff, so a worse candidate earlier in the list never wins over a
+		// better one later in it.
+		var exact *Transaction
+		var bestAmountDiff *Transaction
+		var bestAmountDiffAbs int64
+		var bestTimingDiff *Transaction
+		var bestTimingDiffDays int
+
+		for i := range candidates {
+			rtx := &candidates[i]
 			if usedRight[rtx.ID] {
 				continue
 			}
@@ -682,31 +836,36 @@ func matchByReference(
 			dateOk := windowDays == 0 || daysDiff <= windowDays
 
 			if amtOk && dateOk {
-				result.Matched = append(result.Matched, MatchedPair{Left: ltx, Right: rtx})
-				usedRight[rtx.ID] = true
-				matched = true
+				exact = rtx
 				break
 			}
-
 			if !amtOk && dateOk {
-				// Amount diff — still classify as a partial match
-				signed := ltx.Amount - rtx.Amount
-				result.AmountDiff = append(result.AmountDiff, AmountDiffPair{Left: ltx, Right: rtx, DiffMinor: signed})
-				usedRight[rtx.ID] = true
-				matched = true
-				break
+				if bestAmountDiff == nil || amtDiff < bestAmountDiffAbs {
+					bestAmountDiff = rtx
+					bestAmountDiffAbs = amtDiff
+				}
+				continue
 			}
-
 			if amtOk && !dateOk {
-				// Timing diff
-				result.TimingDiff = append(result.TimingDiff, TimingDiffPair{Left: ltx, Right: rtx, DaysDiff: daysDiff})
-				usedRight[rtx.ID] = true
-				matched = true
-				break
+				if bestTimingDiff == nil || daysDiff < bestTimingDiffDays {
+					bestTimingDiff = rtx
+					bestTimingDiffDays = daysDiff
+				}
 			}
 		}
 
-		if !matched {
+		switch {
+		case exact != nil:
+			result.Matched = append(result.Matched, MatchedPair{Left: ltx, Right: *exact})
+			usedRight[exact.ID] = true
+		case bestAmountDiff != nil:
+			signed := ltx.Amount - bestAmountDiff.Amount
+			result.AmountDiff = append(result.AmountDiff, AmountDiffPair{Left: ltx, Right: *bestAmountDiff, DiffMinor: signed})
+			usedRight[bestAmountDiff.ID] = true
+		case bestTimingDiff != nil:
+			result.TimingDiff = append(result.TimingDiff, TimingDiffPair{Left: ltx, Right: *bestTimingDiff, DaysDiff: bestTimingDiffDays})
+			usedRight[bestTimingDiff.ID] = true
+		default:
 			unmatchedLeft = append(unmatchedLeft, ltx)
 		}
 	}
@@ -727,6 +886,7 @@ func matchByNameTokens(
 	left, right []Transaction,
 	tolerance int64,
 	windowDays int,
+	threshold float64,
 ) (unmatchedLeft, unmatchedRight []Transaction) {
 	usedRight := make(map[string]bool)
 
@@ -764,7 +924,7 @@ func matchByNameTokens(
 			}
 		}
 
-		if bestScore > 0.5 && bestIdx >= 0 {
+		if bestScore > threshold && bestIdx >= 0 {
 			rtx := right[bestIdx]
 			result.Matched = append(result.Matched, MatchedPair{Left: ltx, Right: rtx})
 			usedRight[rtx.ID] = true
@@ -782,51 +942,45 @@ func matchByNameTokens(
 	return unmatchedLeft, unmatchedRight
 }
 
-// detectDuplicates groups transactions by reference and identifies duplicates (ref appears > 1 time).
-// Returns duplicate groups and a deduplicated slice (first occurrence kept).
-func detectDuplicates(txns []Transaction) ([]DuplicateGroup, []Transaction) {
+// annotateDuplicates groups transactions by GroupKey and returns groups with more
+// than one member as a duplicate report. This is read-only: it does not affect
+// which transactions participate in matching.
+func annotateDuplicates(txns []Transaction) []DuplicateGroup {
 	seen := make(map[string][]Transaction)
 	order := make([]string, 0)
 
 	for _, tx := range txns {
-		if tx.Reference == "" {
+		if tx.GroupKey == "" {
 			continue
 		}
-		if _, exists := seen[tx.Reference]; !exists {
-			order = append(order, tx.Reference)
+		if _, exists := seen[tx.GroupKey]; !exists {
+			order = append(order, tx.GroupKey)
 		}
-		seen[tx.Reference] = append(seen[tx.Reference], tx)
+		seen[tx.GroupKey] = append(seen[tx.GroupKey], tx)
 	}
 
 	var dups []DuplicateGroup
-	usedRefs := make(map[string]bool)
-
-	for _, ref := range order {
-		group := seen[ref]
+	for _, key := range order {
+		group := seen[key]
 		if len(group) > 1 {
 			dups = append(dups, DuplicateGroup{
 				Source:       group[0].Source,
-				Reference:    ref,
+				Reference:    key,
 				Transactions: group,
 			})
-			usedRefs[ref] = true
 		}
 	}
+	return dups
+}
 
-	// Deduped list: keep first occurrence, skip subsequent duplicates
-	seenID := make(map[string]bool)
-	var deduped []Transaction
-	for _, tx := range txns {
-		if usedRefs[tx.Reference] && seenID[tx.Reference] {
-			continue
-		}
-		if tx.Reference != "" {
-			seenID[tx.Reference] = true
-		}
-		deduped = append(deduped, tx)
+// resolveNameMatchThreshold returns t if it is a valid Jaccard threshold (0 < t <= 1),
+// else the default of 0.5. Config validation already rejects out-of-range values when
+// set, so this only needs to handle the unset (zero) case.
+func resolveNameMatchThreshold(t float64) float64 {
+	if t <= 0 {
+		return 0.5
 	}
-
-	return dups, deduped
+	return t
 }
 
 // parseDateWindow parses a date window string like "1d", "3d" to a number of days.

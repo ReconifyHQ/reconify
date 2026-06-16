@@ -18,7 +18,8 @@ type Transaction struct {
     Date      time.Time
     Amount    int64             // always minor units (kobo, cents)
     Currency  string
-    Reference string            // payment reference, order ID, etc.
+    Reference string            // payment reference, order ID, etc. — the matching key
+    GroupKey  string            // duplicate-detection key, independent of Reference; see group_col below
     Name      string            // description / merchant name
     Source    string            // source name from config
     Raw       map[string]string // original input row/object fields
@@ -54,18 +55,20 @@ type Transaction struct {
 | `decimal` | no | decimal separator, default `.` |
 | `thousands` | no | thousands separator, default empty |
 | `multiplier` | yes | converts amount to minor units, typically `100` |
-| `ref_col` | no | reference / ID column |
+| `ref_col` | no | reference / ID column — the matching key used by Tier 1 |
+| `group_col` | no | duplicate-detection key, independent of `ref_col`; falls back to `ref_col` when omitted. Use this when several rows legitimately share an identifier (e.g. an invoice paid in installments, all sharing an invoice number) but each has its own unique matching reference. |
 | `name_col` | no | description / merchant name column |
 | `currency_col` | no | currency code column |
 | `tz` | no | timezone for date parsing, default `UTC` |
 
 ## Matching algorithm (`reconciler.go`)
 
-The reconciler runs three tiers in sequence. Each tier removes matched transactions from the pool before the next tier runs.
+The reconciler runs two matching tiers, then a separate, non-gating duplicate annotation pass. Every transaction always participates in matching — duplicate rows are never dropped or skipped.
 
 ### Tier 1 — Reference exact match
 
-Transactions with matching `Reference` values are compared for amount and date:
+Transactions with matching `Reference` values are compared for amount and date. When more than one right-side candidate shares a reference, the engine picks the **best** candidate, not the first one encountered: an exact match (amount and date both within tolerance) always wins immediately; otherwise the candidate with the smallest amount difference is preferred over one with the smallest date difference, and ties are broken by the smallest diff regardless of where the candidate appears in the input. This best-candidate selection is shared (via `decideMatch`) between the batch and streaming matchers, so both behave identically.
+
 - **Matched**: reference matches, amount within tolerance, date within window
 - **Amount diff**: reference matches, date within window, amount outside tolerance
 - **Timing diff**: reference matches, amount within tolerance, date outside window
@@ -74,11 +77,13 @@ Transactions without a reference are passed to tier 2 (or marked unmatched if na
 
 ### Tier 2 — Name-token similarity (optional)
 
-Activated when `name_mode: tokens` in the pair config. Uses Jaccard similarity on word tokens from the `Name` field. A score > 0.5 is considered a match, subject to the same amount and date tolerances.
+Activated when `name_mode: tokens` in the pair config. Uses Jaccard similarity on word tokens from the `Name` field. A score strictly greater than the configured threshold is considered a match, subject to the same amount and date tolerances.
 
-### Tier 3 — Duplicate detection
+The threshold is configurable per pair via `name_match_threshold` (`0 < x < 1`); it defaults to `0.5` when unset. `1.0` is rejected by validation rather than silently accepted: since the comparison is strict and a Jaccard score never exceeds `1.0`, that value would never match anything.
 
-Runs before tiers 1 and 2. Transactions in the same source sharing the same reference are grouped as duplicates. Only the first occurrence participates in matching.
+### Duplicate detection (annotation, not a gate)
+
+Duplicate detection runs **after** matching and never filters anything out of it. Transactions in the same source sharing the same `GroupKey` (see `group_col`) are grouped and reported in `Result.Duplicates`, purely for visibility — every transaction, duplicate or not, still participates in Tier 1/Tier 2 matching. This means an invoice paid in three installments (same `group_col` value, three distinct `ref_col` values) shows up as a group of 3 in `Duplicates` while all three rows can independently match. `Summary.DuplicateCount` is a count of transactions across all duplicate groups, not a count of groups.
 
 ## Result shape
 
@@ -87,15 +92,21 @@ type Result struct {
     PairName       string
     LeftSource     string
     RightSource    string
-    Summary        Summary          // counts + match rate
+    Summary        Summary             // aggregate counts + match rate, across all counterparts
     Matched        []MatchedPair
     UnmatchedLeft  []Transaction
     UnmatchedRight []Transaction
-    AmountDiff     []AmountDiffPair // matched ref, amount outside tolerance
-    TimingDiff     []TimingDiffPair // matched ref+amount, date outside window
-    Duplicates     []DuplicateGroup
+    AmountDiff     []AmountDiffPair    // matched ref, amount outside tolerance
+    TimingDiff     []TimingDiffPair    // matched ref+amount, date outside window
+    Duplicates     []DuplicateGroup    // annotation only; see "Duplicate detection" above
+    Warnings       []string            // non-fatal observations, e.g. empty-currency rows mixed with a non-empty base currency
+    BySource       map[string]Summary  // per-counterpart breakdown for 1-N source pairs; nil for single-counterpart runs
 }
 ```
+
+`Summary` carries both `MatchRatePct` (exact Tier 1 matches only, unchanged for backward compatibility) and `ReconciledRatePct` (matched + amount-diff + timing-diff, i.e. every outcome where the two sides were reconciled to each other, just not perfectly). Both are percentages of `max(TotalLeft, TotalRight)`.
+
+`BySource` is populated only when a pair has multiple counterparts (`rights`, see below); for an ordinary single-`right` pair it stays nil/empty and the top-level `Summary` is the only number that exists, so single-counterpart consumers are unaffected.
 
 ## Config file format
 
@@ -149,3 +160,28 @@ pairs:
 - `memory` (default): highest throughput, right-side index must fit in RAM.
 - `disk`: stores right-side index in a temporary SQLite file; lower RAM, slower point lookups.
 - `auto`: picks `disk` when right file size is above `auto_max_right_file_mb`.
+
+## 1-N source reconciliation
+
+A pair can reconcile its `left` source against several counterparts in an explicit, ordered sequence instead of a single `right` source. Use `rights` instead of `right`:
+
+```yaml
+pairs:
+  bank_vs_multiple:
+    left: bank
+    rights: [stripe, paypal]
+    date_window: 1d
+    amount_tolerance_minor: 0
+```
+
+`right` and `rights` are mutually exclusive; config validation requires exactly one of them. `Pair.Counterparts()` is the single helper every consumer (CLI and engine) uses to read the resolved list — for an ordinary `right: stripe` pair it returns `["stripe"]`, so single-counterpart configs are completely unaffected by this feature.
+
+**Passes run in the order listed, and order is a deliberate configuration choice.** Each counterpart is matched against the still-unmatched left transactions left over from the previous pass: `bank` rows that match in `stripe` are consumed there; only the remainder is checked against `paypal`. If two counterparts could both match the same left row, the earlier one in `rights` always wins. Left-side duplicate annotation is computed once on the original left set (not once per pass), so a row that survives unmatched across multiple passes is never double-counted in `Duplicates`.
+
+Engine entry points mirror the single-counterpart ones:
+- `ReconcileMultiSource` (non-streaming) is the `rights` equivalent of `Reconcile`.
+- `ReconcileStreamingMultiSource` (streaming) is the `rights` equivalent of `ReconcileStreaming`. Its first pass streams the left file from disk exactly like `ReconcileStreaming` does; unmatched-left rows are buffered in memory and replayed against each subsequent counterpart's freshly built index. It currently does not support `name_mode: tokens`.
+
+The CLI (`internal/cli/reconcile.go`) calls the existing single-counterpart path unchanged when `len(pair.Counterparts()) == 1`, and only switches to the multi-source path for `rights` pairs with more than one counterpart — `--audit` and `--progress` are not yet supported in that path, and `--right-file` doesn't apply since each counterpart resolves its own file via its source's `file_pattern`.
+
+Output gets one additive field, `BySource`, giving a per-counterpart breakdown alongside the aggregate `Summary` (see "Result shape" above). Writers that support a breakdown (`json`, `json-stream`, `ndjson`) implement an optional `SourceBreakdownWriter` interface; `csv` and `table` silently omit it, same pattern as the existing optional `RunInfoSetter` interface for `--audit`.

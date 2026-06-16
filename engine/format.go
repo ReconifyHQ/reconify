@@ -38,6 +38,17 @@ type RunInfoSetter interface {
 	SetRunInfo(info RunInfo) error
 }
 
+// SourceBreakdownWriter is an optional interface implemented by writers that can
+// surface a per-counterpart summary for 1-N source runs (see
+// ReconcileMultiSource / ReconcileStreamingMultiSource). It is called once per
+// counterpart, in pass order, before the final aggregate WriteSummary call.
+//
+// Writers that do not implement this interface silently skip the breakdown —
+// the aggregate Summary passed to WriteSummary is unaffected either way.
+type SourceBreakdownWriter interface {
+	WriteSourceSummary(sourceName string, s Summary) error
+}
+
 // NewResultWriter returns a ResultWriter for the given format name.
 // Valid formats: "json", "json-stream", "ndjson", "csv", "table".
 func NewResultWriter(format string, w io.Writer) (ResultWriter, error) {
@@ -97,6 +108,16 @@ func (j *jsonWriter) WriteDuplicate(group DuplicateGroup) error {
 }
 func (j *jsonWriter) WriteSummary(s Summary) error {
 	j.result.Summary = s
+	return nil
+}
+
+// WriteSourceSummary records a per-counterpart breakdown for 1-N source runs.
+// Implements SourceBreakdownWriter.
+func (j *jsonWriter) WriteSourceSummary(sourceName string, s Summary) error {
+	if j.result.BySource == nil {
+		j.result.BySource = make(map[string]Summary)
+	}
+	j.result.BySource[sourceName] = s
 	return nil
 }
 
@@ -181,6 +202,7 @@ type jsonStreamWriter struct {
 	sections []jsonStreamSection // ordered; keyed by JSON field name
 	byKey    map[string]*jsonStreamSection
 	summary  *Summary
+	bySource map[string]Summary
 }
 
 func newJSONStreamWriter(w io.Writer) *jsonStreamWriter {
@@ -236,6 +258,16 @@ func (j *jsonStreamWriter) WriteSummary(s Summary) error {
 	j.summary = &s
 	return nil
 }
+
+// WriteSourceSummary records a per-counterpart breakdown for 1-N source runs.
+// Implements SourceBreakdownWriter.
+func (j *jsonStreamWriter) WriteSourceSummary(sourceName string, s Summary) error {
+	if j.bySource == nil {
+		j.bySource = make(map[string]Summary)
+	}
+	j.bySource[sourceName] = s
+	return nil
+}
 func (j *jsonStreamWriter) Flush() error {
 	result := map[string]any{
 		"pair":         j.meta.PairName,
@@ -249,6 +281,9 @@ func (j *jsonStreamWriter) Flush() error {
 		result["summary"] = j.summary
 	} else {
 		result["summary"] = Summary{}
+	}
+	if len(j.bySource) > 0 {
+		result["by_source"] = j.bySource
 	}
 	for _, sec := range j.sections {
 		if len(sec.events) == 0 {
@@ -316,6 +351,18 @@ func (n *ndjsonWriter) WriteDuplicate(group DuplicateGroup) error { return n.emi
 func (n *ndjsonWriter) WriteSummary(s Summary) error              { return n.emit("summary", s) }
 func (n *ndjsonWriter) Flush() error                              { return nil }
 
+// sourceSummary is the payload for a "source_summary" ndjson line.
+type sourceSummary struct {
+	Source  string  `json:"source"`
+	Summary Summary `json:"summary"`
+}
+
+// WriteSourceSummary emits one source_summary line per counterpart for 1-N
+// source runs. Implements SourceBreakdownWriter.
+func (n *ndjsonWriter) WriteSourceSummary(sourceName string, s Summary) error {
+	return n.emit("source_summary", sourceSummary{Source: sourceName, Summary: s})
+}
+
 // ---------------------------------------------------------------------------
 // CSVWriter — fixed schema, one row per event. O(1) memory. Versioned contract.
 //
@@ -328,7 +375,7 @@ func (n *ndjsonWriter) Flush() error                              { return nil }
 //	total_left, total_right, matched, unmatched_left, unmatched_right,
 //	amount_diff_count, timing_diff_count, duplicate_count, match_rate_pct,
 //	matched_amount_left, matched_amount_right, unmatched_amount_left,
-//	unmatched_amount_right, amount_diff_total, total_discrepancy
+//	unmatched_amount_right, amount_diff_total, total_discrepancy, reconciled_rate_pct
 //
 // Unused columns for a given event type are empty string.
 // CSVWriter does not implement RunInfoSetter — audit users should use json formats.
@@ -343,7 +390,7 @@ var csvHeader = []string{
 	"total_left", "total_right", "matched", "unmatched_left", "unmatched_right",
 	"amount_diff_count", "timing_diff_count", "duplicate_count", "match_rate_pct",
 	"matched_amount_left", "matched_amount_right", "unmatched_amount_left",
-	"unmatched_amount_right", "amount_diff_total", "total_discrepancy",
+	"unmatched_amount_right", "amount_diff_total", "total_discrepancy", "reconciled_rate_pct",
 }
 
 type csvWriter struct {
@@ -480,6 +527,7 @@ func (c *csvWriter) WriteSummary(s Summary) error {
 	row[28] = fmtI64(s.UnmatchedAmountRight)
 	row[29] = fmtI64(s.AmountDiffTotal)
 	row[30] = fmtI64(s.TotalDiscrepancy)
+	row[31] = strconv.FormatFloat(s.ReconciledRatePct, 'f', 2, 64)
 	return c.w.Write(row)
 }
 
@@ -609,8 +657,9 @@ func (t *tableWriter) WriteDuplicate(group DuplicateGroup) error {
 
 func (t *tableWriter) WriteSummary(s Summary) error {
 	t.rows = append(t.rows, tableRow{
-		typ:  "summary",
-		note: fmt.Sprintf("matched=%d unmatched_left=%d unmatched_right=%d rate=%.1f%%", s.MatchedCount, s.UnmatchedLeft, s.UnmatchedRight, s.MatchRatePct),
+		typ: "summary",
+		note: fmt.Sprintf("matched=%d unmatched_left=%d unmatched_right=%d rate=%.1f%% reconciled_rate=%.1f%%",
+			s.MatchedCount, s.UnmatchedLeft, s.UnmatchedRight, s.MatchRatePct, s.ReconciledRatePct),
 	})
 	return nil
 }
