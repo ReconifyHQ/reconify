@@ -50,6 +50,12 @@ Canonical skills live under `.agents/skills/` and are intentionally tool-agnosti
 
 Tool-specific files should be thin adapters that point back to these canonical skills. Do not duplicate long workflow instructions across Codex, Claude, Gemini, and Copilot files.
 
+## Pull Requests
+
+- Use the template at `.github/PULL_REQUEST_TEMPLATE.md`. GitHub pre-fills it
+  automatically when opening a PR via the UI or `gh pr create`.
+- Fill it out instead of writing a free-form description.
+
 ## Change Rules
 
 - Keep edits scoped to the requested behavior.
