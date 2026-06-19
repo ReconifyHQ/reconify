@@ -1,0 +1,74 @@
+name: Benchmarks
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  benchmark-smoke:
+    name: Benchmark Smoke
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    timeout-minutes: 5
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # @v4
+
+    - name: Set up Go
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # @v5
+      with:
+        go-version: '1.24'
+
+    - name: Run benchmark smoke checks
+      env:
+        BENCH_OUTPUT_DIR: ${{ runner.temp }}/reconify-benchmarks
+      run: make bench-smoke
+
+    - name: Upload benchmark logs on failure
+      if: failure()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # @v4
+      with:
+        name: benchmark-smoke-logs
+        path: |
+          ${{ runner.temp }}/reconify-benchmarks/runs/**/summary.tsv
+          ${{ runner.temp }}/reconify-benchmarks/runs/**/*.log
+          ${{ runner.temp }}/reconify-benchmarks/runs/**/expected.json
+
+  benchmark-nightly:
+    name: Benchmark Nightly
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.event_name == 'push'
+    timeout-minutes: 30
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # @v4
+
+    - name: Set up Go
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # @v5
+      with:
+        go-version: '1.24'
+
+    - name: Run deterministic benchmarks
+      env:
+        BENCH_OUTPUT_DIR: ${{ runner.temp }}/reconify-benchmarks
+      run: make bench-deterministic
+
+    - name: Run realistic benchmarks
+      env:
+        BENCH_OUTPUT_DIR: ${{ runner.temp }}/reconify-benchmarks
+      run: make bench-realistic
+
+    - name: Upload benchmark artifacts
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # @v4
+      with:
+        name: benchmark-results
+        path: |
+          ${{ runner.temp }}/reconify-benchmarks/runs/**/summary.tsv
+          ${{ runner.temp }}/reconify-benchmarks/runs/**/*.log
+          ${{ runner.temp }}/reconify-benchmarks/runs/**/expected.json

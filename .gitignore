@@ -36,6 +36,8 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+scripts/bench_scenarios/
+benchmarks/.out/
 
 # Test data (optional - remove if you want to commit sample CSVs)
 testdata/*.csv
