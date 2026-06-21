@@ -168,7 +168,7 @@ result, _ := engine.Reconcile("bank_vs_stripe", "bank", "stripe", left, right, c
 
 ## Enterprise / Private Deployment
 
-Reconify is an open-source CLI and library. For private deployments with multi-user access, audit pipelines, or custom integrations, contact us at [reconify.com](https://reconify.com) to discuss an enterprise engagement or schedule a demo.
+Reconify is an open-source CLI and library. For private deployments with multi-user access, audit pipelines, or custom integrations, contact us at [reconifyhq.com](https://reconifyhq.com) to discuss an enterprise engagement or schedule a demo.
 
 ## Development
 
