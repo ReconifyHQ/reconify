@@ -262,3 +262,117 @@ func TestConfigValidate_ParserTypeInvalid(t *testing.T) {
 		t.Fatal("expected validation error for invalid parser type")
 	}
 }
+
+func TestConfigValidate_PassesOmitted_PreservesLegacyBehavior(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.NameMode = "tokens"
+	p.NameMatchThreshold = 0.6
+	cfg.Pairs["p"] = p
+
+	if errs := cfg.Validate(); len(errs) > 0 {
+		t.Fatalf("expected valid legacy config without passes, got errors: %v", errs)
+	}
+}
+
+func TestConfigValidate_PassesExplicit_Valid(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.Passes = []PassConfig{
+		{Type: PassTypeReferenceOneToOne},
+		{Type: PassTypeNameTokensOneToOne},
+	}
+	cfg.Pairs["p"] = p
+
+	if errs := cfg.Validate(); len(errs) > 0 {
+		t.Fatalf("expected valid explicit passes config, got errors: %v", errs)
+	}
+}
+
+func TestConfigValidate_PassesUnknownType(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.Passes = []PassConfig{
+		{Type: PassTypeReferenceOneToOne},
+		{Type: "fuzzy_match"},
+	}
+	cfg.Pairs["p"] = p
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for unknown pass type")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "passes[1].type") && strings.Contains(err.Error(), "fuzzy_match") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected error identifying passes[1].type, got: %v", errs)
+	}
+}
+
+func TestConfigValidate_PassesEmpty_IsRejected(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.Passes = []PassConfig{}
+	cfg.Pairs["p"] = p
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for empty passes list")
+	}
+}
+
+func TestConfigValidate_PassesWithNameModeTokens_IsRejected(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.NameMode = "tokens"
+	p.Passes = []PassConfig{
+		{Type: PassTypeReferenceOneToOne},
+	}
+	cfg.Pairs["p"] = p
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error when name_mode=tokens is combined with passes")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "name_mode=tokens") && strings.Contains(err.Error(), PassTypeNameTokensOneToOne) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected migration-oriented error about name_mode=tokens, got: %v", errs)
+	}
+}
+
+func TestConfigValidate_AllPassTypes_AreValid(t *testing.T) {
+	for _, passType := range []string{PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne, PassTypeOneToMany} {
+		t.Run(passType, func(t *testing.T) {
+			cfg := baseValidConfig()
+			p := cfg.Pairs["p"]
+			p.Passes = []PassConfig{{Type: passType}}
+			cfg.Pairs["p"] = p
+
+			if errs := cfg.Validate(); len(errs) > 0 {
+				t.Fatalf("expected pass type %q to be valid, got errors: %v", passType, errs)
+			}
+		})
+	}
+}
+
+func TestConfigValidate_PassesCompatibleWithRights(t *testing.T) {
+	cfg := withLedgerSource(baseValidConfig())
+	p := cfg.Pairs["p"]
+	p.Right = ""
+	p.Rights = []string{"right", "ledger"}
+	p.Passes = []PassConfig{{Type: PassTypeReferenceOneToOne}}
+	cfg.Pairs["p"] = p
+
+	if errs := cfg.Validate(); len(errs) > 0 {
+		t.Fatalf("expected passes to be compatible with rights, got errors: %v", errs)
+	}
+}

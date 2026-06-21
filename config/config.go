@@ -53,6 +53,20 @@ type ParserCfg struct {
 // CSVParserCfg is kept as an alias for existing Go callers.
 type CSVParserCfg = ParserCfg
 
+// Pass type constants for recognized matching strategies.
+const (
+	PassTypeReferenceOneToOne  = "reference_one_to_one"
+	PassTypeNameTokensOneToOne = "name_tokens_one_to_one"
+	PassTypeOneToMany          = "one_to_many"
+)
+
+// PassConfig defines a single matching pass within a pair's pipeline.
+// Passes run in configured order; each pass only sees rows left unmatched
+// by earlier passes.
+type PassConfig struct {
+	Type string `yaml:"type"`
+}
+
 // Pair defines a reconciliation pair configuration
 type Pair struct {
 	Left                 string `yaml:"left"`
@@ -71,6 +85,12 @@ type Pair struct {
 	// exclusive with Right — set exactly one of the two. Use Counterparts() to
 	// read the resolved list regardless of which field was set.
 	Rights []string `yaml:"rights,omitempty"`
+	// Passes defines an explicit ordered list of matching strategies. When set,
+	// passes run in order and each pass only sees rows left unmatched by earlier
+	// passes. Omitting Passes preserves legacy behavior: reference matching
+	// followed by optional name_mode=tokens. When Passes is set, name_mode=tokens
+	// is rejected — add a name_tokens_one_to_one pass explicitly instead.
+	Passes []PassConfig `yaml:"passes,omitempty"`
 }
 
 // Counterparts returns the ordered list of counterpart source names for this pair,
@@ -269,6 +289,28 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 	// 1.0, so a threshold of exactly 1.0 would be silently unreachable.
 	if pair.NameMatchThreshold != 0 && (pair.NameMatchThreshold <= 0 || pair.NameMatchThreshold >= 1) {
 		errs = append(errs, fmt.Errorf("pairs.%s.name_match_threshold: must be > 0 and < 1 (got %v)", name, pair.NameMatchThreshold))
+	}
+
+	// Validate passes when explicitly set.
+	if pair.Passes != nil {
+		if len(pair.Passes) == 0 {
+			errs = append(errs, fmt.Errorf("pairs.%s.passes: must not be empty — omit the field to use default behavior", name))
+		}
+		if pair.NameMode == "tokens" {
+			errs = append(errs, fmt.Errorf("pairs.%s: name_mode=tokens cannot be combined with explicit passes — add a %s pass instead", name, PassTypeNameTokensOneToOne))
+		}
+		validPassTypes := map[string]bool{
+			PassTypeReferenceOneToOne:  true,
+			PassTypeNameTokensOneToOne: true,
+			PassTypeOneToMany:          true,
+		}
+		for i, pass := range pair.Passes {
+			if !validPassTypes[pass.Type] {
+				errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].type: unknown pass type %q (valid: %s, %s, %s)",
+					name, i, pass.Type,
+					PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne, PassTypeOneToMany))
+			}
+		}
 	}
 
 	return errs

@@ -74,3 +74,17 @@ pairs:
     rights: [stripe, paypal]
     date_window: "1d"
     amount_tolerance_minor: 0
+
+  # Explicit pipeline example: passes define the ordered matching strategy for
+  # a single counterpart. This is different from rights, which selects which
+  # counterpart sources to reconcile against. passes determines how rows are
+  # matched within a counterpart. Omitting passes uses the default behavior:
+  # reference matching followed by optional name_mode=tokens.
+  bank_vs_stripe_pipeline:
+    left: bank
+    right: stripe
+    date_window: "1d"
+    amount_tolerance_minor: 0
+    passes:
+      - type: reference_one_to_one
+      - type: name_tokens_one_to_one
