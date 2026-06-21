@@ -54,6 +54,8 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 				unmatchedLeft, unmatchedRight = matchByNameTokens(
 					result, unmatchedLeft, unmatchedRight,
 					pair.AmountToleranceMinor, dateWindowDays, threshold)
+			default:
+				return nil, fmt.Errorf("unsupported pass type %q", pass.Type)
 			}
 		}
 		result.UnmatchedLeft = unmatchedLeft
@@ -653,8 +655,8 @@ func validateStreamingPassOrder(passes []config.PassConfig) error {
 				return fmt.Errorf("streaming: %s at passes[%d] must be preceded by %s — streaming always indexes reference first",
 					config.PassTypeNameTokensOneToOne, i, config.PassTypeReferenceOneToOne)
 			}
-		case config.PassTypeOneToMany:
-			return fmt.Errorf("streaming: %s is not yet supported in streaming reconciliation", config.PassTypeOneToMany)
+		default:
+			return fmt.Errorf("streaming: unsupported pass type %q at passes[%d]", p.Type, i)
 		}
 	}
 	return nil

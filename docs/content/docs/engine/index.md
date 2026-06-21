@@ -186,4 +186,4 @@ The CLI (`internal/cli/reconcile.go`) calls the existing single-counterpart path
 
 Output gets one additive field, `BySource`, giving a per-counterpart breakdown alongside the aggregate `Summary` (see "Result shape" above). Writers that support a breakdown (`json`, `json-stream`, `ndjson`) implement an optional `SourceBreakdownWriter` interface; `csv` and `table` silently omit it, same pattern as the existing optional `RunInfoSetter` interface for `--audit`.
 
-This `rights` behavior is ordered multi-counterpart reconciliation across sources; it is separate from future grouped transaction matching concepts such as `one_to_many`, `passes`, and `group_by`.
+This `rights` behavior is ordered multi-counterpart reconciliation across sources; it is separate from future grouped transaction matching concepts such as one-to-many grouped matching.
