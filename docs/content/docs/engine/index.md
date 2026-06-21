@@ -185,3 +185,5 @@ Engine entry points mirror the single-counterpart ones:
 The CLI (`internal/cli/reconcile.go`) calls the existing single-counterpart path unchanged when `len(pair.Counterparts()) == 1`, and only switches to the multi-source path for `rights` pairs with more than one counterpart — `--audit` and `--progress` are not yet supported in that path, and `--right-file` doesn't apply since each counterpart resolves its own file via its source's `file_pattern`.
 
 Output gets one additive field, `BySource`, giving a per-counterpart breakdown alongside the aggregate `Summary` (see "Result shape" above). Writers that support a breakdown (`json`, `json-stream`, `ndjson`) implement an optional `SourceBreakdownWriter` interface; `csv` and `table` silently omit it, same pattern as the existing optional `RunInfoSetter` interface for `--audit`.
+
+This `rights` behavior is ordered multi-counterpart reconciliation across sources; it is separate from future grouped transaction matching concepts such as `one_to_many`, `passes`, and `group_by`.
