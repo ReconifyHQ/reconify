@@ -40,23 +40,37 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 
 	threshold := resolveNameMatchThreshold(pair.NameMatchThreshold)
 
-	// 1. Match by reference. Duplicates (same GroupKey) participate in matching
-	// normally — see annotateDuplicates below for the read-only report.
-	unmatchedLeft, unmatchedRight := matchByReference(
-		result,
-		left,
-		right,
-		pair.AmountToleranceMinor,
-		dateWindowDays,
-	)
-
-	// 2. Optional name-token matching for remaining unmatched
-	if pair.NameMode == "tokens" {
-		unmatchedLeft, unmatchedRight = matchByNameTokens(result, unmatchedLeft, unmatchedRight, pair.AmountToleranceMinor, dateWindowDays, threshold)
+	// Dispatches explicit passes when configured; falls back to the legacy
+	// reference-first + optional NameMode path when Passes is empty.
+	if len(pair.Passes) > 0 {
+		unmatchedLeft, unmatchedRight := left, right
+		for _, pass := range pair.Passes {
+			switch pass.Type {
+			case config.PassTypeReferenceOneToOne:
+				unmatchedLeft, unmatchedRight = matchByReference(
+					result, unmatchedLeft, unmatchedRight,
+					pair.AmountToleranceMinor, dateWindowDays)
+			case config.PassTypeNameTokensOneToOne:
+				unmatchedLeft, unmatchedRight = matchByNameTokens(
+					result, unmatchedLeft, unmatchedRight,
+					pair.AmountToleranceMinor, dateWindowDays, threshold)
+			}
+		}
+		result.UnmatchedLeft = unmatchedLeft
+		result.UnmatchedRight = unmatchedRight
+	} else {
+		// Legacy path: reference always runs; name-token pass enabled by NameMode.
+		unmatchedLeft, unmatchedRight := matchByReference(
+			result, left, right,
+			pair.AmountToleranceMinor, dateWindowDays)
+		if pair.NameMode == "tokens" {
+			unmatchedLeft, unmatchedRight = matchByNameTokens(
+				result, unmatchedLeft, unmatchedRight,
+				pair.AmountToleranceMinor, dateWindowDays, threshold)
+		}
+		result.UnmatchedLeft = unmatchedLeft
+		result.UnmatchedRight = unmatchedRight
 	}
-
-	result.UnmatchedLeft = unmatchedLeft
-	result.UnmatchedRight = unmatchedRight
 	result.Warnings = cc.Warnings()
 
 	// 3. Duplicate annotation — a read-only report keyed on GroupKey. It never
@@ -230,6 +244,16 @@ func reconcileStreaming(
 
 	tolerance := pair.AmountToleranceMinor
 	cc := currencyTracker{}
+
+	// Derive whether the name-token pass should run. Passes takes precedence;
+	// fall back to the legacy NameMode field when no explicit passes are set.
+	effectiveTokenMode := pair.NameMode == "tokens"
+	if len(pair.Passes) > 0 {
+		effectiveTokenMode = containsPass(pair.Passes, config.PassTypeNameTokensOneToOne)
+		if err := validateStreamingPassOrder(pair.Passes); err != nil {
+			return err
+		}
+	}
 	if progressEvery <= 0 {
 		progressEvery = 1_000_000
 	}
@@ -354,7 +378,7 @@ func reconcileStreaming(
 		if ltx.Reference == "" {
 			unmatchedLeftCount++
 			unmatchedAmtLeft += ltx.Amount
-			if pair.NameMode == "tokens" {
+			if effectiveTokenMode {
 				tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
 				return nil
 			}
@@ -410,7 +434,7 @@ func reconcileStreaming(
 
 		unmatchedLeftCount++
 		unmatchedAmtLeft += ltx.Amount
-		if pair.NameMode == "tokens" {
+		if effectiveTokenMode {
 			tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
 			return nil
 		}
@@ -450,7 +474,7 @@ func reconcileStreaming(
 	if err := idx.IterateUnused(func(tx Transaction) error {
 		unmatchedRightCount++
 		unmatchedAmtRight += tx.Amount
-		if pair.NameMode == "tokens" {
+		if effectiveTokenMode {
 			tokenUnmatchedRight = append(tokenUnmatchedRight, tx)
 			return nil
 		}
@@ -466,7 +490,7 @@ func reconcileStreaming(
 	// from both sides. Worst case (all unmatched): O(n_total) memory.
 	// Guarded by maxTokenBuffer advisory limit.
 	// -----------------------------------------------------------------------
-	if pair.NameMode == "tokens" {
+	if effectiveTokenMode {
 		bufTotal := len(tokenUnmatchedLeft) + len(tokenUnmatchedRight)
 		if maxTokenBuffer > 0 && bufTotal > maxTokenBuffer {
 			fmt.Fprintf(os.Stderr,
@@ -600,6 +624,40 @@ func matchByNameTokensStreaming(
 		}
 	}
 	return matches, remainLeft, remainRight
+}
+
+// containsPass returns true if passes contains a pass of the given type.
+func containsPass(passes []config.PassConfig, passType string) bool {
+	for _, p := range passes {
+		if p.Type == passType {
+			return true
+		}
+	}
+	return false
+}
+
+// validateStreamingPassOrder returns an error when the pass list uses an ordering
+// that the streaming path cannot support. Specifically: the streaming path runs
+// reference matching inline during the left-file scan; name-token matching runs
+// afterward on the unmatched buffer. A name_tokens_one_to_one pass that appears
+// before reference_one_to_one would require buffering all left rows upfront, which
+// violates the streaming memory contract.
+func validateStreamingPassOrder(passes []config.PassConfig) error {
+	sawRef := false
+	for i, p := range passes {
+		switch p.Type {
+		case config.PassTypeReferenceOneToOne:
+			sawRef = true
+		case config.PassTypeNameTokensOneToOne:
+			if !sawRef {
+				return fmt.Errorf("streaming: %s at passes[%d] must be preceded by %s — streaming always indexes reference first",
+					config.PassTypeNameTokensOneToOne, i, config.PassTypeReferenceOneToOne)
+			}
+		case config.PassTypeOneToMany:
+			return fmt.Errorf("streaming: %s is not yet supported in streaming reconciliation", config.PassTypeOneToMany)
+		}
+	}
+	return nil
 }
 
 // matchOutcome classifies the result of decideMatch.
