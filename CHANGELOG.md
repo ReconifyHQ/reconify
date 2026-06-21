@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-21
+
+### Added
+
+- **Multi-counterpart reconciliation (`rights`)** — A pair can now reconcile one left source against several ordered counterpart sources, carrying unmatched left rows forward between passes.
+- **Per-counterpart output summaries** — JSON, JSON stream, and NDJSON outputs now include source-level breakdowns via `by_source` / `source_summary` alongside the aggregate summary.
+- **Explicit one-to-one reconciliation passes** — Pairs can define `passes` with `reference_one_to_one` and `name_tokens_one_to_one` to make the matching pipeline explicit.
+- **Benchmark infrastructure** — Added deterministic and realistic benchmark generators, runners, validation helpers, and CI benchmark workflow scaffolding.
+- **Pull request template** — Added a GitHub PR template and documented the expected PR workflow for agents.
+
+### Changed
+
+- Clarified multi-counterpart docs, examples, and configuration references, including the distinction between ordered counterpart sources (`rights`) and matching strategies (`passes`).
+- Improved reconciliation correctness around explicit pass ordering, duplicate annotation, best-candidate selection, summary accounting, and batch/streaming parity.
+- Updated docs links to the current Fumadocs content paths.
+
+### Fixed
+
+- `one_to_many` is no longer accepted as a configured pass type. It is not implemented in v0.3.0 and now fails validation instead of silently behaving like a no-op in batch reconciliation.
+
+### Known Limitations
+
+- Multi-counterpart CLI runs do not yet support `--audit`, `--right-file`, or token-mode streaming reconciliation.
+
 ## [0.2.0] - 2026-05-17
 
 ### Added

@@ -5,8 +5,8 @@ Reconify is a Go CLI and library for reconciling financial CSV data across syste
 ## Start Here
 
 - Read `README.md` for user-facing setup and CLI examples.
-- Read `docs/engine/README.md` before changing matching behavior.
-- Read `docs/performance/README.md` before changing streaming, indexing, or large-file behavior.
+- Read `docs/content/docs/engine/index.md` before changing matching behavior.
+- Read `docs/content/docs/performance/index.md` before changing streaming, indexing, or large-file behavior.
 - Use canonical agent skills in `.agents/skills/` for repeatable workflows.
 
 ## Repo Map

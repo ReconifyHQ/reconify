@@ -143,7 +143,7 @@ The reconciliation engine:
 4. **Optionally matches by name** using token-based Jaccard similarity
 5. **Produces a JSON report** with matched pairs, unmatched entries, and summary statistics
 
-See [docs/engine/README.md](docs/engine/README.md) for algorithm details. See the [Configuration reference](docs/content/docs/configuration.md) for the full set of source parser and pair options.
+See the [engine internals guide](docs/content/docs/engine/index.md) for algorithm details. See the [Configuration reference](docs/content/docs/configuration.md) for the full set of source parser and pair options.
 
 ## Using as a Go Library
 
@@ -174,7 +174,7 @@ Reconify is an open-source CLI and library. For private deployments with multi-u
 
 ### Prerequisites
 
-- Go 1.24.2+
+- Go 1.25.0+
 
 ### Agent Experience
 

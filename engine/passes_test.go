@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,6 +106,26 @@ func assertSummaryMatchesCounts(t *testing.T, res *Result) {
 	}
 	if res.Summary.TimingDiffCount != len(res.TimingDiff) {
 		t.Errorf("Summary.TimingDiffCount=%d len(TimingDiff)=%d", res.Summary.TimingDiffCount, len(res.TimingDiff))
+	}
+}
+
+func TestPasses_UnsupportedPassType_ReturnsError(t *testing.T) {
+	left := []Transaction{makeTx("l1", 100, "REF-1")}
+	right := []Transaction{makeTx("r1", 100, "REF-1")}
+	pair := config.Pair{
+		DateWindow:           "0d",
+		AmountToleranceMinor: 0,
+		Passes: []config.PassConfig{
+			{Type: "one_to_many"},
+		},
+	}
+
+	_, err := Reconcile("p", "left", "right", left, right, pair)
+	if err == nil {
+		t.Fatal("expected unsupported pass type error")
+	}
+	if !strings.Contains(err.Error(), `unsupported pass type "one_to_many"`) {
+		t.Fatalf("expected unsupported pass type error, got: %v", err)
 	}
 }
 
