@@ -118,13 +118,6 @@ func makeTxNamed(id string, amount int64, ref, name string) Transaction {
 	return tx
 }
 
-func makeTxAt(id string, amount int64, ref string, date time.Time) Transaction {
-	tx := makeTx(id, amount, ref)
-	tx.Name = "tx " + id
-	tx.Date = date
-	return tx
-}
-
 func makeTxFull(id string, amount int64, ref, name string, date time.Time) Transaction {
 	return Transaction{
 		ID:        id,
@@ -324,10 +317,11 @@ func TestPasses_OrderDeterminesWinner(t *testing.T) {
 // Test D — AmountDiff/TimingDiff semantics within a pass pipeline (corrected)
 //
 // Semantics from reconciler.go:
-//   amount within tolerance AND date within window  → Matched
-//   amount outside tolerance AND date within window → AmountDiff
-//   amount within tolerance AND date outside window → TimingDiff
-//   both outside tolerance/window                   → Unmatched (no classification)
+//
+//	amount within tolerance AND date within window  → Matched
+//	amount outside tolerance AND date within window → AmountDiff
+//	amount within tolerance AND date outside window → TimingDiff
+//	both outside tolerance/window                   → Unmatched (no classification)
 //
 // FAILING ACCEPTANCE TEST: today the name pass never runs (NameMode=""),
 // so MatchedCount=2 and UnmatchedLeft=2 instead of MatchedCount=4 and
@@ -354,8 +348,8 @@ func TestPasses_CorrectAmountDiffTimingDiffSemantics(t *testing.T) {
 	}
 	right := []Transaction{
 		// Group 1: amount diff within tolerance=5
-		makeTxFull("r1", 103, "REF-1", "Vendor One", base),   // diff=3 ≤ 5 → Matched
-		makeTxFull("r2", 204, "REF-2", "Vendor Two", base),   // diff=4 ≤ 5 → Matched
+		makeTxFull("r1", 103, "REF-1", "Vendor One", base), // diff=3 ≤ 5 → Matched
+		makeTxFull("r2", 204, "REF-2", "Vendor Two", base), // diff=4 ≤ 5 → Matched
 		// Group 2: amount diff outside tolerance
 		makeTxFull("r3", 120, "REF-3", "Vendor Three", base), // diff=20 → AmountDiff
 		makeTxFull("r4", 130, "REF-4", "Vendor Four", base),  // diff=30 → AmountDiff
