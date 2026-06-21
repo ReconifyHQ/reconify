@@ -92,3 +92,10 @@ Parse one file while debugging mappings:
 ```bash
 reconify parse --config reconify.yaml --source bank --file data/bank/jan.csv
 ```
+
+## Next Steps
+
+- [Configuration](./configuration) — full reference for source parsers, pairs, and index backend options.
+- [Engine](./engine/) — matching algorithm and result shape.
+- [Performance](./performance/) — streaming design, benchmarks, and production guidance.
+- [GitHub](https://github.com/ReconifyHQ/reconify) — source, releases, and issue tracker.
