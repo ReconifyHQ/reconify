@@ -31,3 +31,7 @@ go build -o reconify ./cmd/reconify
 ```
 
 See [Getting Started](./getting-started) for full usage instructions.
+
+---
+
+Reconify is open source. View the source, report issues, and contribute on [GitHub](https://github.com/ReconifyHQ/reconify). For private deployments or enterprise engagements, visit [reconifyhq.com](https://reconifyhq.com).

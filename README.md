@@ -143,7 +143,7 @@ The reconciliation engine:
 4. **Optionally matches by name** using token-based Jaccard similarity
 5. **Produces a JSON report** with matched pairs, unmatched entries, and summary statistics
 
-See [docs/engine/README.md](docs/engine/README.md) for algorithm details.
+See [docs/engine/README.md](docs/engine/README.md) for algorithm details. See the [Configuration reference](docs/content/docs/configuration.md) for the full set of source parser and pair options.
 
 ## Using as a Go Library
 
@@ -166,9 +166,9 @@ right, _ := engine.Parse("stripe", "stripe.xlsx", cfg.Sources["stripe"].Parser)
 result, _ := engine.Reconcile("bank_vs_stripe", "bank", "stripe", left, right, cfg.Pairs["bank_vs_stripe"])
 ```
 
-## Reconify Cloud
+## Enterprise / Private Deployment
 
-For a managed experience with a web dashboard, async processing, multi-user auth, and API access, check out [Reconify Cloud](https://reconify.com).
+Reconify is an open-source CLI and library. For private deployments with multi-user access, audit pipelines, or custom integrations, contact us at [reconifyhq.com](https://reconifyhq.com) to discuss an enterprise engagement or schedule a demo.
 
 ## Development
 
