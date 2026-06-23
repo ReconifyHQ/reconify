@@ -39,6 +39,40 @@ type TimingDiffPair struct {
 	DaysDiff int         `json:"days_diff"`
 }
 
+// GroupedMatchedPair is a left transaction matched against N right transactions sharing
+// the same reference. Used by the one_to_many pass when the sum of right amounts is
+// within tolerance and all right dates are within the date window.
+type GroupedMatchedPair struct {
+	Left   Transaction   `json:"left"`
+	Rights []Transaction `json:"rights"`
+}
+
+// GroupedAmountDiffPair is a grouped pair where the sum of right amounts falls outside
+// the configured tolerance. DiffMinor = Left.Amount - sum(Rights.Amount).
+type GroupedAmountDiffPair struct {
+	Left      Transaction   `json:"left"`
+	Rights    []Transaction `json:"rights"`
+	DiffMinor int64         `json:"diff_minor"`
+}
+
+// GroupedTimingDiffPair is a grouped pair where amounts reconcile within tolerance but
+// at least one right date falls outside the date window. DaysDiff is the maximum
+// abs(daysBetween) across all rights in the group.
+type GroupedTimingDiffPair struct {
+	Left     Transaction   `json:"left"`
+	Rights   []Transaction `json:"rights"`
+	DaysDiff int           `json:"days_diff"`
+}
+
+// AmbiguousGroupPair is emitted by the one_to_many pass when more than one left row
+// shares the same reference — grouping is undetermined and manual reconciliation is
+// required. All rows in the group are excluded from matching.
+type AmbiguousGroupPair struct {
+	Reference string        `json:"reference"`
+	LeftRows  []Transaction `json:"left_rows"`
+	Rights    []Transaction `json:"rights"`
+}
+
 // DuplicateGroup is a set of transactions in the same source sharing the same reference.
 type DuplicateGroup struct {
 	Source       string        `json:"source"`
@@ -58,19 +92,34 @@ type Summary struct {
 	TimingDiffCount int     `json:"timing_diff_count"`
 	DuplicateCount  int     `json:"duplicate_count"` // total transactions across all duplicate groups, not group count
 	MatchRatePct    float64 `json:"match_rate_pct"`
-	// ReconciledRatePct is (matched + amount_diff + timing_diff) / total. MatchRatePct
-	// only counts exact matches, so a run that is 100% reconciled but entirely within
-	// AmountDiff/TimingDiff tolerance still reports MatchRatePct=0; use this field instead.
+	// ReconciledRatePct is (matched + amount_diff + timing_diff + grouped variants) / total.
+	// MatchRatePct only counts exact 1-to-1 matches; use this field for the full picture.
+	// Note: one_to_many passes inflate total_right (N rights per left), so a fully-reconciled
+	// grouped dataset may report a sub-100% reconciled_rate_pct — this is expected.
 	ReconciledRatePct float64 `json:"reconciled_rate_pct"`
+
+	// Grouped match counts (one_to_many pass). Omitted when zero.
+	GroupedMatchedCount    int `json:"grouped_matched_count,omitempty"`
+	GroupedAmountDiffCount int `json:"grouped_amount_diff_count,omitempty"`
+	GroupedTimingDiffCount int `json:"grouped_timing_diff_count,omitempty"`
+	// AmbiguousGroupCount is the number of reference groups where >1 left row shared the
+	// same reference, making grouping undetermined. These require manual reconciliation.
+	AmbiguousGroupCount int `json:"ambiguous_group_count,omitempty"`
 
 	// Monetary totals (all values in minor units, e.g. cents).
 	// These are always populated regardless of --audit mode.
-	MatchedAmountLeft    int64 `json:"matched_amount_left"`    // sum of left.Amount for all matched pairs
-	MatchedAmountRight   int64 `json:"matched_amount_right"`   // sum of right.Amount for all matched pairs
+	MatchedAmountLeft    int64 `json:"matched_amount_left"`    // sum of left.Amount for all matched pairs (1-to-1 and grouped)
+	MatchedAmountRight   int64 `json:"matched_amount_right"`   // sum of right.Amount for all matched pairs (1-to-1 and grouped)
 	UnmatchedAmountLeft  int64 `json:"unmatched_amount_left"`  // sum of Amount for unmatched left transactions
 	UnmatchedAmountRight int64 `json:"unmatched_amount_right"` // sum of Amount for unmatched right transactions
-	AmountDiffTotal      int64 `json:"amount_diff_total"`      // sum of abs(DiffMinor) across all amount_diff pairs
-	TotalDiscrepancy     int64 `json:"total_discrepancy"`      // UnmatchedAmountLeft + UnmatchedAmountRight + AmountDiffTotal
+	AmountDiffTotal      int64 `json:"amount_diff_total"`      // sum of abs(DiffMinor) across all amount_diff pairs (1-to-1 and grouped)
+	// AmbiguousAmountLeft/Right are monetary totals for rows in ambiguous groups.
+	// Included in TotalDiscrepancy — they represent value requiring manual review.
+	AmbiguousAmountLeft  int64 `json:"ambiguous_amount_left,omitempty"`
+	AmbiguousAmountRight int64 `json:"ambiguous_amount_right,omitempty"`
+	// TotalDiscrepancy = UnmatchedAmountLeft + UnmatchedAmountRight + AmountDiffTotal
+	//                  + AmbiguousAmountLeft + AmbiguousAmountRight
+	TotalDiscrepancy int64 `json:"total_discrepancy"`
 }
 
 // Result is the full output of a reconciliation run.
@@ -86,6 +135,14 @@ type Result struct {
 	AmountDiff     []AmountDiffPair `json:"amount_diff"`
 	TimingDiff     []TimingDiffPair `json:"timing_diff"`
 	Duplicates     []DuplicateGroup `json:"duplicates"`
+	// Grouped slices are populated by the one_to_many pass. Omitted when empty
+	// so output remains backwards-compatible for runs without one_to_many.
+	GroupedMatched    []GroupedMatchedPair    `json:"grouped_matched,omitempty"`
+	GroupedAmountDiff []GroupedAmountDiffPair `json:"grouped_amount_diff,omitempty"`
+	GroupedTimingDiff []GroupedTimingDiffPair `json:"grouped_timing_diff,omitempty"`
+	// AmbiguousGroups holds reference groups where >1 left row shares a reference,
+	// making grouping undetermined. These rows require manual reconciliation.
+	AmbiguousGroups []AmbiguousGroupPair `json:"ambiguous_groups,omitempty"`
 	// Warnings are non-fatal observations about the run (e.g. empty-currency rows
 	// mixed with a non-empty base currency). They never affect matching or totals.
 	Warnings []string `json:"warnings,omitempty"`

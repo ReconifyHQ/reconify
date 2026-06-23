@@ -69,6 +69,10 @@ func ReconcileMultiSource(
 		result.AmountDiff = append(result.AmountDiff, passResult.AmountDiff...)
 		result.TimingDiff = append(result.TimingDiff, passResult.TimingDiff...)
 		result.UnmatchedRight = append(result.UnmatchedRight, passResult.UnmatchedRight...)
+		result.GroupedMatched = append(result.GroupedMatched, passResult.GroupedMatched...)
+		result.GroupedAmountDiff = append(result.GroupedAmountDiff, passResult.GroupedAmountDiff...)
+		result.GroupedTimingDiff = append(result.GroupedTimingDiff, passResult.GroupedTimingDiff...)
+		result.AmbiguousGroups = append(result.AmbiguousGroups, passResult.AmbiguousGroups...)
 		result.Warnings = append(result.Warnings, passResult.Warnings...)
 		result.BySource[cp.SourceName] = passResult.Summary
 
@@ -133,6 +137,11 @@ func ReconcileStreamingMultiSource(
 	}
 	if pair.NameMode == "tokens" {
 		return fmt.Errorf("name_mode=tokens is not yet supported for multi-source (rights) reconciliation")
+	}
+	if containsPass(pair.Passes, config.PassTypeOneToMany) {
+		return fmt.Errorf("one_to_many pass is not supported in the streaming " +
+			"multi-source path — the CLI routes to batch automatically when " +
+			"one_to_many is configured")
 	}
 
 	cc := &currencyTracker{}

@@ -186,4 +186,66 @@ The CLI (`internal/cli/reconcile.go`) calls the existing single-counterpart path
 
 Output gets one additive field, `BySource`, giving a per-counterpart breakdown alongside the aggregate `Summary` (see "Result shape" above). Writers that support a breakdown (`json`, `json-stream`, `ndjson`) implement an optional `SourceBreakdownWriter` interface; `csv` and `table` silently omit it, same pattern as the existing optional `RunInfoSetter` interface for `--audit`.
 
-This `rights` behavior is ordered multi-counterpart reconciliation across sources; it is separate from future grouped transaction matching concepts such as one-to-many grouped matching.
+This `rights` behavior is ordered multi-counterpart reconciliation across sources; it is separate from grouped transaction matching within a single source (see `one_to_many` below).
+
+## Explicit pass pipelines and the `one_to_many` pass
+
+By default the engine runs reference matching then optionally name-token matching (via `name_mode: tokens`). For more control, a pair can declare an explicit ordered `passes` list instead:
+
+```yaml
+pairs:
+  invoices:
+    left: ledger
+    right: bank
+    date_window: 3d
+    amount_tolerance_minor: 0
+    passes:
+      - type: one_to_many
+```
+
+Valid pass types:
+- `reference_one_to_one` — best-candidate reference matching (same as Tier 1 above).
+- `name_tokens_one_to_one` — Jaccard name-token matching (same as Tier 2 above). Cannot be combined with `name_mode: tokens`.
+- `one_to_many` — one left transaction settled by N right transactions sharing the same reference (installment payments). See below.
+
+**`[reference_one_to_one, one_to_many]` pipeline caveat.** The `reference_one_to_one` pass greedily picks the best 1-to-1 candidate for any left row whose reference appears on the right. For same-date installments this means the pass classifies them as `amount_diff` (each installment's amount differs from the invoice total), consuming the left row before `one_to_many` can see it. Use `[reference_one_to_one, one_to_many]` only when some rows are genuine 1-to-1 matches *and* the installments fail **both** amount and date in the ref pass for each individual right row — otherwise use `one_to_many` alone.
+
+When `passes` is set, `name_mode: tokens` is rejected by config validation — add a `name_tokens_one_to_one` pass explicitly instead.
+
+### `one_to_many` pass
+
+The `one_to_many` pass handles the case where a single left transaction (e.g. an invoice) is settled by several right transactions sharing the same reference (e.g. installment payments). Instead of 1-to-1 candidate selection, it sums all right rows for a reference and compares the total to the left amount.
+
+**Outcomes:**
+- **`grouped_matched`** — sum of right amounts within tolerance, all right dates within window.
+- **`grouped_amount_diff`** — sum falls outside tolerance (but dates OK). `DiffMinor = left.Amount - sum(rights)`.
+- **`grouped_timing_diff`** — amounts reconcile within tolerance, but at least one right date is outside the window. `DaysDiff` is the max `abs(daysBetween)` across all rights in the group.
+- **Both fail** — left stays unmatched, rights are NOT consumed (available for later passes or carry-forward).
+- **`ambiguous_groups`** — when more than one left row shares the same reference, grouping is undetermined. All involved rows are emitted as an `AmbiguousGroupPair` and excluded from matching entirely. Resolving ambiguous groups requires manual reconciliation.
+
+**`group_col` / `ref_col` separation for installments.** The duplicate detector uses `group_col` (falling back to `ref_col` when unset). When right-side rows are intentional installments, each has a unique per-row ID but they share the matching reference (`ref_col`). If you leave `group_col` unset, the duplicate detector will flag all installments as a duplicate group. Set `group_col` to a per-row-unique column (e.g. `payment_id`) to avoid this false-positive:
+
+```yaml
+sources:
+  bank_installments:
+    file_pattern: ./data/installments.csv
+    parser:
+      type: csv
+      date_col: date
+      date_layout: "2006-01-02"
+      amount_col: amount
+      multiplier: 100
+      ref_col: invoice_number   # shared by all installments for one invoice
+      group_col: payment_id     # unique per row — prevents false-positive duplicates
+```
+
+**Extended monetary invariant.** Ambiguous amounts count toward `TotalDiscrepancy` separately from ordinary unmatched amounts:
+
+```
+TotalDiscrepancy = UnmatchedAmountLeft + UnmatchedAmountRight + AmountDiffTotal
+                 + AmbiguousAmountLeft + AmbiguousAmountRight
+```
+
+**`reconciled_rate_pct` denominator caveat.** The `one_to_many` pass inflates `total_right` because N right rows correspond to one left row. A fully reconciled grouped dataset can report a sub-100% `reconciled_rate_pct` — this is expected. `match_rate_pct` counts only exact 1-to-1 matches (unchanged); `reconciled_rate_pct` includes grouped matched, grouped amount diff, and grouped timing diff outcomes.
+
+**Batch-only.** The `one_to_many` pass requires all right rows for a reference to be in memory simultaneously (to sum amounts and detect ambiguous left references). This fundamentally breaks the streaming memory contract. The CLI detects `one_to_many` in a pair's passes and automatically routes to the in-memory batch path (`engine.Reconcile` / `engine.ReconcileMultiSource`). `--audit` is not yet supported with `one_to_many` passes; `--progress` is silently skipped. Writers that do not support grouped events (`csv`, `table`) receive a warning on stderr; use `--format=json` or `--format=ndjson` to capture the full output including `grouped_matched`, `grouped_amount_diff`, `grouped_timing_diff`, and `ambiguous_groups`.

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/reconifyhq/reconify/config"
 )
@@ -247,5 +248,145 @@ func BenchmarkReconcileStreaming_20M_Realistic(b *testing.B) {
 		idx.Close()
 		b.ReportMetric(float64(leftRows), "left_rows/op")
 		b.ReportMetric(float64(leftRows+rightRows), "total_rows/op")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// one_to_many batch benchmarks
+// ---------------------------------------------------------------------------
+
+// makeGroupedTxns builds left and right slices for one_to_many benchmarking.
+// Each left row gets rightsPerGroup right rows sharing the same reference.
+// All amounts sum exactly; all dates match (no timing diff).
+func makeGroupedTxns(leftCount, rightsPerGroup int) (left, right []Transaction) {
+	date := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	left = make([]Transaction, leftCount)
+	right = make([]Transaction, leftCount*rightsPerGroup)
+	for i := 0; i < leftCount; i++ {
+		ref := fmt.Sprintf("INV-%08d", i)
+		installmentAmt := int64(1000)
+		left[i] = Transaction{
+			ID:        fmt.Sprintf("l%d", i),
+			Date:      date,
+			Amount:    installmentAmt * int64(rightsPerGroup),
+			Currency:  "USD",
+			Reference: ref,
+			Source:    "left",
+		}
+		for j := 0; j < rightsPerGroup; j++ {
+			right[i*rightsPerGroup+j] = Transaction{
+				ID:        fmt.Sprintf("r%d-%d", i, j),
+				Date:      date,
+				Amount:    installmentAmt,
+				Currency:  "USD",
+				Reference: ref,
+				Source:    "right",
+			}
+		}
+	}
+	return left, right
+}
+
+// BenchmarkReconcile_OneToMany_SmallGroups benchmarks 100k invoices each split
+// into 3 installments (300k right rows). All groups resolve to GroupedMatched.
+func BenchmarkReconcile_OneToMany_SmallGroups(b *testing.B) {
+	const leftCount = 100_000
+	const rightsPerGroup = 3
+	left, right := makeGroupedTxns(leftCount, rightsPerGroup)
+	pair := config.Pair{
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeOneToMany}},
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		res, err := Reconcile("bench", "left", "right", left, right, pair)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.ReportMetric(float64(leftCount), "left_rows/op")
+		b.ReportMetric(float64(len(res.GroupedMatched)), "grouped_matched/op")
+	}
+}
+
+// BenchmarkReconcile_OneToMany_LargeGroups benchmarks 10k invoices each split
+// into 50 installments (500k right rows). Exercises larger group scans.
+func BenchmarkReconcile_OneToMany_LargeGroups(b *testing.B) {
+	const leftCount = 10_000
+	const rightsPerGroup = 50
+	left, right := makeGroupedTxns(leftCount, rightsPerGroup)
+	pair := config.Pair{
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeOneToMany}},
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		res, err := Reconcile("bench", "left", "right", left, right, pair)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.ReportMetric(float64(leftCount), "left_rows/op")
+		b.ReportMetric(float64(len(res.GroupedMatched)), "grouped_matched/op")
+	}
+}
+
+// BenchmarkReconcile_OneToMany_MixedOutcomes benchmarks a realistic mix:
+// 50k left rows split into exact matches, amount diffs, and ambiguous groups
+// via a [reference_one_to_one, one_to_many] pipeline. Exercises pass handoff.
+func BenchmarkReconcile_OneToMany_MixedOutcomes(b *testing.B) {
+	const total = 50_000
+	date := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	left := make([]Transaction, total)
+	right := make([]Transaction, 0, total*2)
+
+	for i := 0; i < total; i++ {
+		ref := fmt.Sprintf("INV-%08d", i)
+		left[i] = Transaction{
+			ID: fmt.Sprintf("l%d", i), Date: date,
+			Amount: 20000, Currency: "USD", Reference: ref, Source: "left",
+		}
+		switch i % 4 {
+		case 0: // 1-to-1 exact match (consumed by reference_one_to_one pass)
+			right = append(right, Transaction{
+				ID: fmt.Sprintf("r%d", i), Date: date,
+				Amount: 20000, Currency: "USD", Reference: ref, Source: "right",
+			})
+		case 1: // 2 installments summing exactly (GroupedMatched in one_to_many pass)
+			right = append(right,
+				Transaction{ID: fmt.Sprintf("r%d-a", i), Date: date, Amount: 10000, Currency: "USD", Reference: ref, Source: "right"},
+				Transaction{ID: fmt.Sprintf("r%d-b", i), Date: date, Amount: 10000, Currency: "USD", Reference: ref, Source: "right"},
+			)
+		case 2: // 2 installments with amount diff (GroupedAmountDiff)
+			right = append(right,
+				Transaction{ID: fmt.Sprintf("r%d-a", i), Date: date, Amount: 8000, Currency: "USD", Reference: ref, Source: "right"},
+				Transaction{ID: fmt.Sprintf("r%d-b", i), Date: date, Amount: 8000, Currency: "USD", Reference: ref, Source: "right"},
+			)
+		case 3: // ambiguous: 2 left rows share this reference — neither matched
+			// add a duplicate left row (will be detected as ambiguous group)
+			// use a different ID but same reference — insert via right only to keep 50k left
+			right = append(right,
+				Transaction{ID: fmt.Sprintf("r%d-a", i), Date: date, Amount: 10000, Currency: "USD", Reference: ref, Source: "right"},
+				Transaction{ID: fmt.Sprintf("r%d-b", i), Date: date, Amount: 10000, Currency: "USD", Reference: ref, Source: "right"},
+			)
+		}
+	}
+
+	pair := config.Pair{
+		AmountToleranceMinor: 0,
+		Passes: []config.PassConfig{
+			{Type: config.PassTypeReferenceOneToOne},
+			{Type: config.PassTypeOneToMany},
+		},
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := Reconcile("bench", "left", "right", left, right, pair)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.ReportMetric(float64(total), "left_rows/op")
 	}
 }

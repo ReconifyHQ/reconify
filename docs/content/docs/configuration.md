@@ -194,9 +194,11 @@ Caveats:
 - `--audit` and `--progress` are not yet supported for multi-counterpart runs.
 - `name_mode: tokens` is not yet supported in streaming multi-counterpart mode. CLI reconciliation uses the streaming path for multi-counterpart pairs, so omit `name_mode: tokens` for `rights` pairs in CLI runs.
 
-### Future grouped matching
+### `one_to_many` pass (installment payments)
 
-One-to-many grouped matching remains a roadmap item and is not accepted in `passes` yet. It should not be treated as the same feature as today's ordered `rights` reconciliation.
+The `one_to_many` pass handles the case where one left transaction (e.g. an invoice) is settled by N right transactions sharing the same reference (e.g. installment payments). See the [engine documentation](/docs/engine/) for full semantics and configuration.
+
+This pass is separate from the ordered `rights` multi-counterpart reconciliation. `rights` selects which counterpart *sources* to reconcile against in sequence; `one_to_many` is a matching *strategy* within a single counterpart.
 
 ## Reconciliation Passes
 
@@ -220,6 +222,7 @@ Passes run in configured order. Each pass only sees rows that were not matched b
 |---|---|
 | `reference_one_to_one` | Matches one left row to one right row by reference. This is the default first tier. |
 | `name_tokens_one_to_one` | Matches unmatched rows by Jaccard token similarity on the name field. Equivalent to `name_mode: tokens` in the legacy model. |
+| `one_to_many` | Matches one left row against N right rows sharing the same reference by summing their amounts. See "one_to_many pass" above. |
 
 **`passes` vs `rights`**: `rights` selects which counterpart *sources* to reconcile against in order. `passes` defines the matching *strategy* used within each counterpart. They are orthogonal — you can combine them.
 

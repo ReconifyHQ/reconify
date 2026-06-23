@@ -45,12 +45,27 @@ sources:
       multiplier: 100
       currency_col: "Currency"
       name_col: "Description"
-      # ref_col is the matching key (e.g. a unique transaction id). group_col is
-      # an optional separate grouping key for duplicate detection only — useful
-      # when several rows (e.g. installments) share an invoice number but each
-      # has its own unique reference. Falls back to ref_col when omitted.
       ref_col: "Reference"
-      group_col: "InvoiceNumber"
+
+  # installments: right-side source for one_to_many matching.
+  # Each row is one payment installment. ref_col is the shared invoice number
+  # (the matching key — all installments for the same invoice share this value).
+  # group_col is a per-row-unique payment ID so the duplicate detector does not
+  # flag installments as duplicates of each other.
+  installments:
+    file_pattern: "data/installments/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      tz: "UTC"
+      amount_col: "Amount"
+      decimal: "."
+      thousands: ","
+      multiplier: 100
+      currency_col: "Currency"
+      ref_col: "InvoiceNumber"  # shared by all installments for one invoice
+      group_col: "PaymentID"    # unique per row — prevents false-positive duplicates
 
 pairs:
   bank_vs_stripe:
@@ -88,3 +103,34 @@ pairs:
     passes:
       - type: reference_one_to_one
       - type: name_tokens_one_to_one
+
+  # one_to_many example: one left transaction (e.g. an invoice in the ledger)
+  # settled by N right transactions sharing the same reference (e.g. installment
+  # payments).
+  #
+  # The installments source above sets ref_col to the shared invoice number and
+  # group_col to a per-row-unique payment ID. ref_col is the matching key used by
+  # the one_to_many pass to group installments; group_col is used only by the
+  # duplicate detector so installments are not flagged as duplicate rows.
+  #
+  # Use --format=json or --format=ndjson to capture grouped_matched,
+  # grouped_amount_diff, grouped_timing_diff, and ambiguous_groups in output.
+  # CSV and table formats warn about unsupported grouped events.
+  #
+  # --audit is not yet supported with one_to_many passes.
+  #
+  # Note on [reference_one_to_one, one_to_many] pipelines: the reference pass
+  # picks the best 1-to-1 candidate for any left row with a matching reference,
+  # including installments — if an installment shares a reference and its date is
+  # within the window, the ref pass classifies it as amount_diff rather than
+  # leaving it for the one_to_many pass. Use one_to_many alone when all right rows
+  # are installments; add reference_one_to_one first only when some right rows are
+  # genuine 1-to-1 matches and the installments are both outside the tolerance AND
+  # outside the date window for each individual row.
+  invoices_vs_installments:
+    left: bank          # one row per invoice (aggregate amount)
+    right: installments # N rows per invoice (installment payments); group_col set above
+    date_window: "7d"
+    amount_tolerance_minor: 0
+    passes:
+      - type: one_to_many  # sums all installments per invoice reference

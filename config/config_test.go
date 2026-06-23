@@ -364,24 +364,15 @@ func TestConfigValidate_SupportedPassTypes_AreValid(t *testing.T) {
 	}
 }
 
-func TestConfigValidate_OneToManyPass_IsRejected(t *testing.T) {
+func TestConfigValidate_OneToManyPass_IsAccepted(t *testing.T) {
 	cfg := baseValidConfig()
 	p := cfg.Pairs["p"]
 	p.Passes = []PassConfig{{Type: "one_to_many"}}
 	cfg.Pairs["p"] = p
 
 	errs := cfg.Validate()
-	if len(errs) == 0 {
-		t.Fatal("expected validation error for unsupported one_to_many pass")
-	}
-	found := false
-	for _, err := range errs {
-		if strings.Contains(err.Error(), "one_to_many") && strings.Contains(err.Error(), "not supported yet") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected one_to_many not-supported error, got: %v", errs)
+	if len(errs) != 0 {
+		t.Fatalf("expected one_to_many pass to be accepted, got errors: %v", errs)
 	}
 }
 
