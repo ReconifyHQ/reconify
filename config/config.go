@@ -57,6 +57,7 @@ type CSVParserCfg = ParserCfg
 const (
 	PassTypeReferenceOneToOne  = "reference_one_to_one"
 	PassTypeNameTokensOneToOne = "name_tokens_one_to_one"
+	PassTypeOneToMany          = "one_to_many"
 )
 
 // PassConfig defines a single matching pass within a pair's pipeline.
@@ -301,17 +302,13 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 		validPassTypes := map[string]bool{
 			PassTypeReferenceOneToOne:  true,
 			PassTypeNameTokensOneToOne: true,
+			PassTypeOneToMany:          true,
 		}
 		for i, pass := range pair.Passes {
 			if !validPassTypes[pass.Type] {
-				if pass.Type == "one_to_many" {
-					errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].type: %q is not supported yet; valid pass types are %s and %s",
-						name, i, pass.Type, PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne))
-					continue
-				}
-				errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].type: unknown pass type %q (valid: %s, %s)",
+				errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].type: unknown pass type %q (valid: %s, %s, %s)",
 					name, i, pass.Type,
-					PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne))
+					PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne, PassTypeOneToMany))
 			}
 		}
 	}

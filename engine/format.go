@@ -49,6 +49,17 @@ type SourceBreakdownWriter interface {
 	WriteSourceSummary(sourceName string, s Summary) error
 }
 
+// GroupedEventWriter is an optional interface implemented by writers that can render
+// grouped and ambiguous match events produced by the one_to_many pass. Writers that
+// do not implement this interface (csv, table) skip these events — the CLI warns
+// when this occurs so data loss is never silent.
+type GroupedEventWriter interface {
+	WriteGroupedMatch(pair GroupedMatchedPair) error
+	WriteGroupedAmountDiff(pair GroupedAmountDiffPair) error
+	WriteGroupedTimingDiff(pair GroupedTimingDiffPair) error
+	WriteAmbiguousGroup(pair AmbiguousGroupPair) error
+}
+
 // NewResultWriter returns a ResultWriter for the given format name.
 // Valid formats: "json", "json-stream", "ndjson", "csv", "table".
 func NewResultWriter(format string, w io.Writer) (ResultWriter, error) {
@@ -121,6 +132,24 @@ func (j *jsonWriter) WriteSourceSummary(sourceName string, s Summary) error {
 	return nil
 }
 
+// GroupedEventWriter implementation — appends to the result struct fields flushed by Flush().
+func (j *jsonWriter) WriteGroupedMatch(pair GroupedMatchedPair) error {
+	j.result.GroupedMatched = append(j.result.GroupedMatched, pair)
+	return nil
+}
+func (j *jsonWriter) WriteGroupedAmountDiff(pair GroupedAmountDiffPair) error {
+	j.result.GroupedAmountDiff = append(j.result.GroupedAmountDiff, pair)
+	return nil
+}
+func (j *jsonWriter) WriteGroupedTimingDiff(pair GroupedTimingDiffPair) error {
+	j.result.GroupedTimingDiff = append(j.result.GroupedTimingDiff, pair)
+	return nil
+}
+func (j *jsonWriter) WriteAmbiguousGroup(pair AmbiguousGroupPair) error {
+	j.result.AmbiguousGroups = append(j.result.AmbiguousGroups, pair)
+	return nil
+}
+
 // SetMeta sets pair and source names on the result. Fixes the pre-existing bug
 // where PairName/LeftSource/RightSource were never populated in the JSON output.
 func (j *jsonWriter) SetMeta(pairName, leftSource, rightSource string) {
@@ -164,6 +193,18 @@ func (j *jsonWriter) sortResult() {
 		}
 		return j.result.Duplicates[i].Source < j.result.Duplicates[k].Source
 	})
+	sort.Slice(j.result.GroupedMatched, func(i, k int) bool {
+		return j.result.GroupedMatched[i].Left.ID < j.result.GroupedMatched[k].Left.ID
+	})
+	sort.Slice(j.result.GroupedAmountDiff, func(i, k int) bool {
+		return j.result.GroupedAmountDiff[i].Left.ID < j.result.GroupedAmountDiff[k].Left.ID
+	})
+	sort.Slice(j.result.GroupedTimingDiff, func(i, k int) bool {
+		return j.result.GroupedTimingDiff[i].Left.ID < j.result.GroupedTimingDiff[k].Left.ID
+	})
+	sort.Slice(j.result.AmbiguousGroups, func(i, k int) bool {
+		return j.result.AmbiguousGroups[i].Reference < j.result.AmbiguousGroups[k].Reference
+	})
 }
 
 func (j *jsonWriter) Flush() error {
@@ -203,6 +244,11 @@ type jsonStreamWriter struct {
 	byKey    map[string]*jsonStreamSection
 	summary  *Summary
 	bySource map[string]Summary
+	// grouped/ambiguous events from one_to_many pass — only emitted when non-empty
+	groupedMatched    []json.RawMessage
+	groupedAmountDiff []json.RawMessage
+	groupedTimingDiff []json.RawMessage
+	ambiguousGroups   []json.RawMessage
 }
 
 func newJSONStreamWriter(w io.Writer) *jsonStreamWriter {
@@ -268,6 +314,41 @@ func (j *jsonStreamWriter) WriteSourceSummary(sourceName string, s Summary) erro
 	j.bySource[sourceName] = s
 	return nil
 }
+
+// GroupedEventWriter implementation — buffers encoded JSON; emitted in Flush() only when non-empty.
+func (j *jsonStreamWriter) WriteGroupedMatch(pair GroupedMatchedPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.groupedMatched = append(j.groupedMatched, b)
+	return nil
+}
+func (j *jsonStreamWriter) WriteGroupedAmountDiff(pair GroupedAmountDiffPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.groupedAmountDiff = append(j.groupedAmountDiff, b)
+	return nil
+}
+func (j *jsonStreamWriter) WriteGroupedTimingDiff(pair GroupedTimingDiffPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.groupedTimingDiff = append(j.groupedTimingDiff, b)
+	return nil
+}
+func (j *jsonStreamWriter) WriteAmbiguousGroup(pair AmbiguousGroupPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.ambiguousGroups = append(j.ambiguousGroups, b)
+	return nil
+}
+
 func (j *jsonStreamWriter) Flush() error {
 	result := map[string]any{
 		"pair":         j.meta.PairName,
@@ -291,6 +372,20 @@ func (j *jsonStreamWriter) Flush() error {
 		} else {
 			result[sec.key] = sec.events
 		}
+	}
+	// Grouped/ambiguous sections from one_to_many pass — only emitted when non-empty
+	// to preserve backwards-compatible output for runs without one_to_many.
+	if len(j.groupedMatched) > 0 {
+		result["grouped_matched"] = j.groupedMatched
+	}
+	if len(j.groupedAmountDiff) > 0 {
+		result["grouped_amount_diff"] = j.groupedAmountDiff
+	}
+	if len(j.groupedTimingDiff) > 0 {
+		result["grouped_timing_diff"] = j.groupedTimingDiff
+	}
+	if len(j.ambiguousGroups) > 0 {
+		result["ambiguous_groups"] = j.ambiguousGroups
 	}
 	enc := json.NewEncoder(j.w)
 	enc.SetIndent("", "  ")
@@ -361,6 +456,20 @@ type sourceSummary struct {
 // source runs. Implements SourceBreakdownWriter.
 func (n *ndjsonWriter) WriteSourceSummary(sourceName string, s Summary) error {
 	return n.emit("source_summary", sourceSummary{Source: sourceName, Summary: s})
+}
+
+// GroupedEventWriter implementation — one tagged line per event.
+func (n *ndjsonWriter) WriteGroupedMatch(pair GroupedMatchedPair) error {
+	return n.emit("grouped_match", pair)
+}
+func (n *ndjsonWriter) WriteGroupedAmountDiff(pair GroupedAmountDiffPair) error {
+	return n.emit("grouped_amount_diff", pair)
+}
+func (n *ndjsonWriter) WriteGroupedTimingDiff(pair GroupedTimingDiffPair) error {
+	return n.emit("grouped_timing_diff", pair)
+}
+func (n *ndjsonWriter) WriteAmbiguousGroup(pair AmbiguousGroupPair) error {
+	return n.emit("ambiguous_group", pair)
 }
 
 // ---------------------------------------------------------------------------

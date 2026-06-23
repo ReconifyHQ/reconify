@@ -138,6 +138,76 @@ Formats:
 
 			jobStart := time.Now()
 
+			// one_to_many passes need all right rows in memory to sum installments and
+			// detect ambiguous references — this breaks the streaming memory contract.
+			// Route to the batch path when the pair pipeline contains one_to_many; the
+			// streaming paths below are only reached when no one_to_many pass is configured.
+			if containsOneToManyPass(pair.Passes) {
+				if auditMode {
+					return fmt.Errorf("--audit is not yet supported with one_to_many passes")
+				}
+				leftTxns, parseErr := engine.Parse(pair.Left, leftPath, leftSrc.Parser)
+				if parseErr != nil {
+					return fmt.Errorf("parse left source: %w", parseErr)
+				}
+				var batchResult *engine.Result
+				if len(counterparts) == 1 {
+					rightSrc, ok := cfg.Sources[counterparts[0]]
+					if !ok {
+						return fmt.Errorf("right source %q not found in config", counterparts[0])
+					}
+					rightPath, rErr := resolveFile(rightFile, rightSrc.FilePattern, configDir)
+					if rErr != nil {
+						return fmt.Errorf("right source: %w", rErr)
+					}
+					rightTxns, rParseErr := engine.Parse(counterparts[0], rightPath, rightSrc.Parser)
+					if rParseErr != nil {
+						return fmt.Errorf("parse right source: %w", rParseErr)
+					}
+					batchResult, parseErr = engine.Reconcile(pairName, pair.Left, counterparts[0], leftTxns, rightTxns, pair)
+					if parseErr != nil {
+						return fmt.Errorf("reconciliation failed: %w", parseErr)
+					}
+				} else {
+					if rightFile != "" {
+						return fmt.Errorf("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
+					}
+					cps := make([]engine.CounterpartInput, 0, len(counterparts))
+					for _, name := range counterparts {
+						src, ok := cfg.Sources[name]
+						if !ok {
+							return fmt.Errorf("right source %q not found in config", name)
+						}
+						cpPath, cpErr := resolveFile("", src.FilePattern, configDir)
+						if cpErr != nil {
+							return fmt.Errorf("counterpart %q: %w", name, cpErr)
+						}
+						cpTxns, cpParseErr := engine.Parse(name, cpPath, src.Parser)
+						if cpParseErr != nil {
+							return fmt.Errorf("parse counterpart %q: %w", name, cpParseErr)
+						}
+						cps = append(cps, engine.CounterpartInput{
+							SourceName:   name,
+							Transactions: cpTxns,
+						})
+					}
+					batchResult, parseErr = engine.ReconcileMultiSource(pairName, pair.Left, leftTxns, cps, pair)
+					if parseErr != nil {
+						return fmt.Errorf("reconciliation failed: %w", parseErr)
+					}
+				}
+				if drainErr := drainResultToWriter(w, batchResult); drainErr != nil {
+					return drainErr
+				}
+				if commitErr := output.Commit(); commitErr != nil {
+					return commitErr
+				}
+				if progress {
+					fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
+				}
+				return nil
+			}
+
 			if len(counterparts) == 1 {
 				// Single-counterpart path: byte-identical to pre-1-N-source behavior.
 				// Never touches the multi-source code path below.
@@ -490,6 +560,99 @@ func replaceExistingOutputFile(tempPath, finalPath string, renameErr error) erro
 		return fmt.Errorf("replace output file: %w", err)
 	}
 	return nil
+}
+
+// containsOneToManyPass reports whether any pass in passes is a one_to_many pass.
+// engine.containsPass is unexported, so the CLI keeps its own copy.
+func containsOneToManyPass(passes []config.PassConfig) bool {
+	for _, p := range passes {
+		if p.Type == config.PassTypeOneToMany {
+			return true
+		}
+	}
+	return false
+}
+
+// drainResultToWriter replays all events from a batch Result through a ResultWriter.
+// Writers that implement GroupedEventWriter receive grouped/ambiguous events; for
+// writers that do not (csv, table), a single warning is printed to stderr and those
+// events are skipped — all standard events are still emitted.
+// ambiguous_groups require manual reconciliation and are never silently dropped from
+// the Summary that is always written last.
+func drainResultToWriter(w engine.ResultWriter, res *engine.Result) error {
+	for _, mp := range res.Matched {
+		if err := w.WriteMatch(mp); err != nil {
+			return err
+		}
+	}
+	for _, ap := range res.AmountDiff {
+		if err := w.WriteAmountDiff(ap); err != nil {
+			return err
+		}
+	}
+	for _, tp := range res.TimingDiff {
+		if err := w.WriteTimingDiff(tp); err != nil {
+			return err
+		}
+	}
+	for _, tx := range res.UnmatchedLeft {
+		if err := w.WriteUnmatched(tx, "left"); err != nil {
+			return err
+		}
+	}
+	for _, tx := range res.UnmatchedRight {
+		if err := w.WriteUnmatched(tx, "right"); err != nil {
+			return err
+		}
+	}
+	for _, dg := range res.Duplicates {
+		if err := w.WriteDuplicate(dg); err != nil {
+			return err
+		}
+	}
+	hasGrouped := len(res.GroupedMatched)+len(res.GroupedAmountDiff)+
+		len(res.GroupedTimingDiff)+len(res.AmbiguousGroups) > 0
+	if gw, ok := w.(engine.GroupedEventWriter); ok {
+		for _, gm := range res.GroupedMatched {
+			if err := gw.WriteGroupedMatch(gm); err != nil {
+				return err
+			}
+		}
+		for _, gd := range res.GroupedAmountDiff {
+			if err := gw.WriteGroupedAmountDiff(gd); err != nil {
+				return err
+			}
+		}
+		for _, gt := range res.GroupedTimingDiff {
+			if err := gw.WriteGroupedTimingDiff(gt); err != nil {
+				return err
+			}
+		}
+		for _, ag := range res.AmbiguousGroups {
+			if err := gw.WriteAmbiguousGroup(ag); err != nil {
+				return err
+			}
+		}
+	} else if hasGrouped {
+		fmt.Fprintln(os.Stderr,
+			"warning: current --format does not support grouped or ambiguous match events; "+
+				"use --format=json or --format=ndjson to capture all one_to_many output")
+	}
+	// Emit warnings to stderr — mirrors what the streaming path does via cc.Warnings().
+	for _, warning := range res.Warnings {
+		fmt.Fprintln(os.Stderr, "warning:", warning)
+	}
+	if sbw, ok := w.(engine.SourceBreakdownWriter); ok {
+		for name, summary := range res.BySource {
+			if err := sbw.WriteSourceSummary(name, summary); err != nil {
+				return err
+			}
+		}
+	}
+	if err := w.WriteSummary(res.Summary); err != nil {
+		return err
+	}
+	return w.Flush()
 }
 
 // resolveFile returns an explicit path if provided, otherwise resolves the first glob match.

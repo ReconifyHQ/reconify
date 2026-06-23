@@ -18,8 +18,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // assertRowCoverage verifies every input row ID appears exactly once across all
-// output buckets. ID sets are used (not lengths) so the helper stays correct for
-// future one-to-many passes where one match event may consume N right rows.
+// output buckets — including grouped and ambiguous slices from the one_to_many pass.
 func assertRowCoverage(t *testing.T, left, right []Transaction, res *Result) {
 	t.Helper()
 
@@ -52,6 +51,33 @@ func assertRowCoverage(t *testing.T, left, right []Transaction, res *Result) {
 	for _, tx := range res.UnmatchedRight {
 		gotRight[tx.ID] = true
 	}
+	// one_to_many grouped outcomes
+	for _, gm := range res.GroupedMatched {
+		gotLeft[gm.Left.ID] = true
+		for _, r := range gm.Rights {
+			gotRight[r.ID] = true
+		}
+	}
+	for _, gd := range res.GroupedAmountDiff {
+		gotLeft[gd.Left.ID] = true
+		for _, r := range gd.Rights {
+			gotRight[r.ID] = true
+		}
+	}
+	for _, gt := range res.GroupedTimingDiff {
+		gotLeft[gt.Left.ID] = true
+		for _, r := range gt.Rights {
+			gotRight[r.ID] = true
+		}
+	}
+	for _, ag := range res.AmbiguousGroups {
+		for _, tx := range ag.LeftRows {
+			gotLeft[tx.ID] = true
+		}
+		for _, r := range ag.Rights {
+			gotRight[r.ID] = true
+		}
+	}
 
 	for id := range wantLeft {
 		if !gotLeft[id] {
@@ -75,21 +101,24 @@ func assertRowCoverage(t *testing.T, left, right []Transaction, res *Result) {
 	}
 }
 
-// assertMonetaryInvariant verifies TotalDiscrepancy == UnmatchedAmountLeft +
-// UnmatchedAmountRight + AmountDiffTotal unconditionally.
+// assertMonetaryInvariant verifies the extended monetary invariant:
+// TotalDiscrepancy == UnmatchedAmountLeft + UnmatchedAmountRight + AmountDiffTotal
+//
+//	+ AmbiguousAmountLeft + AmbiguousAmountRight
 func assertMonetaryInvariant(t *testing.T, s Summary) {
 	t.Helper()
-	computed := s.UnmatchedAmountLeft + s.UnmatchedAmountRight + s.AmountDiffTotal
+	computed := s.UnmatchedAmountLeft + s.UnmatchedAmountRight + s.AmountDiffTotal +
+		s.AmbiguousAmountLeft + s.AmbiguousAmountRight
 	if s.TotalDiscrepancy != computed {
-		t.Errorf("monetary invariant: TotalDiscrepancy=%d want %d (UL=%d + UR=%d + AD=%d)",
+		t.Errorf("monetary invariant: TotalDiscrepancy=%d want %d (UL=%d + UR=%d + AD=%d + AL=%d + AR=%d)",
 			s.TotalDiscrepancy, computed,
-			s.UnmatchedAmountLeft, s.UnmatchedAmountRight, s.AmountDiffTotal)
+			s.UnmatchedAmountLeft, s.UnmatchedAmountRight, s.AmountDiffTotal,
+			s.AmbiguousAmountLeft, s.AmbiguousAmountRight)
 	}
 }
 
 // assertSummaryMatchesCounts verifies that Summary count fields agree with the
-// actual slice lengths in the Result. Guards against Summary being computed from
-// stale/incorrect accumulators.
+// actual slice lengths in the Result, including grouped/ambiguous slices.
 func assertSummaryMatchesCounts(t *testing.T, res *Result) {
 	t.Helper()
 	if res.Summary.MatchedCount != len(res.Matched) {
@@ -107,6 +136,18 @@ func assertSummaryMatchesCounts(t *testing.T, res *Result) {
 	if res.Summary.TimingDiffCount != len(res.TimingDiff) {
 		t.Errorf("Summary.TimingDiffCount=%d len(TimingDiff)=%d", res.Summary.TimingDiffCount, len(res.TimingDiff))
 	}
+	if res.Summary.GroupedMatchedCount != len(res.GroupedMatched) {
+		t.Errorf("Summary.GroupedMatchedCount=%d len(GroupedMatched)=%d", res.Summary.GroupedMatchedCount, len(res.GroupedMatched))
+	}
+	if res.Summary.GroupedAmountDiffCount != len(res.GroupedAmountDiff) {
+		t.Errorf("Summary.GroupedAmountDiffCount=%d len(GroupedAmountDiff)=%d", res.Summary.GroupedAmountDiffCount, len(res.GroupedAmountDiff))
+	}
+	if res.Summary.GroupedTimingDiffCount != len(res.GroupedTimingDiff) {
+		t.Errorf("Summary.GroupedTimingDiffCount=%d len(GroupedTimingDiff)=%d", res.Summary.GroupedTimingDiffCount, len(res.GroupedTimingDiff))
+	}
+	if res.Summary.AmbiguousGroupCount != len(res.AmbiguousGroups) {
+		t.Errorf("Summary.AmbiguousGroupCount=%d len(AmbiguousGroups)=%d", res.Summary.AmbiguousGroupCount, len(res.AmbiguousGroups))
+	}
 }
 
 func TestPasses_UnsupportedPassType_ReturnsError(t *testing.T) {
@@ -116,7 +157,7 @@ func TestPasses_UnsupportedPassType_ReturnsError(t *testing.T) {
 		DateWindow:           "0d",
 		AmountToleranceMinor: 0,
 		Passes: []config.PassConfig{
-			{Type: "one_to_many"},
+			{Type: "unknown_type"},
 		},
 	}
 
@@ -124,7 +165,7 @@ func TestPasses_UnsupportedPassType_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unsupported pass type error")
 	}
-	if !strings.Contains(err.Error(), `unsupported pass type "one_to_many"`) {
+	if !strings.Contains(err.Error(), `unsupported pass type "unknown_type"`) {
 		t.Fatalf("expected unsupported pass type error, got: %v", err)
 	}
 }
@@ -644,4 +685,248 @@ func TestPasses_StreamingParity_ExplicitPasses(t *testing.T) {
 	}
 	compareSummaries(t, "streaming-memory", memSummary, batchRes.Summary)
 	compareSummaries(t, "streaming-disk", diskSummary, batchRes.Summary)
+}
+
+// ---------------------------------------------------------------------------
+// one_to_many pass tests
+// ---------------------------------------------------------------------------
+
+func oneToManyPair() config.Pair {
+	return config.Pair{
+		DateWindow:           "0d",
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeOneToMany}},
+	}
+}
+
+// Test G — basic grouped match: 1 left, 3 rights, sum exact.
+func TestOneToMany_BasicGroupedMatch(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	left := []Transaction{makeTxFull("l1", 300, "INV-001", "", base)}
+	right := []Transaction{
+		makeTxFull("r1", 100, "INV-001", "", base),
+		makeTxFull("r2", 100, "INV-001", "", base),
+		makeTxFull("r3", 100, "INV-001", "", base),
+	}
+	res, err := Reconcile("p", "left", "right", left, right, oneToManyPair())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.GroupedMatched) != 1 {
+		t.Fatalf("GroupedMatched=%d want 1", len(res.GroupedMatched))
+	}
+	if len(res.GroupedMatched[0].Rights) != 3 {
+		t.Errorf("GroupedMatched[0].Rights=%d want 3", len(res.GroupedMatched[0].Rights))
+	}
+	if res.Summary.GroupedMatchedCount != 1 {
+		t.Errorf("GroupedMatchedCount=%d want 1", res.Summary.GroupedMatchedCount)
+	}
+	if res.Summary.AmbiguousGroupCount != 0 {
+		t.Errorf("AmbiguousGroupCount=%d want 0", res.Summary.AmbiguousGroupCount)
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+// Test H — grouped amount diff: sum outside tolerance.
+func TestOneToMany_GroupedAmountDiff(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	left := []Transaction{makeTxFull("l1", 300, "INV-002", "", base)}
+	right := []Transaction{
+		makeTxFull("r1", 100, "INV-002", "", base),
+		makeTxFull("r2", 100, "INV-002", "", base),
+		// sum=250, diff=50 > tolerance=0
+		makeTxFull("r3", 50, "INV-002", "", base),
+	}
+	res, err := Reconcile("p", "left", "right", left, right, oneToManyPair())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.GroupedAmountDiff) != 1 {
+		t.Fatalf("GroupedAmountDiff=%d want 1", len(res.GroupedAmountDiff))
+	}
+	if res.GroupedAmountDiff[0].DiffMinor != 50 {
+		t.Errorf("DiffMinor=%d want 50", res.GroupedAmountDiff[0].DiffMinor)
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+// Test I — grouped timing diff: amounts reconcile within tolerance but a right date
+// is outside the window.
+func TestOneToMany_GroupedTimingDiff(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	late := time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC) // 9 days
+	pair := config.Pair{
+		DateWindow:           "5d",
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeOneToMany}},
+	}
+	left := []Transaction{makeTxFull("l1", 200, "INV-003", "", base)}
+	right := []Transaction{
+		makeTxFull("r1", 100, "INV-003", "", base),
+		makeTxFull("r2", 100, "INV-003", "", late), // 9 days > 5d window
+	}
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.GroupedTimingDiff) != 1 {
+		t.Fatalf("GroupedTimingDiff=%d want 1", len(res.GroupedTimingDiff))
+	}
+	if res.GroupedTimingDiff[0].DaysDiff != 9 {
+		t.Errorf("DaysDiff=%d want 9", res.GroupedTimingDiff[0].DaysDiff)
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+// Test J — both amount and date fail: left stays unmatched, rights NOT consumed
+// (available for a later pass or carry-forward).
+func TestOneToMany_BothFail_RightsNotConsumed(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	late := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	pair := config.Pair{
+		DateWindow:           "5d",
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeOneToMany}},
+	}
+	left := []Transaction{makeTxFull("l1", 300, "INV-004", "", base)}
+	right := []Transaction{
+		makeTxFull("r1", 80, "INV-004", "", late),  // amount fails and date fails
+		makeTxFull("r2", 80, "INV-004", "", late),  // amount fails and date fails
+	}
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.UnmatchedLeft) != 1 {
+		t.Errorf("UnmatchedLeft=%d want 1", len(res.UnmatchedLeft))
+	}
+	if len(res.UnmatchedRight) != 2 {
+		t.Errorf("UnmatchedRight=%d want 2 (rights must not be consumed)", len(res.UnmatchedRight))
+	}
+	if len(res.GroupedMatched)+len(res.GroupedAmountDiff)+len(res.GroupedTimingDiff) != 0 {
+		t.Errorf("expected no grouped outcomes when both amount and date fail")
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+// Test K — group size one: a single right row for a reference is treated as a
+// group of 1, not as a 1-to-1 match (different classification bucket).
+func TestOneToMany_GroupSizeOne(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	left := []Transaction{makeTxFull("l1", 100, "INV-005", "", base)}
+	right := []Transaction{makeTxFull("r1", 100, "INV-005", "", base)}
+	res, err := Reconcile("p", "left", "right", left, right, oneToManyPair())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// one_to_many groups all rights by reference, so even 1 right is GroupedMatched.
+	if len(res.GroupedMatched) != 1 {
+		t.Fatalf("GroupedMatched=%d want 1 (single-right group)", len(res.GroupedMatched))
+	}
+	if len(res.Matched) != 0 {
+		t.Errorf("Matched=%d want 0 (one_to_many must not emit to Matched)", len(res.Matched))
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+// Test L — ambiguous group: 2 left rows share a reference → AmbiguousGroupPair
+// emitted, rows excluded from matching, monetary invariant holds.
+func TestOneToMany_AmbiguousGroup(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	left := []Transaction{
+		makeTxFull("l1", 300, "INV-006", "", base),
+		makeTxFull("l2", 300, "INV-006", "", base), // same reference — ambiguous
+	}
+	right := []Transaction{
+		makeTxFull("r1", 100, "INV-006", "", base),
+		makeTxFull("r2", 100, "INV-006", "", base),
+		makeTxFull("r3", 100, "INV-006", "", base),
+	}
+	res, err := Reconcile("p", "left", "right", left, right, oneToManyPair())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Summary.AmbiguousGroupCount != 1 {
+		t.Errorf("AmbiguousGroupCount=%d want 1", res.Summary.AmbiguousGroupCount)
+	}
+	if len(res.AmbiguousGroups[0].LeftRows) != 2 {
+		t.Errorf("AmbiguousGroups[0].LeftRows=%d want 2", len(res.AmbiguousGroups[0].LeftRows))
+	}
+	if len(res.AmbiguousGroups[0].Rights) != 3 {
+		t.Errorf("AmbiguousGroups[0].Rights=%d want 3", len(res.AmbiguousGroups[0].Rights))
+	}
+	// Ambiguous rows must not appear in any matched/unmatched slice.
+	if len(res.UnmatchedLeft) != 0 || len(res.GroupedMatched) != 0 {
+		t.Errorf("ambiguous rows must not appear in matched or unmatched slices")
+	}
+	// TotalDiscrepancy must include the ambiguous amounts.
+	if res.Summary.AmbiguousAmountLeft != 600 {
+		t.Errorf("AmbiguousAmountLeft=%d want 600", res.Summary.AmbiguousAmountLeft)
+	}
+	if res.Summary.AmbiguousAmountRight != 300 {
+		t.Errorf("AmbiguousAmountRight=%d want 300", res.Summary.AmbiguousAmountRight)
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+// Test M — pipeline [reference_one_to_one, one_to_many]: the reference pass
+// handles clean 1-to-1 rows first; installments that fail BOTH amount and date
+// in the reference pass survive to the one_to_many pass.
+//
+// With a 5-day window and tolerance=0:
+//   - Each installment right ($100) differs from l2 ($200) in amount → !amtOk
+//   - Each installment right is 11 days late → !dateOk
+//   - Ref pass: both fail → l2 unmatched, r2/r3 not consumed
+//   - one_to_many: sum(r2+r3)=200=l2.Amount → amtOk; maxDaysDiff=11>5 → GroupedTimingDiff
+func TestOneToMany_AfterRefPass(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	late := time.Date(2024, 1, 12, 0, 0, 0, 0, time.UTC) // 11 days off — outside 5d window
+	pair := config.Pair{
+		DateWindow:           "5d",
+		AmountToleranceMinor: 0,
+		Passes: []config.PassConfig{
+			{Type: config.PassTypeReferenceOneToOne},
+			{Type: config.PassTypeOneToMany},
+		},
+	}
+	left := []Transaction{
+		makeTxFull("l1", 100, "SIMPLE-001", "", base),
+		makeTxFull("l2", 200, "INV-007", "", base),
+	}
+	right := []Transaction{
+		makeTxFull("r1", 100, "SIMPLE-001", "", base),
+		makeTxFull("r2", 100, "INV-007", "", late),
+		makeTxFull("r3", 100, "INV-007", "", late),
+	}
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 || res.Matched[0].Left.ID != "l1" {
+		t.Errorf("Matched=%d, expected exactly l1 from reference pass", len(res.Matched))
+	}
+	// Installments survive the ref pass (both fail there) and land in GroupedTimingDiff
+	// in the one_to_many pass (amounts sum correctly, but dates are still outside window).
+	if len(res.GroupedTimingDiff) != 1 || res.GroupedTimingDiff[0].Left.ID != "l2" {
+		t.Errorf("GroupedTimingDiff=%d want 1 with l2 (from one_to_many pass)", len(res.GroupedTimingDiff))
+	}
+	if len(res.UnmatchedLeft)+len(res.UnmatchedRight) != 0 {
+		t.Errorf("expected no unmatched rows, got left=%d right=%d",
+			len(res.UnmatchedLeft), len(res.UnmatchedRight))
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
 }

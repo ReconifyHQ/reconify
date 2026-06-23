@@ -54,6 +54,10 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 				unmatchedLeft, unmatchedRight = matchByNameTokens(
 					result, unmatchedLeft, unmatchedRight,
 					pair.AmountToleranceMinor, dateWindowDays, threshold)
+			case config.PassTypeOneToMany:
+				unmatchedLeft, unmatchedRight = matchByReferenceOneToMany(
+					result, unmatchedLeft, unmatchedRight,
+					pair.AmountToleranceMinor, dateWindowDays)
 			default:
 				return nil, fmt.Errorf("unsupported pass type %q", pass.Type)
 			}
@@ -100,7 +104,8 @@ func buildSummary(totalLeft, totalRight int, result *Result) Summary {
 	if total > 0 {
 		matchRate = math.Round(float64(len(result.Matched))/float64(total)*10000) / 100
 	}
-	reconciledCount := len(result.Matched) + len(result.AmountDiff) + len(result.TimingDiff)
+	reconciledCount := len(result.Matched) + len(result.AmountDiff) + len(result.TimingDiff) +
+		len(result.GroupedMatched) + len(result.GroupedAmountDiff) + len(result.GroupedTimingDiff)
 	reconciledRate := 0.0
 	if total > 0 {
 		reconciledRate = math.Round(float64(reconciledCount)/float64(total)*10000) / 100
@@ -115,6 +120,13 @@ func buildSummary(totalLeft, totalRight int, result *Result) Summary {
 	for _, mp := range result.Matched {
 		matchedAmtLeft += mp.Left.Amount
 		matchedAmtRight += mp.Right.Amount
+	}
+	// Grouped matches contribute to the same matched totals.
+	for _, gm := range result.GroupedMatched {
+		matchedAmtLeft += gm.Left.Amount
+		for _, r := range gm.Rights {
+			matchedAmtRight += r.Amount
+		}
 	}
 	var unmatchedAmtLeft int64
 	for _, tx := range result.UnmatchedLeft {
@@ -132,24 +144,48 @@ func buildSummary(totalLeft, totalRight int, result *Result) Summary {
 		}
 		amountDiffTotal += d
 	}
+	for _, gd := range result.GroupedAmountDiff {
+		d := gd.DiffMinor
+		if d < 0 {
+			d = -d
+		}
+		amountDiffTotal += d
+	}
+	// Ambiguous groups require manual reconciliation — their amounts count toward
+	// TotalDiscrepancy separately from unmatched rows.
+	var ambiguousAmtLeft, ambiguousAmtRight int64
+	for _, ag := range result.AmbiguousGroups {
+		for _, tx := range ag.LeftRows {
+			ambiguousAmtLeft += tx.Amount
+		}
+		for _, tx := range ag.Rights {
+			ambiguousAmtRight += tx.Amount
+		}
+	}
 
 	return Summary{
-		TotalLeft:            totalLeft,
-		TotalRight:           totalRight,
-		MatchedCount:         len(result.Matched),
-		UnmatchedLeft:        len(result.UnmatchedLeft),
-		UnmatchedRight:       len(result.UnmatchedRight),
-		AmountDiffCount:      len(result.AmountDiff),
-		TimingDiffCount:      len(result.TimingDiff),
-		DuplicateCount:       dupTxnCount,
-		MatchRatePct:         matchRate,
-		ReconciledRatePct:    reconciledRate,
-		MatchedAmountLeft:    matchedAmtLeft,
-		MatchedAmountRight:   matchedAmtRight,
-		UnmatchedAmountLeft:  unmatchedAmtLeft,
-		UnmatchedAmountRight: unmatchedAmtRight,
-		AmountDiffTotal:      amountDiffTotal,
-		TotalDiscrepancy:     unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal,
+		TotalLeft:              totalLeft,
+		TotalRight:             totalRight,
+		MatchedCount:           len(result.Matched),
+		UnmatchedLeft:          len(result.UnmatchedLeft),
+		UnmatchedRight:         len(result.UnmatchedRight),
+		AmountDiffCount:        len(result.AmountDiff),
+		TimingDiffCount:        len(result.TimingDiff),
+		DuplicateCount:         dupTxnCount,
+		MatchRatePct:           matchRate,
+		ReconciledRatePct:      reconciledRate,
+		GroupedMatchedCount:    len(result.GroupedMatched),
+		GroupedAmountDiffCount: len(result.GroupedAmountDiff),
+		GroupedTimingDiffCount: len(result.GroupedTimingDiff),
+		AmbiguousGroupCount:    len(result.AmbiguousGroups),
+		MatchedAmountLeft:      matchedAmtLeft,
+		MatchedAmountRight:     matchedAmtRight,
+		UnmatchedAmountLeft:    unmatchedAmtLeft,
+		UnmatchedAmountRight:   unmatchedAmtRight,
+		AmountDiffTotal:        amountDiffTotal,
+		AmbiguousAmountLeft:    ambiguousAmtLeft,
+		AmbiguousAmountRight:   ambiguousAmtRight,
+		TotalDiscrepancy:       unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal + ambiguousAmtLeft + ambiguousAmtRight,
 	}
 }
 
@@ -931,6 +967,154 @@ func matchByReference(
 	}
 
 	// Collect right transactions that were never used
+	for _, rtx := range right {
+		if !usedRight[rtx.ID] {
+			unmatchedRight = append(unmatchedRight, rtx)
+		}
+	}
+
+	return unmatchedLeft, unmatchedRight
+}
+
+// matchByReferenceOneToMany handles the case where one left transaction is settled
+// by N right transactions sharing the same reference (e.g. one invoice paid via
+// installments). All right rows for a reference are summed before comparison.
+//
+// Ambiguity detection runs first: when more than one left row shares a reference
+// the grouping is undetermined (first-wins would silently mis-reconcile money), so
+// those rows are emitted as AmbiguousGroupPair and excluded from matching entirely.
+//
+// Users must set group_col to a per-row-unique column on the right source when right
+// rows are intentional installments sharing a reference — otherwise the duplicate
+// detector will flag them before this pass runs.
+func matchByReferenceOneToMany(
+	result *Result,
+	left, right []Transaction,
+	tolerance int64,
+	windowDays int,
+) (unmatchedLeft, unmatchedRight []Transaction) {
+	// Build reference → right-rows index, skipping empty references.
+	rightByRef := make(map[string][]Transaction, len(right))
+	for _, tx := range right {
+		if tx.Reference != "" {
+			rightByRef[tx.Reference] = append(rightByRef[tx.Reference], tx)
+		}
+	}
+
+	// Build reference → left-indices index in a single pass.
+	leftByRef := make(map[string][]int, len(left))
+	for i, tx := range left {
+		if tx.Reference != "" {
+			leftByRef[tx.Reference] = append(leftByRef[tx.Reference], i)
+		}
+	}
+
+	// Track consumed left rows and right rows.
+	consumedLeft := make(map[int]bool)
+	usedRight := make(map[string]bool)
+
+	// Ambiguity pass: any reference claimed by >1 left row is undetermined.
+	// Emit one AmbiguousGroupPair per such reference and mark all involved rows consumed.
+	for ref, indices := range leftByRef {
+		if len(indices) <= 1 {
+			continue
+		}
+		rows := make([]Transaction, len(indices))
+		for i, idx := range indices {
+			rows[i] = left[idx]
+			consumedLeft[idx] = true
+		}
+		rights := rightByRef[ref]
+		for _, r := range rights {
+			usedRight[r.ID] = true
+		}
+		result.AmbiguousGroups = append(result.AmbiguousGroups, AmbiguousGroupPair{
+			Reference: ref,
+			LeftRows:  rows,
+			Rights:    rights,
+		})
+	}
+
+	// Matching loop over non-ambiguous left rows.
+	for i, ltx := range left {
+		if consumedLeft[i] {
+			continue
+		}
+		if ltx.Reference == "" {
+			unmatchedLeft = append(unmatchedLeft, ltx)
+			continue
+		}
+		candidates, ok := rightByRef[ltx.Reference]
+		if !ok {
+			unmatchedLeft = append(unmatchedLeft, ltx)
+			continue
+		}
+
+		// Collect all unused rights for this reference.
+		available := candidates[:0:0] // nil-like but avoids an alloc on the common path
+		for _, r := range candidates {
+			if !usedRight[r.ID] {
+				available = append(available, r)
+			}
+		}
+		if len(available) == 0 {
+			unmatchedLeft = append(unmatchedLeft, ltx)
+			continue
+		}
+
+		// Sum right amounts and compute max date distance.
+		var sum int64
+		maxDaysDiff := 0
+		for _, r := range available {
+			sum += r.Amount
+			if d := daysBetween(ltx.Date, r.Date); d > maxDaysDiff {
+				maxDaysDiff = d
+			}
+		}
+
+		amtDiff := ltx.Amount - sum
+		if amtDiff < 0 {
+			amtDiff = -amtDiff
+		}
+		amtOk := amtDiff <= tolerance
+		dateOk := windowDays == 0 || maxDaysDiff <= windowDays
+
+		switch {
+		case amtOk && dateOk:
+			result.GroupedMatched = append(result.GroupedMatched, GroupedMatchedPair{
+				Left:   ltx,
+				Rights: available,
+			})
+			for _, r := range available {
+				usedRight[r.ID] = true
+			}
+		case !amtOk && dateOk:
+			signed := ltx.Amount - sum
+			result.GroupedAmountDiff = append(result.GroupedAmountDiff, GroupedAmountDiffPair{
+				Left:      ltx,
+				Rights:    available,
+				DiffMinor: signed,
+			})
+			for _, r := range available {
+				usedRight[r.ID] = true
+			}
+		case amtOk && !dateOk:
+			result.GroupedTimingDiff = append(result.GroupedTimingDiff, GroupedTimingDiffPair{
+				Left:     ltx,
+				Rights:   available,
+				DaysDiff: maxDaysDiff,
+			})
+			for _, r := range available {
+				usedRight[r.ID] = true
+			}
+		default:
+			// Both amount and date fail — left is unmatched, rights NOT consumed
+			// so a later pass can still match them.
+			unmatchedLeft = append(unmatchedLeft, ltx)
+		}
+	}
+
+	// Collect unused rights.
 	for _, rtx := range right {
 		if !usedRight[rtx.ID] {
 			unmatchedRight = append(unmatchedRight, rtx)
