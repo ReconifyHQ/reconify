@@ -60,6 +60,21 @@ type GroupedEventWriter interface {
 	WriteAmbiguousGroup(pair AmbiguousGroupPair) error
 }
 
+// JSON section key names for grouped/ambiguous slices (used by jsonStreamWriter)
+// and ndjson event type tags (used by ndjsonWriter).
+// The JSON section keys mirror the Result struct field names (plural);
+// the ndjson tags follow the event-name convention (singular action noun).
+// grouped_amount_diff and grouped_timing_diff are identical in both forms.
+const (
+	keyGroupedMatched    = "grouped_matched"
+	keyGroupedAmountDiff = "grouped_amount_diff"
+	keyGroupedTimingDiff = "grouped_timing_diff"
+	keyAmbiguousGroups   = "ambiguous_groups"
+
+	eventGroupedMatch   = "grouped_match"    // ndjson type tag (singular)
+	eventAmbiguousGroup = "ambiguous_group"  // ndjson type tag (singular)
+)
+
 // NewResultWriter returns a ResultWriter for the given format name.
 // Valid formats: "json", "json-stream", "ndjson", "csv", "table".
 func NewResultWriter(format string, w io.Writer) (ResultWriter, error) {
@@ -376,16 +391,16 @@ func (j *jsonStreamWriter) Flush() error {
 	// Grouped/ambiguous sections from one_to_many pass — only emitted when non-empty
 	// to preserve backwards-compatible output for runs without one_to_many.
 	if len(j.groupedMatched) > 0 {
-		result["grouped_matched"] = j.groupedMatched
+		result[keyGroupedMatched] = j.groupedMatched
 	}
 	if len(j.groupedAmountDiff) > 0 {
-		result["grouped_amount_diff"] = j.groupedAmountDiff
+		result[keyGroupedAmountDiff] = j.groupedAmountDiff
 	}
 	if len(j.groupedTimingDiff) > 0 {
-		result["grouped_timing_diff"] = j.groupedTimingDiff
+		result[keyGroupedTimingDiff] = j.groupedTimingDiff
 	}
 	if len(j.ambiguousGroups) > 0 {
-		result["ambiguous_groups"] = j.ambiguousGroups
+		result[keyAmbiguousGroups] = j.ambiguousGroups
 	}
 	enc := json.NewEncoder(j.w)
 	enc.SetIndent("", "  ")
@@ -460,16 +475,16 @@ func (n *ndjsonWriter) WriteSourceSummary(sourceName string, s Summary) error {
 
 // GroupedEventWriter implementation — one tagged line per event.
 func (n *ndjsonWriter) WriteGroupedMatch(pair GroupedMatchedPair) error {
-	return n.emit("grouped_match", pair)
+	return n.emit(eventGroupedMatch, pair)
 }
 func (n *ndjsonWriter) WriteGroupedAmountDiff(pair GroupedAmountDiffPair) error {
-	return n.emit("grouped_amount_diff", pair)
+	return n.emit(keyGroupedAmountDiff, pair)
 }
 func (n *ndjsonWriter) WriteGroupedTimingDiff(pair GroupedTimingDiffPair) error {
-	return n.emit("grouped_timing_diff", pair)
+	return n.emit(keyGroupedTimingDiff, pair)
 }
 func (n *ndjsonWriter) WriteAmbiguousGroup(pair AmbiguousGroupPair) error {
-	return n.emit("ambiguous_group", pair)
+	return n.emit(eventAmbiguousGroup, pair)
 }
 
 // ---------------------------------------------------------------------------
