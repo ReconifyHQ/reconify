@@ -15,6 +15,14 @@
 
 ## Agent Workflows (Skills)
 
+Install all skills into any project with:
+
+```bash
+npx @reconifyhq/skills
+```
+
+This writes skill files into `.agents/skills/`, `.claude/skills/`, and `.codex/skills/` in the current directory. Skills already present are overwritten with the latest version.
+
 - [CLI skill](/.agents/skills/reconify-cli/SKILL.md): add/change CLI commands, flags, output formats
 - [Config skill](/.agents/skills/reconify-config/SKILL.md): create or validate `reconify.yaml`
 - [Performance skill](/.agents/skills/reconify-performance/SKILL.md): benchmarks, streaming, index backends

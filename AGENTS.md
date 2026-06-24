@@ -53,6 +53,8 @@ Canonical skills live under `.agents/skills/` and are intentionally tool-agnosti
 
 Tool-specific files should be thin adapters that point back to these canonical skills. Do not duplicate long workflow instructions across Codex, Claude, Gemini, and Copilot files.
 
+**Installing skills into another project:** `npx @reconifyhq/skills` copies all skill files into the target project's `.agents/skills/`, `.claude/skills/`, and `.codex/skills/` directories. The npm package is defined in `package.json` at the repo root; the install script is `scripts/install-skills.js`.
+
 ## Pull Requests
 
 - Use the template at `.github/PULL_REQUEST_TEMPLATE.md`. GitHub pre-fills it
