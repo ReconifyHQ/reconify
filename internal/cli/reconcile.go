@@ -217,7 +217,7 @@ Formats:
 					fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 				}
 				if failIfUnmatched && (batchResult.Summary.UnmatchedLeft+batchResult.Summary.UnmatchedRight) > 0 {
-					return &CLIError{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+					return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
 				}
 				return nil
 			}
@@ -237,7 +237,7 @@ Formats:
 				if auditMode {
 					// Check the inner writer directly: when summaryCapture wraps w, the
 					// optional RunInfoSetter interface is no longer visible on w itself.
-					auditTarget := engine.ResultWriter(w)
+					auditTarget := w
 					if sc != nil {
 						auditTarget = sc.inner
 					}
@@ -398,7 +398,7 @@ Formats:
 			}
 			if failIfUnmatched && sc != nil &&
 				(sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 {
-				return &CLIError{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+				return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
 			}
 
 			return nil

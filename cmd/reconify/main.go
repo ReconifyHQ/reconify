@@ -20,7 +20,7 @@ func main() {
 		exitCode := 1
 		errCode := "error"
 
-		var cliErr *cli.CLIError
+		var cliErr *cli.Error
 		if errors.As(err, &cliErr) {
 			exitCode = cliErr.Code
 			errCode = cliErr.ErrCode

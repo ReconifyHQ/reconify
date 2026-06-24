@@ -10,23 +10,23 @@ const (
 	ErrCodeUnmatched = 3
 )
 
-// CLIError is a typed error that carries an exit code and a short machine-readable
-// error code string. Commands return CLIError for expected failure conditions;
+// Error is a typed error that carries an exit code and a short machine-readable
+// error code string. Commands return Error for expected failure conditions;
 // unexpected/internal errors use plain fmt.Errorf (exit code 1).
-type CLIError struct {
+type Error struct {
 	Code    int    // process exit code
 	ErrCode string // e.g. "config_error", "unmatched"
 	Msg     string
 }
 
-func (e *CLIError) Error() string { return e.Msg }
+func (e *Error) Error() string { return e.Msg }
 
-// configErr wraps msg in a CLIError with ErrCodeConfig.
-func configErr(msg string) *CLIError {
-	return &CLIError{Code: ErrCodeConfig, ErrCode: "config_error", Msg: msg}
+// configErr wraps msg in an Error with ErrCodeConfig.
+func configErr(msg string) *Error {
+	return &Error{Code: ErrCodeConfig, ErrCode: "config_error", Msg: msg}
 }
 
-// configErrf wraps a formatted message in a CLIError with ErrCodeConfig.
-func configErrf(format string, a ...any) *CLIError {
-	return &CLIError{Code: ErrCodeConfig, ErrCode: "config_error", Msg: fmt.Sprintf(format, a...)}
+// configErrf wraps a formatted message in an Error with ErrCodeConfig.
+func configErrf(format string, a ...any) *Error {
+	return &Error{Code: ErrCodeConfig, ErrCode: "config_error", Msg: fmt.Sprintf(format, a...)}
 }

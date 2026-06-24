@@ -104,7 +104,7 @@ func assertRowCoverage(t *testing.T, left, right []Transaction, res *Result) {
 // assertMonetaryInvariant verifies the extended monetary invariant:
 // TotalDiscrepancy == UnmatchedAmountLeft + UnmatchedAmountRight + AmountDiffTotal
 //
-//	+ AmbiguousAmountLeft + AmbiguousAmountRight
+//   - AmbiguousAmountLeft + AmbiguousAmountRight
 func assertMonetaryInvariant(t *testing.T, s Summary) {
 	t.Helper()
 	computed := s.UnmatchedAmountLeft + s.UnmatchedAmountRight + s.AmountDiffTotal +
@@ -796,8 +796,8 @@ func TestOneToMany_BothFail_RightsNotConsumed(t *testing.T) {
 	}
 	left := []Transaction{makeTxFull("l1", 300, "INV-004", "", base)}
 	right := []Transaction{
-		makeTxFull("r1", 80, "INV-004", "", late),  // amount fails and date fails
-		makeTxFull("r2", 80, "INV-004", "", late),  // amount fails and date fails
+		makeTxFull("r1", 80, "INV-004", "", late), // amount fails and date fails
+		makeTxFull("r2", 80, "INV-004", "", late), // amount fails and date fails
 	}
 	res, err := Reconcile("p", "left", "right", left, right, pair)
 	if err != nil {
