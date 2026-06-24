@@ -44,11 +44,16 @@ Use `go test ./...` for quick verification. Use `make test` when race detection 
 
 Canonical skills live under `.agents/skills/` and are intentionally tool-agnostic:
 
-- `.agents/skills/reconify-cli/SKILL.md`
-- `.agents/skills/reconify-config/SKILL.md`
-- `.agents/skills/reconify-performance/SKILL.md`
+- `.agents/skills/reconify-cli/SKILL.md` — CLI commands, flags, output formats, docs
+- `.agents/skills/reconify-config/SKILL.md` — YAML config creation, validation, source/pair setup
+- `.agents/skills/reconify-performance/SKILL.md` — benchmarking, streaming, index backends
+- `.agents/skills/reconify-debug/SKILL.md` — interpreting NDJSON/JSON output, diagnosing mismatches
+- `.agents/skills/reconify-bootstrap/SKILL.md` — end-to-end new project setup from scratch
+- `.agents/skills/reconify-ci/SKILL.md` — GitHub Actions, drift detection, --fail-if-unmatched
 
 Tool-specific files should be thin adapters that point back to these canonical skills. Do not duplicate long workflow instructions across Codex, Claude, Gemini, and Copilot files.
+
+**Installing skills into another project:** `npx @reconifyhq/skills` copies all skill files into the target project's `.agents/skills/`, `.claude/skills/`, and `.codex/skills/` directories. The npm package is defined in `package.json` at the repo root; the install script is `scripts/install-skills.js`.
 
 ## Pull Requests
 

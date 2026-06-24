@@ -71,8 +71,8 @@ const (
 	keyGroupedTimingDiff = "grouped_timing_diff"
 	keyAmbiguousGroups   = "ambiguous_groups"
 
-	eventGroupedMatch   = "grouped_match"    // ndjson type tag (singular)
-	eventAmbiguousGroup = "ambiguous_group"  // ndjson type tag (singular)
+	eventGroupedMatch   = "grouped_match"   // ndjson type tag (singular)
+	eventAmbiguousGroup = "ambiguous_group" // ndjson type tag (singular)
 )
 
 // NewResultWriter returns a ResultWriter for the given format name.
