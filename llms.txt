@@ -1,42 +1,135 @@
 # Reconify
 
-Reconify is a Go CLI and library for reconciling financial CSV data from banks, PSPs, ledgers, and spreadsheets.
+> Reconify is a Go CLI and library for reconciling financial CSV data from banks, PSPs, ledgers, and spreadsheets. Agents can read this file to get a fast, accurate picture of the project without reading all the source code.
 
 ## Start
 
-- Project orientation: AGENTS.md
-- Human README: README.md
-- Contributor guide: CONTRIBUTING.md
-- CLI entrypoint: cmd/reconify/main.go
-- CLI commands: internal/cli/
-- Config model: config/config.go
-- Reconciliation engine: engine/
-- Example config: examples/reconify.yaml
+- [Project orientation](AGENTS.md): canonical agent guide — read this first
+- [Human README](README.md): user-facing setup and CLI examples
+- [Example config](examples/reconify.yaml): full working `reconify.yaml` with all optional fields
+- [CLI entrypoint](cmd/reconify/main.go): main binary
+- [CLI commands](internal/cli/): Cobra command implementations
+- [Config model](config/config.go): YAML struct definitions and validation rules (source of truth for config shape)
+- [Reconciliation engine](engine/): parser, reconciler, indexes, output writers
+- [Type definitions](engine/transaction.go): Transaction, Summary, MatchedPair, all event types
 
-## Agent Workflows
+## Agent Workflows (Skills)
 
-- Canonical skills: .agents/skills/
-- CLI workflow: .agents/skills/reconify-cli/SKILL.md
-- Config workflow: .agents/skills/reconify-config/SKILL.md
-- Performance workflow: .agents/skills/reconify-performance/SKILL.md
-
-## Tool Adapters
-
-- Claude: CLAUDE.md and .claude/skills/
-- Codex: AGENTS.md and .codex/skills/
-- Gemini: GEMINI.md
-- Copilot: .github/copilot-instructions.md
+- [CLI skill](/.agents/skills/reconify-cli/SKILL.md): add/change CLI commands, flags, output formats
+- [Config skill](/.agents/skills/reconify-config/SKILL.md): create or validate `reconify.yaml`
+- [Performance skill](/.agents/skills/reconify-performance/SKILL.md): benchmarks, streaming, index backends
+- [Debug skill](/.agents/skills/reconify-debug/SKILL.md): interpret output, diagnose mismatches, read NDJSON events
+- [Bootstrap skill](/.agents/skills/reconify-bootstrap/SKILL.md): end-to-end new project setup from scratch
+- [CI skill](/.agents/skills/reconify-ci/SKILL.md): GitHub Actions, `--fail-if-unmatched`, deterministic diff
 
 ## Commands
 
-- Quick tests: go test ./...
-- Race and coverage: make test
-- Lint: make lint
-- Build CLI: make build
-- Inspect CLI: go run ./cmd/reconify --help
+- Quick tests: `go test ./...`
+- Race detection + coverage: `make test`
+- Lint: `make lint`
+- Build CLI: `make build`
+- Inspect CLI: `go run ./cmd/reconify --help`
+- Machine-readable schema: `go run ./cmd/reconify config schema`
+
+## CLI Exit Codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Unexpected or internal error |
+| 2 | Config or validation error (bad YAML, missing pair/source, wrong column) |
+| 3 | Reconcile completed with unmatched rows (only when `--fail-if-unmatched` is set) |
+
+Use `--error-format json` to get structured errors on stderr: `{"error":"...","code":"config_error"}`.
+
+## Output Formats
+
+**`reconcile` command** (flag: `--format`):
+
+| Format | Memory | Notes |
+|---|---|---|
+| `json` (default) | Buffers all | `--deterministic` stable sort; `--audit` compatible |
+| `json-stream` | Low GC | Streams each event; bytes accumulate; `--audit` compatible |
+| `ndjson` | O(1) | One JSON line per event; crash-safe; recommended for large jobs |
+| `csv` | O(1) | Fixed schema; no grouped events |
+| `table` | Buffers all | Human-readable ASCII; no grouped events |
+
+**`parse` command** (flag: `--format`): `ndjson` (default), `csv`, `table`, `json`
+
+## NDJSON Event Types
+
+Each line is `{"type":"<name>","data":{...}}`. Events are emitted in this order:
+
+```
+{"type":"run_info","data":{"run_id":"...","timestamp":"2025-01-15T06:00:00Z","tool_version":"0.3.0","files":{...},"pair_config":{...}}}
+{"type":"match","data":{"left":{"id":"L001","date":"2025-01-10T00:00:00Z","amount":10000,"currency":"USD","reference":"TXN-001","name":"Acme Corp","source":"bank"},"right":{"id":"R001","date":"2025-01-10T00:00:00Z","amount":10000,"currency":"USD","reference":"TXN-001","name":"Acme Corp","source":"psp"}}}
+{"type":"amount_diff","data":{"left":{"id":"L002","amount":10050,"reference":"TXN-002","source":"bank"},"right":{"id":"R002","amount":10000,"reference":"TXN-002","source":"psp"},"diff_minor":50}}
+{"type":"timing_diff","data":{"left":{"id":"L003","date":"2025-01-10T00:00:00Z","reference":"TXN-003","source":"bank"},"right":{"id":"R003","date":"2025-01-13T00:00:00Z","reference":"TXN-003","source":"psp"},"days_diff":3}}
+{"type":"unmatched_left","data":{"id":"L004","amount":5000,"reference":"TXN-004","source":"bank"}}
+{"type":"unmatched_right","data":{"id":"R005","amount":2000,"reference":"TXN-005","source":"psp"}}
+{"type":"duplicate","data":{"source":"bank","reference":"TXN-006","transactions":[{"id":"L006a"},{"id":"L006b"}]}}
+{"type":"grouped_match","data":{"left":{"id":"L007","amount":30000,"reference":"INST-001","source":"bank"},"rights":[{"id":"R007a","amount":10000},{"id":"R007b","amount":10000},{"id":"R007c","amount":10000}]}}
+{"type":"ambiguous_group","data":{"reference":"TXN-008","left_rows":[{"id":"L008a"},{"id":"L008b"}],"rights":[{"id":"R008"}]}}
+{"type":"summary","data":{"total_left":100,"total_right":98,"matched":90,"unmatched_left":4,"unmatched_right":2,"amount_diff_count":2,"timing_diff_count":1,"duplicate_count":2,"match_rate_pct":90.0,"reconciled_rate_pct":93.0}}
+```
+
+`run_info` is only emitted when `--audit` is set and is always the first line. `summary` is always the last line. Transaction `amount` fields are always in **minor units** (e.g. cents, kobo).
+
+## Common Stderr Messages and Their Meaning
+
+| Message | Exit code | Meaning / Fix |
+|---|---|---|
+| `❌ reconify.yaml is invalid: ...` | 2 | Config validation failed. Read the listed errors and fix the YAML. |
+| `[x] date_col "Date" not found in input fields` | 2 | Column name mismatch. Run `config check-source` and copy the exact header. |
+| `failed to load config: open reconify.yaml: no such file` | 2 | Config file not found. Use `--config` flag or set `RECONIFY_CONFIG`. |
+| `pair "X" not found in config` | 2 | Pair name typo or wrong `--pair` flag. |
+| `no files match pattern "data/*.csv"` | 2 | File pattern resolved to no files. Path is relative to the config file directory. |
+| `reconciliation has unmatched rows` | 3 | `--fail-if-unmatched` set and unmatched rows exist. Check the summary event for counts. |
+| `warning: --deterministic has no effect for --format="ndjson"` | — | `--deterministic` only works with `--format=json`. |
+
+## Config Schema
+
+Run `go run ./cmd/reconify config schema` for the full machine-readable JSON schema.
+
+Minimal valid `reconify.yaml`:
+
+```yaml
+version: 1
+sources:
+  bank:
+    file_pattern: "data/bank/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"   # Go layout, not strftime
+      amount_col: "Amount"
+      multiplier: 100              # dollar → cents
+      ref_col: "Reference"
+  psp:
+    file_pattern: "data/psp/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      amount_col: "Amount"
+      multiplier: 100
+      ref_col: "Reference"
+pairs:
+  bank_vs_psp:
+    left: bank
+    right: psp
+    date_window: "1d"
+    amount_tolerance_minor: 0
+    name_mode: none
+```
 
 ## Docs
 
-- Engine internals: docs/engine/README.md
-- Performance notes: docs/performance/README.md
-- Production readiness notes: docs/performance/PRODUCTION_READINESS_REPORT.md
+- [Engine internals](docs/engine/README.md): matching passes, index backends, streaming model
+- [Performance notes](docs/performance/README.md): memory, benchmarks, large-file recommendations
+
+## Optional
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Benchmark scripts](scripts/): `bench_full.sh`, `bench_rss.sh`
+- [Production readiness report](docs/content/docs/performance/production-readiness-report.md)

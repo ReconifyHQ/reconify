@@ -26,6 +26,7 @@ func newReconcileCmd() *cobra.Command {
 	var deterministic bool
 	var progress bool
 	var progressEvery int
+	var failIfUnmatched bool
 
 	cmd := &cobra.Command{
 		Use:   "reconcile",
@@ -48,16 +49,16 @@ Formats:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
 			if pairName == "" {
-				return fmt.Errorf("--pair is required")
+				return configErr("--pair is required")
 			}
 
 			cfgPath := getConfigPath()
 			cfg, err := config.Load(cfgPath)
 			if err != nil {
-				return fmt.Errorf("failed to load config: %w", err)
+				return configErrf("failed to load config: %v", err)
 			}
 			if errs := cfg.Validate(); len(errs) > 0 {
-				return fmt.Errorf("config validation failed: %v", errs[0])
+				return configErrf("config validation failed: %v", errs[0])
 			}
 			cfgAbs, err := filepath.Abs(cfgPath)
 			if err != nil {
@@ -67,12 +68,12 @@ Formats:
 
 			pair, ok := cfg.Pairs[pairName]
 			if !ok {
-				return fmt.Errorf("pair %q not found in config", pairName)
+				return configErrf("pair %q not found in config", pairName)
 			}
 
 			leftSrc, ok := cfg.Sources[pair.Left]
 			if !ok {
-				return fmt.Errorf("left source %q not found in config", pair.Left)
+				return configErrf("left source %q not found in config", pair.Left)
 			}
 
 			// Counterparts() resolves either pair.Right (single counterpart, the
@@ -81,13 +82,13 @@ Formats:
 			// every name exists in cfg.Sources.
 			counterparts := pair.Counterparts()
 			if len(counterparts) == 0 {
-				return fmt.Errorf("pair %q has no right or rights configured", pairName)
+				return configErrf("pair %q has no right or rights configured", pairName)
 			}
 
 			// Resolve left file path: explicit flag overrides the glob pattern.
 			leftPath, err := resolveFile(leftFile, leftSrc.FilePattern, configDir)
 			if err != nil {
-				return fmt.Errorf("left source: %w", err)
+				return configErrf("left source: %v", err)
 			}
 
 			output, err := openReconcileOutput(outputPath, auditMode)
@@ -117,7 +118,7 @@ Formats:
 			// envelope assumes a single right file/source. auditInfo is populated
 			// below, inside the single-counterpart branch, once rightPath is known.
 			if auditMode && len(counterparts) > 1 {
-				return fmt.Errorf("--audit is not yet supported for multi-counterpart (rights) pairs")
+				return configErr("--audit is not yet supported for multi-counterpart (rights) pairs")
 			}
 			var auditInfo engine.RunInfo
 
@@ -134,6 +135,16 @@ Formats:
 					fmt.Fprintln(os.Stderr,
 						"warning: --deterministic with --audit still varies run_info.timestamp/run_id; set --audit-fixed-timestamp for byte-identical reruns")
 				}
+			}
+
+			// When --fail-if-unmatched is set, wrap the writer to capture the final
+			// summary. All optional-interface setup (SetMeta, SetDeterministic) has
+			// already been applied to the inner writer above; audit's SetRunInfo is
+			// applied in the single-counterpart branch below, also before wrapping.
+			var sc *summaryCapture
+			if failIfUnmatched {
+				sc = &summaryCapture{inner: w}
+				w = sc
 			}
 
 			jobStart := time.Now()
@@ -154,11 +165,11 @@ Formats:
 				if len(counterparts) == 1 {
 					rightSrc, ok := cfg.Sources[counterparts[0]]
 					if !ok {
-						return fmt.Errorf("right source %q not found in config", counterparts[0])
+						return configErrf("right source %q not found in config", counterparts[0])
 					}
 					rightPath, rErr := resolveFile(rightFile, rightSrc.FilePattern, configDir)
 					if rErr != nil {
-						return fmt.Errorf("right source: %w", rErr)
+						return configErrf("right source: %v", rErr)
 					}
 					rightTxns, rParseErr := engine.Parse(counterparts[0], rightPath, rightSrc.Parser)
 					if rParseErr != nil {
@@ -170,17 +181,17 @@ Formats:
 					}
 				} else {
 					if rightFile != "" {
-						return fmt.Errorf("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
+						return configErr("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
 					}
 					cps := make([]engine.CounterpartInput, 0, len(counterparts))
 					for _, name := range counterparts {
 						src, ok := cfg.Sources[name]
 						if !ok {
-							return fmt.Errorf("right source %q not found in config", name)
+							return configErrf("right source %q not found in config", name)
 						}
 						cpPath, cpErr := resolveFile("", src.FilePattern, configDir)
 						if cpErr != nil {
-							return fmt.Errorf("counterpart %q: %w", name, cpErr)
+							return configErrf("counterpart %q: %v", name, cpErr)
 						}
 						cpTxns, cpParseErr := engine.Parse(name, cpPath, src.Parser)
 						if cpParseErr != nil {
@@ -205,6 +216,9 @@ Formats:
 				if progress {
 					fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 				}
+				if failIfUnmatched && (batchResult.Summary.UnmatchedLeft+batchResult.Summary.UnmatchedRight) > 0 {
+					return &CLIError{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+				}
 				return nil
 			}
 
@@ -213,17 +227,23 @@ Formats:
 				// Never touches the multi-source code path below.
 				rightSrc, ok := cfg.Sources[counterparts[0]]
 				if !ok {
-					return fmt.Errorf("right source %q not found in config", counterparts[0])
+					return configErrf("right source %q not found in config", counterparts[0])
 				}
 				rightPath, err := resolveFile(rightFile, rightSrc.FilePattern, configDir)
 				if err != nil {
-					return fmt.Errorf("right source: %w", err)
+					return configErrf("right source: %v", err)
 				}
 
 				if auditMode {
-					setter, ok := w.(engine.RunInfoSetter)
+					// Check the inner writer directly: when summaryCapture wraps w, the
+					// optional RunInfoSetter interface is no longer visible on w itself.
+					auditTarget := engine.ResultWriter(w)
+					if sc != nil {
+						auditTarget = sc.inner
+					}
+					setter, ok := auditTarget.(engine.RunInfoSetter)
 					if !ok {
-						return fmt.Errorf("--audit is only supported for --format=json, json-stream, or ndjson (got %q)", format)
+						return configErrf("--audit is only supported for --format=json, json-stream, or ndjson (got %q)", format)
 					}
 					runStart := time.Now().UTC()
 					if auditFixedTimestamp != "" {
@@ -331,11 +351,11 @@ Formats:
 				for _, name := range counterparts {
 					src, ok := cfg.Sources[name]
 					if !ok {
-						return fmt.Errorf("right source %q not found in config", name)
+						return configErrf("right source %q not found in config", name)
 					}
 					path, err := resolveFile("", src.FilePattern, configDir)
 					if err != nil {
-						return fmt.Errorf("counterpart %q: %w", name, err)
+						return configErrf("counterpart %q: %v", name, err)
 					}
 					idx, _, err := newRightIndex(cfg.Index, path)
 					if err != nil {
@@ -376,6 +396,10 @@ Formats:
 			if progress {
 				fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 			}
+			if failIfUnmatched && sc != nil &&
+				(sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 {
+				return &CLIError{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+			}
 
 			return nil
 		},
@@ -399,8 +423,77 @@ Formats:
 		"Log progress to stderr while processing large files")
 	cmd.Flags().IntVar(&progressEvery, "progress-every", 1_000_000,
 		"Progress log interval in rows (used with --progress)")
+	cmd.Flags().BoolVar(&failIfUnmatched, "fail-if-unmatched", false,
+		"Exit with code 3 if reconciliation completes with any unmatched rows on either side")
 
 	return cmd
+}
+
+// summaryCapture wraps a ResultWriter and captures the final Summary written by
+// WriteSummary. All optional interface setup (SetMeta, SetDeterministic,
+// RunInfoSetter) must be applied to the inner writer before wrapping.
+//
+// GroupedEventWriter and SourceBreakdownWriter are forwarded to the inner
+// writer when it supports them, so grouped events and per-source summaries
+// are preserved when --fail-if-unmatched is combined with those formats.
+type summaryCapture struct {
+	inner    engine.ResultWriter
+	captured engine.Summary
+}
+
+func (s *summaryCapture) WriteMatch(p engine.MatchedPair) error {
+	return s.inner.WriteMatch(p)
+}
+func (s *summaryCapture) WriteAmountDiff(p engine.AmountDiffPair) error {
+	return s.inner.WriteAmountDiff(p)
+}
+func (s *summaryCapture) WriteTimingDiff(p engine.TimingDiffPair) error {
+	return s.inner.WriteTimingDiff(p)
+}
+func (s *summaryCapture) WriteUnmatched(tx engine.Transaction, side string) error {
+	return s.inner.WriteUnmatched(tx, side)
+}
+func (s *summaryCapture) WriteDuplicate(g engine.DuplicateGroup) error {
+	return s.inner.WriteDuplicate(g)
+}
+func (s *summaryCapture) WriteSummary(sum engine.Summary) error {
+	s.captured = sum
+	return s.inner.WriteSummary(sum)
+}
+func (s *summaryCapture) Flush() error { return s.inner.Flush() }
+
+// WriteSourceSummary forwards to the inner writer when it implements SourceBreakdownWriter.
+func (s *summaryCapture) WriteSourceSummary(sourceName string, sum engine.Summary) error {
+	if sbw, ok := s.inner.(engine.SourceBreakdownWriter); ok {
+		return sbw.WriteSourceSummary(sourceName, sum)
+	}
+	return nil
+}
+
+// GroupedEventWriter forwarding — delegates to inner when supported.
+func (s *summaryCapture) WriteGroupedMatch(p engine.GroupedMatchedPair) error {
+	if gw, ok := s.inner.(engine.GroupedEventWriter); ok {
+		return gw.WriteGroupedMatch(p)
+	}
+	return nil
+}
+func (s *summaryCapture) WriteGroupedAmountDiff(p engine.GroupedAmountDiffPair) error {
+	if gw, ok := s.inner.(engine.GroupedEventWriter); ok {
+		return gw.WriteGroupedAmountDiff(p)
+	}
+	return nil
+}
+func (s *summaryCapture) WriteGroupedTimingDiff(p engine.GroupedTimingDiffPair) error {
+	if gw, ok := s.inner.(engine.GroupedEventWriter); ok {
+		return gw.WriteGroupedTimingDiff(p)
+	}
+	return nil
+}
+func (s *summaryCapture) WriteAmbiguousGroup(p engine.AmbiguousGroupPair) error {
+	if gw, ok := s.inner.(engine.GroupedEventWriter); ok {
+		return gw.WriteAmbiguousGroup(p)
+	}
+	return nil
 }
 
 type reconcileOutput struct {

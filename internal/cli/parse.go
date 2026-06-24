@@ -43,20 +43,20 @@ Formats:
 			cfgPath := getConfigPath()
 			cfg, err := config.Load(cfgPath)
 			if err != nil {
-				return fmt.Errorf("failed to load config: %w", err)
+				return configErrf("failed to load config: %v", err)
 			}
 
 			if errs := cfg.Validate(); len(errs) > 0 {
-				return fmt.Errorf("config validation failed: %v", errs[0])
+				return configErrf("config validation failed: %v", errs[0])
 			}
 
 			source, ok := cfg.Sources[sourceName]
 			if !ok {
-				return fmt.Errorf("source %q not found in config (available: %v)", sourceName, sourceNames(cfg.Sources))
+				return configErrf("source %q not found in config (available: %v)", sourceName, sourceNames(cfg.Sources))
 			}
 
 			if _, err := os.Stat(filePath); err != nil {
-				return fmt.Errorf("file %q not found", filePath)
+				return configErrf("file %q not found", filePath)
 			}
 			resolvedPath := filePath
 

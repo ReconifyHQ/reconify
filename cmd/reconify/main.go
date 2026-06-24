@@ -2,6 +2,8 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -15,7 +17,21 @@ var (
 
 func main() {
 	if err := cli.Execute(Version, BuildTime); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		exitCode := 1
+		errCode := "error"
+
+		var cliErr *cli.CLIError
+		if errors.As(err, &cliErr) {
+			exitCode = cliErr.Code
+			errCode = cliErr.ErrCode
+		}
+
+		if cli.ErrorFormat() == "json" {
+			out, _ := json.Marshal(map[string]string{"error": err.Error(), "code": errCode})
+			fmt.Fprintf(os.Stderr, "%s\n", out)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
+		os.Exit(exitCode)
 	}
 }

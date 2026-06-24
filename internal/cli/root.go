@@ -11,8 +11,12 @@ var (
 	configFile     string
 	configExplicit bool
 	verbose        bool
+	errorFormat    string // "text" or "json"
 	cliVersion     string // set by Execute; used by subcommands for audit envelopes
 )
+
+// ErrorFormat returns the current --error-format value. Read by main after Execute returns.
+func ErrorFormat() string { return errorFormat }
 
 // Execute runs the CLI application
 func Execute(version, buildTime string) error {
@@ -23,11 +27,17 @@ func Execute(version, buildTime string) error {
 		Long: `Reconify is a reconciliation engine designed for finance, ops, and accounting teams.
 It ingests financial data from multiple sources, normalizes them, and compares transactions.`,
 		Version: fmt.Sprintf("%s (built %s)", version, buildTime),
+		// Silence Cobra's built-in error and usage printing so main.go owns
+		// the error output format (plain text or JSON via --error-format).
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 
 	// Global flags
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "reconify.yaml", "Path to configuration file")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().StringVar(&errorFormat, "error-format", "text",
+		`Error output format: text (default) or json. When json, errors are written to stderr as {"error":"...","code":"..."}.`)
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		_ = args
 		configExplicit = cmd.Root().PersistentFlags().Changed("config")
