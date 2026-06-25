@@ -388,3 +388,55 @@ func TestConfigValidate_PassesCompatibleWithRights(t *testing.T) {
 		t.Fatalf("expected passes to be compatible with rights, got errors: %v", errs)
 	}
 }
+
+func TestConfigValidate_OneToManyGroupBy_DefaultsToReference(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	pass := PassConfig{Type: PassTypeOneToMany}
+	p.Passes = []PassConfig{pass}
+	cfg.Pairs["p"] = p
+
+	if errs := cfg.Validate(); len(errs) > 0 {
+		t.Fatalf("expected valid config with no group_by, got errors: %v", errs)
+	}
+	if pass.ResolvedGroupBy() != GroupByReference {
+		t.Errorf("ResolvedGroupBy() = %q, want %q", pass.ResolvedGroupBy(), GroupByReference)
+	}
+}
+
+func TestConfigValidate_OneToManyGroupBy_KnownKeysValid(t *testing.T) {
+	for _, key := range []string{GroupByReference, GroupByName, GroupByGroupKey} {
+		t.Run(key, func(t *testing.T) {
+			cfg := baseValidConfig()
+			p := cfg.Pairs["p"]
+			p.Passes = []PassConfig{{Type: PassTypeOneToMany, GroupBy: key}}
+			cfg.Pairs["p"] = p
+
+			if errs := cfg.Validate(); len(errs) > 0 {
+				t.Fatalf("expected group_by %q to be valid, got errors: %v", key, errs)
+			}
+		})
+	}
+}
+
+func TestConfigValidate_OneToManyGroupBy_UnknownKeyRejected(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.Passes = []PassConfig{{Type: PassTypeOneToMany, GroupBy: "invoice_number"}}
+	cfg.Pairs["p"] = p
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for unknown group_by key")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "passes[0].group_by") &&
+			strings.Contains(err.Error(), "invoice_number") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected error identifying passes[0].group_by, got: %v", errs)
+	}
+}
