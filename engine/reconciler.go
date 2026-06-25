@@ -57,7 +57,7 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 			case config.PassTypeOneToMany:
 				unmatchedLeft, unmatchedRight = matchByReferenceOneToMany(
 					result, unmatchedLeft, unmatchedRight,
-					pair.AmountToleranceMinor, dateWindowDays)
+					pair.AmountToleranceMinor, dateWindowDays, pass.ResolvedGroupBy())
 			default:
 				return nil, fmt.Errorf("unsupported pass type %q", pass.Type)
 			}
@@ -992,20 +992,32 @@ func matchByReferenceOneToMany(
 	left, right []Transaction,
 	tolerance int64,
 	windowDays int,
+	groupBy string,
 ) (unmatchedLeft, unmatchedRight []Transaction) {
-	// Build reference → right-rows index, skipping empty references.
-	rightByRef := make(map[string][]Transaction, len(right))
-	for _, tx := range right {
-		if tx.Reference != "" {
-			rightByRef[tx.Reference] = append(rightByRef[tx.Reference], tx)
+	keyOf := func(tx Transaction) string {
+		switch groupBy {
+		case config.GroupByName:
+			return tx.Name
+		case config.GroupByGroupKey:
+			return tx.GroupKey
+		default:
+			return tx.Reference
 		}
 	}
 
-	// Build reference → left-indices index in a single pass.
+	// Build groupBy → right-rows index, skipping empty keys.
+	rightByRef := make(map[string][]Transaction, len(right))
+	for _, tx := range right {
+		if k := keyOf(tx); k != "" {
+			rightByRef[k] = append(rightByRef[k], tx)
+		}
+	}
+
+	// Build groupBy → left-indices index in a single pass.
 	leftByRef := make(map[string][]int, len(left))
 	for i, tx := range left {
-		if tx.Reference != "" {
-			leftByRef[tx.Reference] = append(leftByRef[tx.Reference], i)
+		if k := keyOf(tx); k != "" {
+			leftByRef[k] = append(leftByRef[k], i)
 		}
 	}
 
@@ -1040,11 +1052,11 @@ func matchByReferenceOneToMany(
 		if consumedLeft[i] {
 			continue
 		}
-		if ltx.Reference == "" {
+		if keyOf(ltx) == "" {
 			unmatchedLeft = append(unmatchedLeft, ltx)
 			continue
 		}
-		candidates, ok := rightByRef[ltx.Reference]
+		candidates, ok := rightByRef[keyOf(ltx)]
 		if !ok {
 			unmatchedLeft = append(unmatchedLeft, ltx)
 			continue

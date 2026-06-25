@@ -60,11 +60,28 @@ const (
 	PassTypeOneToMany          = "one_to_many"
 )
 
+// GroupBy constants for one_to_many passes.
+const (
+	GroupByReference = "reference"
+	GroupByName      = "name"
+	GroupByGroupKey  = "group_key"
+)
+
 // PassConfig defines a single matching pass within a pair's pipeline.
 // Passes run in configured order; each pass only sees rows left unmatched
 // by earlier passes.
 type PassConfig struct {
-	Type string `yaml:"type"`
+	Type    string `yaml:"type"`
+	GroupBy string `yaml:"group_by,omitempty"`
+}
+
+// ResolvedGroupBy returns the configured group_by key, defaulting to
+// GroupByReference when the field is empty.
+func (p PassConfig) ResolvedGroupBy() string {
+	if p.GroupBy != "" {
+		return p.GroupBy
+	}
+	return GroupByReference
 }
 
 // Pair defines a reconciliation pair configuration
@@ -309,6 +326,16 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 				errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].type: unknown pass type %q (valid: %s, %s, %s)",
 					name, i, pass.Type,
 					PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne, PassTypeOneToMany))
+			}
+			if pass.Type == PassTypeOneToMany && pass.GroupBy != "" {
+				switch pass.GroupBy {
+				case GroupByReference, GroupByName, GroupByGroupKey:
+					// valid built-in key
+				default:
+					errs = append(errs, fmt.Errorf(
+						"pairs.%s.passes[%d].group_by: unknown group key %q (built-in keys: reference, name, group_key)",
+						name, i, pass.GroupBy))
+				}
 			}
 		}
 	}

@@ -216,6 +216,16 @@ When `passes` is set, `name_mode: tokens` is rejected by config validation — a
 
 The `one_to_many` pass handles the case where a single left transaction (e.g. an invoice) is settled by several right transactions sharing the same reference (e.g. installment payments). Instead of 1-to-1 candidate selection, it sums all right rows for a reference and compares the total to the left amount.
 
+**`group_by` key.** By default the pass groups right rows by the `reference` field. Use `group_by` to change the grouping field:
+
+```yaml
+passes:
+  - type: one_to_many
+    group_by: reference   # default — omit to get the same behavior
+```
+
+Built-in values: `reference`, `name`, `group_key`. Omitting `group_by` is equivalent to `group_by: reference`. Unknown values are rejected by config validation.
+
 **Outcomes:**
 - **`grouped_matched`** — sum of right amounts within tolerance, all right dates within window.
 - **`grouped_amount_diff`** — sum falls outside tolerance (but dates OK). `DiffMinor = left.Amount - sum(rights)`.
