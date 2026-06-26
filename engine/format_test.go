@@ -21,6 +21,13 @@ func makeRunInfo() RunInfo {
 	}
 }
 
+func requireNoFormatErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // jsonWriter
 // -----------------------------------------------------------------------------
@@ -29,8 +36,8 @@ func TestJSONWriter_SetMeta(t *testing.T) {
 	var buf bytes.Buffer
 	w := newJSONWriter(&buf)
 	w.SetMeta("my_pair", "left_src", "right_src")
-	w.WriteSummary(Summary{})
-	w.Flush()
+	requireNoFormatErr(t, w.WriteSummary(Summary{}))
+	requireNoFormatErr(t, w.Flush())
 
 	var result Result
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
@@ -54,8 +61,8 @@ func TestJSONWriter_SetRunInfo(t *testing.T) {
 	if err := w.SetRunInfo(info); err != nil {
 		t.Fatalf("SetRunInfo: %v", err)
 	}
-	w.WriteSummary(Summary{})
-	w.Flush()
+	requireNoFormatErr(t, w.WriteSummary(Summary{}))
+	requireNoFormatErr(t, w.Flush())
 
 	var result Result
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
@@ -72,8 +79,8 @@ func TestJSONWriter_SetRunInfo(t *testing.T) {
 func TestJSONWriter_NoRunInfoByDefault(t *testing.T) {
 	var buf bytes.Buffer
 	w := newJSONWriter(&buf)
-	w.WriteSummary(Summary{})
-	w.Flush()
+	requireNoFormatErr(t, w.WriteSummary(Summary{}))
+	requireNoFormatErr(t, w.Flush())
 
 	var result Result
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
@@ -90,18 +97,18 @@ func TestJSONWriter_SetDeterministic_StableOutput(t *testing.T) {
 		w := newJSONWriter(&buf)
 		w.SetDeterministic(true)
 		// Insert matches in reverse order so sorting is meaningful.
-		w.WriteMatch(MatchedPair{
+		requireNoFormatErr(t, w.WriteMatch(MatchedPair{
 			Left:  Transaction{ID: "left-b"},
 			Right: Transaction{ID: "right-b"},
-		})
-		w.WriteMatch(MatchedPair{
+		}))
+		requireNoFormatErr(t, w.WriteMatch(MatchedPair{
 			Left:  Transaction{ID: "left-a"},
 			Right: Transaction{ID: "right-a"},
-		})
-		w.WriteUnmatched(Transaction{ID: "ul-z"}, "left")
-		w.WriteUnmatched(Transaction{ID: "ul-a"}, "left")
-		w.WriteSummary(Summary{})
-		w.Flush()
+		}))
+		requireNoFormatErr(t, w.WriteUnmatched(Transaction{ID: "ul-z"}, "left"))
+		requireNoFormatErr(t, w.WriteUnmatched(Transaction{ID: "ul-a"}, "left"))
+		requireNoFormatErr(t, w.WriteSummary(Summary{}))
+		requireNoFormatErr(t, w.Flush())
 		return buf.String()
 	}
 
@@ -130,8 +137,8 @@ func TestJSONStreamWriter_SetRunInfo(t *testing.T) {
 	if err := w.SetRunInfo(info); err != nil {
 		t.Fatalf("SetRunInfo: %v", err)
 	}
-	w.WriteSummary(Summary{})
-	w.Flush()
+	requireNoFormatErr(t, w.WriteSummary(Summary{}))
+	requireNoFormatErr(t, w.Flush())
 
 	var result map[string]json.RawMessage
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
@@ -145,8 +152,8 @@ func TestJSONStreamWriter_SetRunInfo(t *testing.T) {
 func TestJSONStreamWriter_NoRunInfoByDefault(t *testing.T) {
 	var buf bytes.Buffer
 	w := newJSONStreamWriter(&buf)
-	w.WriteSummary(Summary{})
-	w.Flush()
+	requireNoFormatErr(t, w.WriteSummary(Summary{}))
+	requireNoFormatErr(t, w.Flush())
 
 	var result map[string]json.RawMessage
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
@@ -169,9 +176,9 @@ func TestNDJSONWriter_SetRunInfo_FirstLine(t *testing.T) {
 		t.Fatalf("SetRunInfo: %v", err)
 	}
 	// Emit some events after run_info
-	w.WriteMatch(MatchedPair{Left: Transaction{ID: "l1"}, Right: Transaction{ID: "r1"}})
-	w.WriteSummary(Summary{})
-	w.Flush()
+	requireNoFormatErr(t, w.WriteMatch(MatchedPair{Left: Transaction{ID: "l1"}, Right: Transaction{ID: "r1"}}))
+	requireNoFormatErr(t, w.WriteSummary(Summary{}))
+	requireNoFormatErr(t, w.Flush())
 
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 	if len(lines) < 2 {
@@ -190,11 +197,11 @@ func TestNDJSONWriter_SetRunInfo_FirstLine(t *testing.T) {
 func TestNDJSONWriter_EachLineValidJSON(t *testing.T) {
 	var buf bytes.Buffer
 	w := newNDJSONWriter(&buf)
-	w.SetRunInfo(makeRunInfo())
-	w.WriteMatch(MatchedPair{Left: Transaction{ID: "l1"}, Right: Transaction{ID: "r1"}})
-	w.WriteUnmatched(Transaction{ID: "ul1"}, "left")
-	w.WriteSummary(Summary{TotalLeft: 2, TotalRight: 2})
-	w.Flush()
+	requireNoFormatErr(t, w.SetRunInfo(makeRunInfo()))
+	requireNoFormatErr(t, w.WriteMatch(MatchedPair{Left: Transaction{ID: "l1"}, Right: Transaction{ID: "r1"}}))
+	requireNoFormatErr(t, w.WriteUnmatched(Transaction{ID: "ul1"}, "left"))
+	requireNoFormatErr(t, w.WriteSummary(Summary{TotalLeft: 2, TotalRight: 2}))
+	requireNoFormatErr(t, w.Flush())
 
 	for i, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
 		if !json.Valid([]byte(line)) {

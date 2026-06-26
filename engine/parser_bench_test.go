@@ -104,11 +104,16 @@ func TestMemoryIndex_PerRowFootprint(t *testing.T) {
 	// TotalAlloc is monotonically increasing — unaffected by GC cycles.
 	// It measures total bytes allocated during the index build, approximating
 	// the per-row allocation cost (including short-lived temporaries).
-	allocDelta := int64(msAfter.TotalAlloc) - int64(msBefore.TotalAlloc)
+	if msAfter.TotalAlloc < msBefore.TotalAlloc {
+		t.Fatalf("allocation counter moved backwards")
+	}
+	allocDelta := msAfter.TotalAlloc - msBefore.TotalAlloc
 	perRow := allocDelta / rows
 
 	t.Logf("memoryIndex: %d rows, total alloc %d MB, ~%d bytes/row (includes GC'd temporaries)",
 		rows, allocDelta/1024/1024, perRow)
 
-	idx.Close()
+	if err := idx.Close(); err != nil {
+		t.Fatal(err)
+	}
 }

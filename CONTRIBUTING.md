@@ -20,15 +20,15 @@ Thank you for your interest in contributing to Reconify! This document provides 
    make build
    ```
 
-4. **Run tests**
+4. **Run the pre-PR gate**
    ```bash
-   make test
+   make preflight
    ```
 
 ## Code Style
 
-- Follow standard Go formatting (`go fmt`)
-- Run `make lint` before submitting PRs
+- Follow standard Go formatting (`make fmt-check`)
+- Run `make preflight` before submitting PRs
 - Write tests for new features
 - Update documentation as needed
 
@@ -36,8 +36,8 @@ Thank you for your interest in contributing to Reconify! This document provides 
 
 1. Create a feature branch from `main`
 2. Make your changes
-3. Ensure all tests pass (`make test`)
-4. Ensure linting passes (`make lint`)
+3. Ensure the full pre-PR gate passes (`make preflight`)
+4. If you need to isolate failures, run `make mod-check`, `make fmt-check`, `make lint`, `make security`, `make test`, `make build`, and `make bench-smoke`
 5. Update documentation if needed
 6. Submit a pull request with a clear description
 
@@ -60,4 +60,3 @@ minor units.
 ## Questions?
 
 Open an issue for discussion or reach out to the maintainers.
-

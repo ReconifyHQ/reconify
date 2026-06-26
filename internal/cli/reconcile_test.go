@@ -128,7 +128,7 @@ func TestReconcileOutputCommitWritesFinalFile(t *testing.T) {
 	if err := output.Commit(); err != nil {
 		t.Fatalf("Commit returned error: %v", err)
 	}
-	got, err := os.ReadFile(target)
+	got, err := os.ReadFile(target) // #nosec G304 -- target is inside t.TempDir() for this test.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestReconcileOutputCommitRefusesSymlinkCreatedAfterOpen(t *testing.T) {
 	if err := output.Commit(); err == nil {
 		t.Fatal("expected Commit to refuse symlink output path")
 	}
-	got, err := os.ReadFile(victim)
+	got, err := os.ReadFile(victim) // #nosec G304 -- victim is inside t.TempDir() for this test.
 	if err != nil {
 		t.Fatal(err)
 	}

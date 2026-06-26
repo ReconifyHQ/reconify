@@ -12,7 +12,7 @@ import (
 
 func TestDeterministicGeneratorRowCounts(t *testing.T) {
 	out := t.TempDir()
-	cmd := exec.Command("go", "run", "deterministic.go", "-rows", "100", "-sources", "3", "-with-error-cases=false", "-out", out)
+	cmd := exec.Command("go", "run", "deterministic.go", "-rows", "100", "-sources", "3", "-with-error-cases=false", "-out", out) // #nosec G204 -- fixed local generator command with test-controlled arguments.
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("run deterministic generator: %v\n%s", err, output)
 	}
@@ -31,7 +31,7 @@ func TestDeterministicGeneratorRowCounts(t *testing.T) {
 
 func TestRealisticGeneratorManifestAndSplitFiles(t *testing.T) {
 	out := t.TempDir()
-	cmd := exec.Command("go", "run", "realistic.go", "-rows", "100", "-scenario", "split_provider_exports", "-out", out)
+	cmd := exec.Command("go", "run", "realistic.go", "-rows", "100", "-scenario", "split_provider_exports", "-out", out) // #nosec G204 -- fixed local generator command with test-controlled arguments.
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("run realistic generator: %v\n%s", err, output)
 	}
@@ -48,7 +48,7 @@ func TestRealisticGeneratorManifestAndSplitFiles(t *testing.T) {
 			UnmatchedRight  int `json:"unmatched_right"`
 		} `json:"summary"`
 	}
-	data, err := os.ReadFile(filepath.Join(out, "expected.json"))
+	data, err := os.ReadFile(filepath.Join(out, "expected.json")) // #nosec G304 -- file is inside t.TempDir() created by this test.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,12 +74,12 @@ func TestRealisticGeneratorManifestAndSplitFiles(t *testing.T) {
 
 func TestRealisticGeneratorQuotedCSV(t *testing.T) {
 	out := t.TempDir()
-	cmd := exec.Command("go", "run", "realistic.go", "-rows", "100", "-scenario", "bank_statement_noise", "-out", out)
+	cmd := exec.Command("go", "run", "realistic.go", "-rows", "100", "-scenario", "bank_statement_noise", "-out", out) // #nosec G204 -- fixed local generator command with test-controlled arguments.
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("run realistic generator: %v\n%s", err, output)
 	}
 
-	data, err := os.ReadFile(filepath.Join(out, "ledger.csv"))
+	data, err := os.ReadFile(filepath.Join(out, "ledger.csv")) // #nosec G304 -- file is inside t.TempDir() created by this test.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,11 +90,15 @@ func TestRealisticGeneratorQuotedCSV(t *testing.T) {
 
 func csvDataRows(t *testing.T, path string) int {
 	t.Helper()
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- helper reads paths built inside t.TempDir() by these tests.
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
 	rows, err := csv.NewReader(f).ReadAll()
 	if err != nil {
 		t.Fatal(err)

@@ -49,7 +49,7 @@ func TestBuildConfigFromInitAnswersRejectsMissingRequiredMapping(t *testing.T) {
 func TestRunConfigInitRefusesExistingOutputBeforePrompt(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "reconify.yaml")
-	if err := os.WriteFile(outPath, []byte("existing"), 0o644); err != nil {
+	if err := os.WriteFile(outPath, []byte("existing"), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 

@@ -15,6 +15,7 @@ linters:
     - revive
     - gocritic
     - unconvert
+    - gosec
 
   exclusions:
     rules:
@@ -55,4 +56,3 @@ formatters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-

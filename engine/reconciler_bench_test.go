@@ -59,7 +59,9 @@ func benchmarkReconcileStreaming(b *testing.B, rows int) {
 		); err != nil {
 			b.Fatal(err)
 		}
-		idx.Close()
+		if err := idx.Close(); err != nil {
+			b.Fatal(err)
+		}
 		b.ReportMetric(float64(rows), "left_rows/op")
 		b.ReportMetric(float64(rows*2), "total_rows/op")
 	}
@@ -133,7 +135,7 @@ func requireBenchData(b *testing.B) (leftPath, rightPath string) {
 	leftPath = filepath.Join(dataDir, "left.csv")
 	rightPath = filepath.Join(dataDir, "right.csv")
 	for _, p := range []string{leftPath, rightPath} {
-		if _, err := os.Stat(p); err != nil {
+		if _, err := os.Stat(p); err != nil { // #nosec G703 -- BENCH_DATA_DIR is an explicit benchmark fixture directory.
 			b.Skipf("file not found: %s (re-run gen_bench_data.go)", p)
 		}
 	}
@@ -143,11 +145,15 @@ func requireBenchData(b *testing.B) (leftPath, rightPath string) {
 // countCSVDataRows returns the number of data rows in a CSV file.
 // The header row is excluded.
 func countCSVDataRows(path string) (int, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- benchmark fixture path comes from BENCH_DATA_DIR.
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			_ = err
+		}
+	}()
 
 	sc := bufio.NewScanner(f)
 	// Default scanner max token is 64K. These fixture rows are much smaller,
@@ -245,7 +251,9 @@ func BenchmarkReconcileStreaming_20M_Realistic(b *testing.B) {
 		); err != nil {
 			b.Fatal(err)
 		}
-		idx.Close()
+		if err := idx.Close(); err != nil {
+			b.Fatal(err)
+		}
 		b.ReportMetric(float64(leftRows), "left_rows/op")
 		b.ReportMetric(float64(leftRows+rightRows), "total_rows/op")
 	}

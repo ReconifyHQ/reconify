@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/bits"
 	"os"
 	"path/filepath"
@@ -145,7 +146,7 @@ func parseDelimitedEach(
 	cfg config.ParserCfg,
 	fn func(tx Transaction, rowNum int) error,
 ) error {
-	f, err := os.Open(filePath)
+	f, err := os.Open(filePath) // #nosec G304 -- parser input paths are explicit CLI/config/user-selected files.
 	if err != nil {
 		return fmt.Errorf("open %q: %w", filePath, err)
 	}
@@ -267,7 +268,7 @@ func parseJSONEach(
 	cfg config.ParserCfg,
 	fn func(tx Transaction, rowNum int) error,
 ) error {
-	f, err := os.Open(filePath)
+	f, err := os.Open(filePath) // #nosec G304 -- parser input paths are explicit CLI/config/user-selected files.
 	if err != nil {
 		return fmt.Errorf("open %q: %w", filePath, err)
 	}
@@ -474,7 +475,7 @@ func (n *rowNormalizer) fromMap(values map[string]string, idRowNum, fileRowNum i
 }
 
 func readCSVHeaders(filePath string) ([]string, error) {
-	f, err := os.Open(filePath)
+	f, err := os.Open(filePath) // #nosec G304 -- parser input paths are explicit CLI/config/user-selected files.
 	if err != nil {
 		return nil, fmt.Errorf("open %q: %w", filePath, err)
 	}
@@ -529,7 +530,7 @@ func readXLSXHeaders(ctx context.Context, filePath string, cfg config.ParserCfg)
 }
 
 func readJSONHeaders(ctx context.Context, filePath string) ([]string, error) {
-	f, err := os.Open(filePath)
+	f, err := os.Open(filePath) // #nosec G304 -- parser input paths are explicit CLI/config/user-selected files.
 	if err != nil {
 		return nil, fmt.Errorf("open %q: %w", filePath, err)
 	}
@@ -697,11 +698,14 @@ func parseAmount(s string, decimal string, thousands string, multiplier int64) (
 
 	var fracScaled int64
 	if fracPart != "" {
-		fracVal, err := strconv.ParseInt(fracPart, 10, 64)
+		if multiplier < 0 {
+			return 0, fmt.Errorf("invalid multiplier: %d", multiplier)
+		}
+		fracVal, err := strconv.ParseUint(fracPart, 10, 64)
 		if err != nil {
 			return 0, fmt.Errorf("not a number: %q", s)
 		}
-		denom := int64(1)
+		denom := uint64(1)
 		for i := 0; i < len(fracPart); i++ {
 			denom *= 10
 		}
@@ -710,10 +714,13 @@ func parseAmount(s string, decimal string, thousands string, multiplier int64) (
 		// math/bits rather than int64 arithmetic that would silently wrap. The true
 		// quotient is always < multiplier (fracVal < denom by construction), so it
 		// fits safely back into int64/uint64 once divided.
-		hi, lo := bits.Mul64(uint64(fracVal), uint64(multiplier))
-		q, r := bits.Div64(hi, lo, uint64(denom))
-		if 2*r >= uint64(denom) {
+		hi, lo := bits.Mul64(fracVal, uint64(multiplier))
+		q, r := bits.Div64(hi, lo, denom)
+		if 2*r >= denom {
 			q++
+		}
+		if q > uint64(math.MaxInt64) {
+			return 0, fmt.Errorf("amount overflow: %q", s)
 		}
 		fracScaled = int64(q)
 	}
