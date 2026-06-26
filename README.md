@@ -191,8 +191,10 @@ make install     # Install to $GOPATH/bin
 ### Test
 
 ```bash
-make test        # Run all tests
+make preflight   # Run the full pre-PR quality and security gate
+make test        # Run all tests with race detection and coverage
 make lint        # Run linters
+make security    # Run govulncheck and gosec
 ```
 
 ## License

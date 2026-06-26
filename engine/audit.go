@@ -50,7 +50,7 @@ func BuildRunInfo(
 // hash time. The definitive TOCTOU fix is to parse from the same descriptor used
 // for hashing; until then, VerifyAuditFiles detects post-parse divergence.
 func hashFile(path string) (FileInfo, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- audit hashes explicit reconciliation input files.
 	if err != nil {
 		return FileInfo{}, fmt.Errorf("open %q: %w", path, err)
 	}

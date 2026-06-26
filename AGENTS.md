@@ -27,10 +27,12 @@ go run ./cmd/reconify reconcile --help
 go test ./...
 make test
 make lint
+make security
 make build
+make preflight
 ```
 
-Use `go test ./...` for quick verification. Use `make test` when race detection and coverage output are needed.
+Use `go test ./...` for quick verification. Use `make test` when race detection and coverage output are needed. Run `make preflight` before opening a PR; it runs dependency drift checks, formatting checks, linting, security scans, tests, build, and smoke benchmarks.
 
 ## CLI Conventions
 

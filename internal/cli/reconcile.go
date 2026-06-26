@@ -594,7 +594,7 @@ func (o *reconcileOutput) close() error {
 }
 
 func copyFileToStdout(path string) error {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- path was created by this process for verified audit output.
 	if err != nil {
 		return fmt.Errorf("open verified audit output: %w", err)
 	}

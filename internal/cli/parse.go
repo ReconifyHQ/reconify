@@ -133,10 +133,10 @@ func parseCSVOut(sourceName, filePath string, parserCfg config.ParserCfg, cmd *c
 			tx.Source,
 		})
 	})
-	w.Flush()
 	if err != nil {
 		return fmt.Errorf("parse failed: %w", err)
 	}
+	w.Flush()
 	if flushErr := w.Error(); flushErr != nil {
 		return flushErr
 	}
