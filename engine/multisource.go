@@ -15,6 +15,9 @@ import (
 type CounterpartInput struct {
 	SourceName   string
 	Transactions []Transaction
+	// ParserCfg carries the source's parser configuration, used to resolve
+	// the duplicate_policy for this counterpart. Zero value defaults to "flag".
+	ParserCfg config.ParserCfg
 }
 
 // ReconcileMultiSource reconciles left against each counterpart in order: the
@@ -40,16 +43,28 @@ func ReconcileMultiSource(
 	left []Transaction,
 	counterparts []CounterpartInput,
 	pair config.Pair,
+	opts ...ReconcileOptions,
 ) (*Result, error) {
 	if len(counterparts) == 0 {
 		return nil, fmt.Errorf("at least one counterpart source is required")
+	}
+
+	var leftPolicy config.DuplicatePolicy
+	if len(opts) > 0 {
+		leftPolicy = opts[0].LeftPolicy
+	}
+	if leftPolicy == "" {
+		leftPolicy = config.DuplicatePolicyFlag
 	}
 
 	result := &Result{
 		PairName:   pairName,
 		LeftSource: leftSource,
 		BySource:   make(map[string]Summary, len(counterparts)),
-		Duplicates: annotateDuplicates(left),
+	}
+	// Annotate left-side duplicates once (before any pass) for "flag" only.
+	if leftPolicy == config.DuplicatePolicyFlag {
+		result.Duplicates = annotateDuplicates(left)
 	}
 
 	names := make([]string, 0, len(counterparts))
@@ -60,7 +75,8 @@ func ReconcileMultiSource(
 		names = append(names, cp.SourceName)
 		totalRight += len(cp.Transactions)
 
-		passResult, err := Reconcile(pairName, leftSource, cp.SourceName, remainingLeft, cp.Transactions, pair)
+		passResult, err := Reconcile(pairName, leftSource, cp.SourceName, remainingLeft, cp.Transactions, pair,
+			ReconcileOptions{LeftPolicy: leftPolicy, RightPolicy: cp.ParserCfg.ResolvedDuplicatePolicy()})
 		if err != nil {
 			return nil, fmt.Errorf("counterpart %q: %w", cp.SourceName, err)
 		}
@@ -299,8 +315,14 @@ func runStreamingPass(
 	rightCfgNoRaw := rightCfg
 	rightCfgNoRaw.SkipRaw = true
 
+	rightPolicy := rightCfg.ResolvedDuplicatePolicy()
 	rightSeen := make(map[string]uint8)
 	rightDupKeys := make(map[string]bool)
+	rightMergeSeen := make(map[string]bool)
+	var rightLatestBuf map[string]Transaction
+	if rightPolicy == config.DuplicatePolicyLatest {
+		rightLatestBuf = make(map[string]Transaction)
+	}
 	var totalRight int
 
 	if perr := ParseCSVEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
@@ -308,21 +330,48 @@ func runStreamingPass(
 		if oerr := cc.Observe(rightSource, tx); oerr != nil {
 			return oerr
 		}
-		if tx.GroupKey != "" {
-			if rightSeen[tx.GroupKey] < 2 {
-				rightSeen[tx.GroupKey]++
+		switch rightPolicy {
+		case config.DuplicatePolicyFlag:
+			if tx.GroupKey != "" {
+				if rightSeen[tx.GroupKey] < 2 {
+					rightSeen[tx.GroupKey]++
+				}
+				if rightSeen[tx.GroupKey] == 2 {
+					rightDupKeys[tx.GroupKey] = true
+				}
 			}
-			if rightSeen[tx.GroupKey] == 2 {
-				rightDupKeys[tx.GroupKey] = true
+			return idx.Add(tx)
+		case config.DuplicatePolicyKeep:
+			return idx.Add(tx)
+		case config.DuplicatePolicyMerge:
+			if tx.GroupKey != "" && rightMergeSeen[tx.GroupKey] {
+				return nil
 			}
+			if tx.GroupKey != "" {
+				rightMergeSeen[tx.GroupKey] = true
+			}
+			return idx.Add(tx)
+		case config.DuplicatePolicyLatest:
+			if tx.GroupKey != "" {
+				rightLatestBuf[tx.GroupKey] = tx
+				return nil
+			}
+			return idx.Add(tx)
 		}
 		return idx.Add(tx)
 	}); perr != nil {
 		return nil, Summary{}, nil, fmt.Errorf("parse right source %q: %w", rightSource, perr)
 	}
+	if rightPolicy == config.DuplicatePolicyLatest {
+		for _, tx := range rightLatestBuf {
+			if aerr := idx.Add(tx); aerr != nil {
+				return nil, Summary{}, nil, aerr
+			}
+		}
+	}
 
 	dupTxnCount := 0
-	if len(rightDupKeys) > 0 {
+	if rightPolicy == config.DuplicatePolicyFlag && len(rightDupKeys) > 0 {
 		groups, derr := collectDuplicates(ctx, rightSource, rightPath, rightCfg, rightDupKeys)
 		if derr != nil {
 			return nil, Summary{}, nil, fmt.Errorf("collect right duplicates: %w", derr)
@@ -335,8 +384,14 @@ func runStreamingPass(
 		}
 	}
 
+	leftPolicy := leftCfg.ResolvedDuplicatePolicy()
 	leftSeen := make(map[string]uint8)
 	leftDupKeys := make(map[string]bool)
+	leftMergeSeen := make(map[string]bool)
+	var leftLatestBuf map[string]Transaction
+	if fromFile && leftPolicy == config.DuplicatePolicyLatest {
+		leftLatestBuf = make(map[string]Transaction)
+	}
 
 	var (
 		matchedCount, amountDiffCount, timingDiffCount, unmatchedRightCount int
@@ -351,13 +406,25 @@ func runStreamingPass(
 			if oerr := cc.Observe(leftSource, ltx); oerr != nil {
 				return oerr
 			}
-			if ltx.GroupKey != "" {
+			if leftPolicy == config.DuplicatePolicyFlag && ltx.GroupKey != "" {
 				if leftSeen[ltx.GroupKey] < 2 {
 					leftSeen[ltx.GroupKey]++
 				}
 				if leftSeen[ltx.GroupKey] == 2 {
 					leftDupKeys[ltx.GroupKey] = true
 				}
+			}
+			// Dedup for merge: skip if GroupKey already seen (first-seen wins).
+			if leftPolicy == config.DuplicatePolicyMerge && ltx.GroupKey != "" {
+				if leftMergeSeen[ltx.GroupKey] {
+					return nil
+				}
+				leftMergeSeen[ltx.GroupKey] = true
+			}
+			// Dedup for latest: buffer and defer processing until after scan.
+			if leftPolicy == config.DuplicatePolicyLatest && ltx.GroupKey != "" {
+				leftLatestBuf[ltx.GroupKey] = ltx
+				return nil
 			}
 		}
 
@@ -424,7 +491,20 @@ func runStreamingPass(
 		}
 	}
 
-	if fromFile && len(leftDupKeys) > 0 {
+	// For "latest" (first pass only): process buffered left rows now that the scan
+	// is complete and we know which row is last for each GroupKey.
+	if fromFile && leftPolicy == config.DuplicatePolicyLatest {
+		for _, ltx := range leftLatestBuf {
+			if ctx.Err() != nil {
+				return nil, Summary{}, nil, ctx.Err()
+			}
+			if perr := processLeft(ltx); perr != nil {
+				return nil, Summary{}, nil, perr
+			}
+		}
+	}
+
+	if fromFile && leftPolicy == config.DuplicatePolicyFlag && len(leftDupKeys) > 0 {
 		groups, derr := collectDuplicates(ctx, leftSource, leftPath, leftCfg, leftDupKeys)
 		if derr != nil {
 			return nil, Summary{}, nil, fmt.Errorf("collect left duplicates: %w", derr)

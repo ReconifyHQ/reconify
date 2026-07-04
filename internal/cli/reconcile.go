@@ -175,7 +175,11 @@ Formats:
 					if rParseErr != nil {
 						return fmt.Errorf("parse right source: %w", rParseErr)
 					}
-					batchResult, parseErr = engine.Reconcile(pairName, pair.Left, counterparts[0], leftTxns, rightTxns, pair)
+					batchResult, parseErr = engine.Reconcile(pairName, pair.Left, counterparts[0], leftTxns, rightTxns, pair,
+						engine.ReconcileOptions{
+							LeftPolicy:  leftSrc.Parser.ResolvedDuplicatePolicy(),
+							RightPolicy: rightSrc.Parser.ResolvedDuplicatePolicy(),
+						})
 					if parseErr != nil {
 						return fmt.Errorf("reconciliation failed: %w", parseErr)
 					}
@@ -200,9 +204,11 @@ Formats:
 						cps = append(cps, engine.CounterpartInput{
 							SourceName:   name,
 							Transactions: cpTxns,
+							ParserCfg:    src.Parser,
 						})
 					}
-					batchResult, parseErr = engine.ReconcileMultiSource(pairName, pair.Left, leftTxns, cps, pair)
+					batchResult, parseErr = engine.ReconcileMultiSource(pairName, pair.Left, leftTxns, cps, pair,
+						engine.ReconcileOptions{LeftPolicy: leftSrc.Parser.ResolvedDuplicatePolicy()})
 					if parseErr != nil {
 						return fmt.Errorf("reconciliation failed: %w", parseErr)
 					}

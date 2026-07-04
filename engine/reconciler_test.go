@@ -700,3 +700,179 @@ func TestReconcile_EmptyCurrencyWarning(t *testing.T) {
 		t.Errorf("warning = %q, want it to mention empty currency", res.Warnings[0])
 	}
 }
+
+// TestReconcile_DuplicatePolicy_Flag is the baseline: same as existing non-gating
+// behavior — duplicates are reported and all rows participate in matching.
+func TestReconcile_DuplicatePolicy_Flag(t *testing.T) {
+	left := []Transaction{
+		makeTxGroup("l1", 100, "REF-1", "INV-1"),
+		makeTxGroup("l2", 200, "REF-2", "INV-1"),
+	}
+	right := []Transaction{
+		makeTxGroup("r1", 100, "REF-1", "INV-1"),
+		makeTxGroup("r2", 200, "REF-2", "INV-1"),
+	}
+	pair := config.Pair{DateWindow: "0d"}
+	opts := ReconcileOptions{
+		LeftPolicy:  config.DuplicatePolicyFlag,
+		RightPolicy: config.DuplicatePolicyFlag,
+	}
+	res, err := Reconcile("p", "left", "right", left, right, pair, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 2 {
+		t.Errorf("Matched = %d, want 2", len(res.Matched))
+	}
+	if len(res.Duplicates) != 2 { // one group per side
+		t.Errorf("Duplicates = %d, want 2 groups (one per side)", len(res.Duplicates))
+	}
+	if res.Summary.DuplicateCount != 4 { // 2 txns per side
+		t.Errorf("DuplicateCount = %d, want 4", res.Summary.DuplicateCount)
+	}
+}
+
+// TestReconcile_DuplicatePolicy_Keep: all rows participate in matching but no
+// duplicate events are emitted.
+func TestReconcile_DuplicatePolicy_Keep(t *testing.T) {
+	left := []Transaction{
+		makeTxGroup("l1", 100, "REF-1", "INV-1"),
+		makeTxGroup("l2", 200, "REF-2", "INV-1"),
+	}
+	right := []Transaction{
+		makeTxGroup("r1", 100, "REF-1", "INV-1"),
+		makeTxGroup("r2", 200, "REF-2", "INV-1"),
+	}
+	pair := config.Pair{DateWindow: "0d"}
+	opts := ReconcileOptions{
+		LeftPolicy:  config.DuplicatePolicyKeep,
+		RightPolicy: config.DuplicatePolicyKeep,
+	}
+	res, err := Reconcile("p", "left", "right", left, right, pair, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 2 {
+		t.Errorf("Matched = %d, want 2 (all rows still participate)", len(res.Matched))
+	}
+	if len(res.Duplicates) != 0 {
+		t.Errorf("Duplicates = %d, want 0 (keep suppresses reporting)", len(res.Duplicates))
+	}
+	if res.Summary.DuplicateCount != 0 {
+		t.Errorf("DuplicateCount = %d, want 0", res.Summary.DuplicateCount)
+	}
+}
+
+// TestReconcile_DuplicatePolicy_Merge_LeftSide: only the first-seen left row per
+// GroupKey participates in matching.
+func TestReconcile_DuplicatePolicy_Merge_LeftSide(t *testing.T) {
+	// l1 and l2 share a GroupKey; only l1 (first) should reach matching.
+	// Right side has no GroupKey → no right-side duplicate events regardless of policy.
+	left := []Transaction{
+		makeTxGroup("l1", 100, "REF-1", "INV-1"),
+		makeTxGroup("l2", 200, "REF-2", "INV-1"),
+	}
+	right := []Transaction{
+		makeTx("r1", 100, "REF-1"),
+		makeTx("r2", 200, "REF-2"),
+	}
+	pair := config.Pair{DateWindow: "0d"}
+	opts := ReconcileOptions{LeftPolicy: config.DuplicatePolicyMerge}
+	res, err := Reconcile("p", "left", "right", left, right, pair, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 {
+		t.Errorf("Matched = %d, want 1 (only first-seen left row)", len(res.Matched))
+	}
+	if res.Matched[0].Left.ID != "l1" {
+		t.Errorf("matched left ID = %q, want l1", res.Matched[0].Left.ID)
+	}
+	if len(res.Duplicates) != 0 {
+		t.Errorf("Duplicates = %d, want 0 (merge suppresses reporting)", len(res.Duplicates))
+	}
+}
+
+// TestReconcile_DuplicatePolicy_Latest_LeftSide: only the last-seen left row per
+// GroupKey participates in matching.
+func TestReconcile_DuplicatePolicy_Latest_LeftSide(t *testing.T) {
+	// l1 and l2 share a GroupKey; only l2 (last) should reach matching.
+	// Right side has no GroupKey → no right-side duplicate events.
+	left := []Transaction{
+		makeTxGroup("l1", 100, "REF-1", "INV-1"),
+		makeTxGroup("l2", 200, "REF-2", "INV-1"),
+	}
+	right := []Transaction{
+		makeTx("r1", 100, "REF-1"),
+		makeTx("r2", 200, "REF-2"),
+	}
+	pair := config.Pair{DateWindow: "0d"}
+	opts := ReconcileOptions{LeftPolicy: config.DuplicatePolicyLatest}
+	res, err := Reconcile("p", "left", "right", left, right, pair, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 {
+		t.Errorf("Matched = %d, want 1 (only last-seen left row)", len(res.Matched))
+	}
+	if res.Matched[0].Left.ID != "l2" {
+		t.Errorf("matched left ID = %q, want l2", res.Matched[0].Left.ID)
+	}
+	if len(res.Duplicates) != 0 {
+		t.Errorf("Duplicates = %d, want 0 (latest suppresses reporting)", len(res.Duplicates))
+	}
+}
+
+// TestReconcile_DuplicatePolicy_Merge_RightSide: only the first-seen right row per
+// GroupKey is in the index; duplicates do not create a second match opportunity.
+func TestReconcile_DuplicatePolicy_Merge_RightSide(t *testing.T) {
+	left := []Transaction{
+		makeTxGroup("l1", 100, "REF-1", "INV-1"),
+	}
+	// r1 and r2 share GroupKey; only r1 (first-seen) should be in index.
+	right := []Transaction{
+		makeTxGroup("r1", 100, "REF-1", "INV-1"),
+		makeTxGroup("r2", 100, "REF-1", "INV-1"), // duplicate: same ref, same group
+	}
+	pair := config.Pair{DateWindow: "0d"}
+	opts := ReconcileOptions{RightPolicy: config.DuplicatePolicyMerge}
+	res, err := Reconcile("p", "left", "right", left, right, pair, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 {
+		t.Errorf("Matched = %d, want 1", len(res.Matched))
+	}
+	// r2 was discarded before matching, so no unmatched right rows.
+	if len(res.UnmatchedRight) != 0 {
+		t.Errorf("UnmatchedRight = %d, want 0 (r2 was discarded by merge)", len(res.UnmatchedRight))
+	}
+	if len(res.Duplicates) != 0 {
+		t.Errorf("Duplicates = %d, want 0", len(res.Duplicates))
+	}
+}
+
+// TestReconcile_DuplicatePolicy_Latest_RightSide: the last-seen right row per
+// GroupKey wins; the first is discarded.
+func TestReconcile_DuplicatePolicy_Latest_RightSide(t *testing.T) {
+	left := []Transaction{
+		makeTxGroup("l1", 200, "REF-1", "INV-1"),
+	}
+	// r1 (amount=100) and r2 (amount=200) share GroupKey; latest (r2) should win.
+	right := []Transaction{
+		makeTxGroup("r1", 100, "REF-1", "INV-1"),
+		makeTxGroup("r2", 200, "REF-1", "INV-1"),
+	}
+	pair := config.Pair{DateWindow: "0d"}
+	opts := ReconcileOptions{RightPolicy: config.DuplicatePolicyLatest}
+	res, err := Reconcile("p", "left", "right", left, right, pair, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 {
+		t.Errorf("Matched = %d, want 1 (l1 matches r2 exactly)", len(res.Matched))
+	}
+	if len(res.AmountDiff) != 0 {
+		t.Errorf("AmountDiff = %d, want 0 (r2 amount matches l1)", len(res.AmountDiff))
+	}
+}

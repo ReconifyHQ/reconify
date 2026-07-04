@@ -440,3 +440,97 @@ func TestConfigValidate_OneToManyGroupBy_UnknownKeyRejected(t *testing.T) {
 		t.Fatalf("expected error identifying passes[0].group_by, got: %v", errs)
 	}
 }
+
+func TestConfigValidate_DuplicatePolicy_ValidValues(t *testing.T) {
+	for _, policy := range []string{"flag", "keep", "merge", "latest"} {
+		t.Run(policy, func(t *testing.T) {
+			cfg := baseValidConfig()
+			cfg.Sources["left"] = Source{
+				FilePattern: "left.csv",
+				Parser: CSVParserCfg{
+					Type:            "csv",
+					DateCol:         "date",
+					DateLayout:      "2006-01-02",
+					AmountCol:       "amount",
+					Multiplier:      100,
+					DuplicatePolicy: DuplicatePolicy(policy),
+				},
+			}
+			if errs := cfg.Validate(); len(errs) > 0 {
+				t.Fatalf("unexpected validation errors for duplicate_policy=%q: %v", policy, errs)
+			}
+		})
+	}
+}
+
+func TestConfigValidate_DuplicatePolicy_Empty_DefaultsToFlag(t *testing.T) {
+	cfg := baseValidConfig()
+	// No duplicate_policy set — should resolve to "flag" without error.
+	if errs := cfg.Validate(); len(errs) > 0 {
+		t.Fatalf("unexpected validation errors with no duplicate_policy: %v", errs)
+	}
+	dp := cfg.Sources["left"].Parser.ResolvedDuplicatePolicy()
+	if dp != DuplicatePolicyFlag {
+		t.Errorf("ResolvedDuplicatePolicy() = %q, want %q", dp, DuplicatePolicyFlag)
+	}
+}
+
+func TestConfigValidate_DuplicatePolicy_UnknownValue(t *testing.T) {
+	cfg := baseValidConfig()
+	src := cfg.Sources["left"]
+	src.Parser.DuplicatePolicy = "deduplicate"
+	cfg.Sources["left"] = src
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for unknown duplicate_policy, got none")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "duplicate_policy") && strings.Contains(err.Error(), "deduplicate") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected error mentioning duplicate_policy and value, got: %v", errs)
+	}
+}
+
+func TestConfigValidate_DuplicatePolicy_YAMLRoundTrip(t *testing.T) {
+	raw := `
+version: 1
+sources:
+  left:
+    file_pattern: left.csv
+    parser:
+      type: csv
+      date_col: date
+      date_layout: "2006-01-02"
+      amount_col: amount
+      multiplier: 100
+      duplicate_policy: merge
+  right:
+    file_pattern: right.csv
+    parser:
+      type: csv
+      date_col: date
+      date_layout: "2006-01-02"
+      amount_col: amount
+      multiplier: 100
+pairs:
+  p:
+    left: left
+    right: right
+    date_window: 0d
+`
+	var parsed Config
+	if err := yaml.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	if got := parsed.Sources["left"].Parser.DuplicatePolicy; got != DuplicatePolicyMerge {
+		t.Errorf("DuplicatePolicy = %q, want %q", got, DuplicatePolicyMerge)
+	}
+	if got := parsed.Sources["right"].Parser.ResolvedDuplicatePolicy(); got != DuplicatePolicyFlag {
+		t.Errorf("right ResolvedDuplicatePolicy() = %q, want %q (default)", got, DuplicatePolicyFlag)
+	}
+}
