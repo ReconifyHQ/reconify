@@ -13,7 +13,25 @@ import (
 )
 
 // Reconcile runs the reconciliation algorithm between two slices of transactions.
-func Reconcile(pairName, leftSource, rightSource string, left, right []Transaction, pair config.Pair) (*Result, error) {
+// Pass a ReconcileOptions as the last argument to configure duplicate handling policy;
+// omit it to preserve the existing default behavior (DuplicatePolicyFlag).
+func Reconcile(pairName, leftSource, rightSource string, left, right []Transaction, pair config.Pair, opts ...ReconcileOptions) (*Result, error) {
+	var leftPolicy, rightPolicy config.DuplicatePolicy
+	if len(opts) > 0 {
+		leftPolicy = opts[0].LeftPolicy
+		rightPolicy = opts[0].RightPolicy
+	}
+	if leftPolicy == "" {
+		leftPolicy = config.DuplicatePolicyFlag
+	}
+	if rightPolicy == "" {
+		rightPolicy = config.DuplicatePolicyFlag
+	}
+
+	// Apply dedup policy before matching; no-op for flag/keep.
+	left = applyDuplicatePolicy(left, leftPolicy)
+	right = applyDuplicatePolicy(right, rightPolicy)
+
 	dateWindowDays, err := parseDateWindow(pair.DateWindow)
 	if err != nil {
 		return nil, fmt.Errorf("invalid date_window: %w", err)
@@ -79,10 +97,13 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 	}
 	result.Warnings = cc.Warnings()
 
-	// 3. Duplicate annotation — a read-only report keyed on GroupKey. It never
-	// changes which transactions matched above.
-	result.Duplicates = append(result.Duplicates, annotateDuplicates(left)...)
-	result.Duplicates = append(result.Duplicates, annotateDuplicates(right)...)
+	// 3. Duplicate annotation — only for "flag" policy; other policies suppress reporting.
+	if leftPolicy == config.DuplicatePolicyFlag {
+		result.Duplicates = append(result.Duplicates, annotateDuplicates(left)...)
+	}
+	if rightPolicy == config.DuplicatePolicyFlag {
+		result.Duplicates = append(result.Duplicates, annotateDuplicates(right)...)
+	}
 
 	// 4. Populate summary
 	result.Summary = buildSummary(len(left), len(right), result)
@@ -307,14 +328,18 @@ func reconcileStreaming(
 	rightCfgNoRaw := rightCfg
 	rightCfgNoRaw.SkipRaw = true
 
-	// Lightweight right-side duplicate detection, keyed on GroupKey (defaults to
-	// Reference when group_col is not configured). This is a read-only annotation —
-	// it never gates which transactions reach the index/matching below.
-	// rightSeen tracks occurrence count per group key, capped at 2 (saturating).
-	// rightDupKeys collects group keys that appeared ≥ 2 times; the full
-	// Transaction set is retrieved via a targeted re-scan after this pass.
+	rightPolicy := rightCfg.ResolvedDuplicatePolicy()
+
+	// rightSeen/rightDupKeys are only used for the "flag" policy.
 	rightSeen := make(map[string]uint8)
 	rightDupKeys := make(map[string]bool)
+	// rightMergeSeen deduplicates for "merge" (first-seen wins).
+	rightMergeSeen := make(map[string]bool)
+	// rightLatestBuf accumulates last-seen rows per GroupKey for "latest".
+	var rightLatestBuf map[string]Transaction
+	if rightPolicy == config.DuplicatePolicyLatest {
+		rightLatestBuf = make(map[string]Transaction)
+	}
 	var totalRight int
 
 	if err := ParseEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
@@ -326,17 +351,45 @@ func reconcileStreaming(
 			progress(ProgressEvent{Phase: "right_index", Rows: totalRight, Elapsed: time.Since(startRight)})
 			nextRight += progressEvery
 		}
-		if tx.GroupKey != "" {
-			if rightSeen[tx.GroupKey] < 2 {
-				rightSeen[tx.GroupKey]++
+		switch rightPolicy {
+		case config.DuplicatePolicyFlag:
+			if tx.GroupKey != "" {
+				if rightSeen[tx.GroupKey] < 2 {
+					rightSeen[tx.GroupKey]++
+				}
+				if rightSeen[tx.GroupKey] == 2 {
+					rightDupKeys[tx.GroupKey] = true
+				}
 			}
-			if rightSeen[tx.GroupKey] == 2 {
-				rightDupKeys[tx.GroupKey] = true
+			return idx.Add(tx)
+		case config.DuplicatePolicyKeep:
+			return idx.Add(tx)
+		case config.DuplicatePolicyMerge:
+			if tx.GroupKey != "" && rightMergeSeen[tx.GroupKey] {
+				return nil // skip duplicate; first-seen already in index
 			}
+			if tx.GroupKey != "" {
+				rightMergeSeen[tx.GroupKey] = true
+			}
+			return idx.Add(tx)
+		case config.DuplicatePolicyLatest:
+			if tx.GroupKey != "" {
+				rightLatestBuf[tx.GroupKey] = tx // overwrite with latest row
+				return nil
+			}
+			return idx.Add(tx)
 		}
 		return idx.Add(tx)
 	}); err != nil {
 		return fmt.Errorf("parse right source: %w", err)
+	}
+	// For "latest": bulk-add the last-seen row per GroupKey after the full scan.
+	if rightPolicy == config.DuplicatePolicyLatest {
+		for _, tx := range rightLatestBuf {
+			if err := idx.Add(tx); err != nil {
+				return err
+			}
+		}
 	}
 	if progress != nil {
 		progress(ProgressEvent{
@@ -347,11 +400,10 @@ func reconcileStreaming(
 		})
 	}
 
-	// Emit right duplicate groups via targeted re-scan of the right file.
-	// collectDuplicates is only called when duplicates actually exist;
-	// for datasets with no duplicates this is a no-op.
+	// Emit right duplicate groups via targeted re-scan (flag policy only).
+	// collectDuplicates is only called when duplicates actually exist.
 	dupTxnCount := 0
-	if len(rightDupKeys) > 0 {
+	if rightPolicy == config.DuplicatePolicyFlag && len(rightDupKeys) > 0 {
 		groups, err := collectDuplicates(ctx, rightSource, rightPath, rightCfg, rightDupKeys)
 		if err != nil {
 			return fmt.Errorf("collect right duplicates: %w", err)
@@ -368,12 +420,17 @@ func reconcileStreaming(
 	// Pass 2: stream left CSV, match against index, emit events immediately
 	// -----------------------------------------------------------------------
 	startLeft = time.Now()
-	// Lightweight left-side duplicate detection, keyed on GroupKey — same
-	// saturating-uint8 approach as the right side. leftFirst/leftDups are
-	// replaced by a targeted re-scan after this pass (collectDuplicates),
-	// called only when duplicates exist.
+	leftPolicy := leftCfg.ResolvedDuplicatePolicy()
+	// leftSeen/leftDupKeys are only used for the "flag" policy.
 	leftSeen := make(map[string]uint8)
 	leftDupKeys := make(map[string]bool)
+	// leftMergeSeen deduplicates for "merge" (first-seen wins).
+	leftMergeSeen := make(map[string]bool)
+	// leftLatestBuf accumulates last-seen rows per GroupKey for "latest".
+	var leftLatestBuf map[string]Transaction
+	if leftPolicy == config.DuplicatePolicyLatest {
+		leftLatestBuf = make(map[string]Transaction)
+	}
 	threshold := resolveNameMatchThreshold(pair.NameMatchThreshold)
 
 	var (
@@ -392,27 +449,10 @@ func reconcileStreaming(
 	)
 	var totalLeft int
 
-	if err := ParseEach(ctx, leftSource, leftPath, leftCfg, func(ltx Transaction, _ int) error {
-		totalLeft++
-		if err := cc.Observe(leftSource, ltx); err != nil {
-			return err
-		}
-		if progress != nil && totalLeft >= nextLeft {
-			progress(ProgressEvent{Phase: "left_match", Rows: totalLeft, Elapsed: time.Since(startLeft)})
-			nextLeft += progressEvery
-		}
-
-		// Track left duplicates (count only; full transactions retrieved in third pass)
-		if ltx.GroupKey != "" {
-			if leftSeen[ltx.GroupKey] < 2 {
-				leftSeen[ltx.GroupKey]++
-			}
-			if leftSeen[ltx.GroupKey] == 2 {
-				leftDupKeys[ltx.GroupKey] = true
-			}
-		}
-
-		// Empty reference: classify as unmatched immediately
+	// doMatchLeft executes the core match logic for one left transaction.
+	// Extracted so it can be called both from the ParseEach callback and from
+	// the post-scan loop used by the "latest" policy.
+	doMatchLeft := func(ltx Transaction) error {
 		if ltx.Reference == "" {
 			unmatchedLeftCount++
 			unmatchedAmtLeft += ltx.Amount
@@ -422,17 +462,10 @@ func reconcileStreaming(
 			}
 			return w.WriteUnmatched(ltx, "left")
 		}
-
-		// Attempt reference matching via the shared two-pass best-candidate
-		// selection (see decideMatch) — an exact match always wins immediately;
-		// otherwise the best amount-diff or best timing-diff candidate is chosen
-		// by smallest diff, so a worse candidate earlier in the bucket list never
-		// wins over a better one later in it.
 		decision, err := decideMatch(ltx, idx, tolerance, dateWindowDays)
 		if err != nil {
 			return err
 		}
-
 		switch decision.outcome {
 		case outcomeExact:
 			if err := idx.MarkUsed(decision.right); err != nil {
@@ -469,7 +502,6 @@ func reconcileStreaming(
 				DaysDiff: decision.daysDiff,
 			})
 		}
-
 		unmatchedLeftCount++
 		unmatchedAmtLeft += ltx.Amount
 		if effectiveTokenMode {
@@ -477,8 +509,59 @@ func reconcileStreaming(
 			return nil
 		}
 		return w.WriteUnmatched(ltx, "left")
+	}
+
+	if err := ParseEach(ctx, leftSource, leftPath, leftCfg, func(ltx Transaction, _ int) error {
+		totalLeft++
+		if err := cc.Observe(leftSource, ltx); err != nil {
+			return err
+		}
+		if progress != nil && totalLeft >= nextLeft {
+			progress(ProgressEvent{Phase: "left_match", Rows: totalLeft, Elapsed: time.Since(startLeft)})
+			nextLeft += progressEvery
+		}
+		switch leftPolicy {
+		case config.DuplicatePolicyFlag:
+			if ltx.GroupKey != "" {
+				if leftSeen[ltx.GroupKey] < 2 {
+					leftSeen[ltx.GroupKey]++
+				}
+				if leftSeen[ltx.GroupKey] == 2 {
+					leftDupKeys[ltx.GroupKey] = true
+				}
+			}
+			return doMatchLeft(ltx)
+		case config.DuplicatePolicyKeep:
+			return doMatchLeft(ltx)
+		case config.DuplicatePolicyMerge:
+			if ltx.GroupKey != "" && leftMergeSeen[ltx.GroupKey] {
+				return nil // skip duplicate; already counted in totalLeft
+			}
+			if ltx.GroupKey != "" {
+				leftMergeSeen[ltx.GroupKey] = true
+			}
+			return doMatchLeft(ltx)
+		case config.DuplicatePolicyLatest:
+			if ltx.GroupKey != "" {
+				leftLatestBuf[ltx.GroupKey] = ltx // overwrite with latest row
+				return nil
+			}
+			return doMatchLeft(ltx)
+		}
+		return doMatchLeft(ltx)
 	}); err != nil {
 		return fmt.Errorf("parse left source: %w", err)
+	}
+	// For "latest": process buffered left rows after the full scan completes.
+	if leftPolicy == config.DuplicatePolicyLatest {
+		for _, ltx := range leftLatestBuf {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if err := doMatchLeft(ltx); err != nil {
+				return err
+			}
+		}
 	}
 	if progress != nil {
 		progress(ProgressEvent{
@@ -489,8 +572,8 @@ func reconcileStreaming(
 		})
 	}
 
-	// Emit left duplicate groups via targeted re-scan of the left file.
-	if len(leftDupKeys) > 0 {
+	// Emit left duplicate groups via targeted re-scan (flag policy only).
+	if leftPolicy == config.DuplicatePolicyFlag && len(leftDupKeys) > 0 {
 		groups, err := collectDuplicates(ctx, leftSource, leftPath, leftCfg, leftDupKeys)
 		if err != nil {
 			return fmt.Errorf("collect left duplicates: %w", err)
@@ -1227,6 +1310,52 @@ func annotateDuplicates(txns []Transaction) []DuplicateGroup {
 		}
 	}
 	return dups
+}
+
+// applyDuplicatePolicy collapses txns to one representative per GroupKey when
+// policy is merge or latest. merge keeps the first occurrence; latest keeps the
+// last. For flag/keep it returns txns unchanged (no allocation).
+// Rows with an empty GroupKey are never collapsed regardless of policy.
+func applyDuplicatePolicy(txns []Transaction, policy config.DuplicatePolicy) []Transaction {
+	switch policy {
+	case config.DuplicatePolicyMerge, config.DuplicatePolicyLatest:
+	default:
+		return txns
+	}
+	seen := make(map[string]int, len(txns)) // GroupKey → index in out
+	out := make([]Transaction, 0, len(txns))
+	for _, tx := range txns {
+		if tx.GroupKey == "" {
+			out = append(out, tx)
+			continue
+		}
+		if idx, exists := seen[tx.GroupKey]; exists {
+			if policy == config.DuplicatePolicyLatest {
+				out[idx] = tx
+			}
+		} else {
+			seen[tx.GroupKey] = len(out)
+			out = append(out, tx)
+		}
+	}
+	return out
+}
+
+// ApplyDuplicatePolicy applies the duplicate_policy from cfg to txns.
+// Convenience wrapper for batch callers (Parse → Reconcile path).
+func ApplyDuplicatePolicy(txns []Transaction, cfg config.ParserCfg) []Transaction {
+	return applyDuplicatePolicy(txns, cfg.ResolvedDuplicatePolicy())
+}
+
+// ReconcileOptions carries optional overrides for a Reconcile or ReconcileMultiSource call.
+// Pass as the last variadic argument; omit entirely to preserve existing default behavior.
+type ReconcileOptions struct {
+	// LeftPolicy overrides the left source's duplicate handling policy.
+	// Defaults to DuplicatePolicyFlag (current behavior) when zero.
+	LeftPolicy config.DuplicatePolicy
+	// RightPolicy overrides the right source's duplicate handling policy.
+	// Defaults to DuplicatePolicyFlag (current behavior) when zero.
+	RightPolicy config.DuplicatePolicy
 }
 
 // resolveNameMatchThreshold returns t if it is a valid Jaccard threshold (0 < t <= 1),

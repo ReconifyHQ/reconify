@@ -48,6 +48,9 @@ type ParserCfg struct {
 	// Set to true for large files to reduce allocator pressure.
 	// Default false preserves the Raw field on every Transaction.
 	SkipRaw bool `yaml:"skip_raw,omitempty"`
+	// DuplicatePolicy controls how transactions sharing the same GroupKey are handled.
+	// Valid values: "flag" (default), "keep", "merge", "latest".
+	DuplicatePolicy DuplicatePolicy `yaml:"duplicate_policy,omitempty"`
 }
 
 // CSVParserCfg is kept as an alias for existing Go callers.
@@ -67,6 +70,24 @@ const (
 	GroupByGroupKey  = "group_key"
 )
 
+// DuplicatePolicy controls how transactions sharing the same GroupKey are handled.
+type DuplicatePolicy string
+
+const (
+	// DuplicatePolicyFlag surfaces duplicates via WriteDuplicate; all rows
+	// participate in matching. Default when duplicate_policy is unset.
+	DuplicatePolicyFlag DuplicatePolicy = "flag"
+	// DuplicatePolicyKeep treats each duplicate as a distinct row; all rows
+	// participate in matching; WriteDuplicate is never called.
+	DuplicatePolicyKeep DuplicatePolicy = "keep"
+	// DuplicatePolicyMerge collapses duplicates to the first-seen row per
+	// GroupKey before matching; WriteDuplicate is never called.
+	DuplicatePolicyMerge DuplicatePolicy = "merge"
+	// DuplicatePolicyLatest collapses duplicates to the last-seen row per
+	// GroupKey (by file order) before matching; WriteDuplicate is never called.
+	DuplicatePolicyLatest DuplicatePolicy = "latest"
+)
+
 // PassConfig defines a single matching pass within a pair's pipeline.
 // Passes run in configured order; each pass only sees rows left unmatched
 // by earlier passes.
@@ -82,6 +103,15 @@ func (p PassConfig) ResolvedGroupBy() string {
 		return p.GroupBy
 	}
 	return GroupByReference
+}
+
+// ResolvedDuplicatePolicy returns the configured policy, defaulting to
+// DuplicatePolicyFlag when the field is empty (preserves backward compatibility).
+func (p ParserCfg) ResolvedDuplicatePolicy() DuplicatePolicy {
+	if p.DuplicatePolicy == "" {
+		return DuplicatePolicyFlag
+	}
+	return p.DuplicatePolicy
 }
 
 // Pair defines a reconciliation pair configuration
@@ -241,6 +271,15 @@ func validateSource(name string, source Source) []error {
 		if _, err := time.LoadLocation(parser.TZ); err != nil {
 			errs = append(errs, fmt.Errorf("sources.%s.parser.tz: invalid timezone %q: %v", name, parser.TZ, err))
 		}
+	}
+
+	switch parser.ResolvedDuplicatePolicy() {
+	case DuplicatePolicyFlag, DuplicatePolicyKeep, DuplicatePolicyMerge, DuplicatePolicyLatest:
+		// valid
+	default:
+		errs = append(errs, fmt.Errorf(
+			"sources.%s.parser.duplicate_policy: must be one of [flag, keep, merge, latest] (got %q)",
+			name, parser.DuplicatePolicy))
 	}
 
 	return errs

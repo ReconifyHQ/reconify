@@ -56,7 +56,7 @@ lint: ## Run linters
 	@if command -v golangci-lint > /dev/null; then \
 		golangci-lint run ./...; \
 	else \
-		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
 		exit 1; \
 	fi
 
@@ -72,7 +72,7 @@ security: ## Run vulnerability and security checks
 	@if command -v golangci-lint > /dev/null; then \
 		golangci-lint run --enable-only=gosec ./...; \
 	else \
-		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
 		exit 1; \
 	fi
 
