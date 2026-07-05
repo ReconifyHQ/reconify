@@ -200,6 +200,12 @@ The `one_to_many` pass handles the case where one left transaction (e.g. an invo
 
 This pass is separate from the ordered `rights` multi-counterpart reconciliation. `rights` selects which counterpart *sources* to reconcile against in sequence; `one_to_many` is a matching *strategy* within a single counterpart.
 
+### `many_to_many` pass (settlement groups)
+
+The `many_to_many` pass handles grouped settlements where both sides split the same business event differently. For example, a store ledger might have separate rows for order sales, refunds, and gateway fees, while a Stripe payout export has separate payout rows for payments, refunds, and fees. If both sides share a payout reference such as `payout_123`, Reconify groups both sides by that key and compares the totals.
+
+Use this for PSP payouts, partial payments, marketplace settlements, and fee/refund/adjustment rows that reconcile only at the settlement group level. It does not search arbitrary row combinations and does not use fuzzy matching; rows must share the configured group key.
+
 ## Reconciliation Passes
 
 By default, Reconify runs reference matching first, then optional name-token matching when `name_mode: tokens` is set. You can make the matching pipeline explicit with `passes`:
@@ -223,8 +229,11 @@ Passes run in configured order. Each pass only sees rows that were not matched b
 | `reference_one_to_one` | Matches one left row to one right row by reference. This is the default first tier. |
 | `name_tokens_one_to_one` | Matches unmatched rows by Jaccard token similarity on the name field. Equivalent to `name_mode: tokens` in the legacy model. |
 | `one_to_many` | Matches one left row against N right rows sharing the same grouping key by summing their amounts. Accepts an optional `group_by` field (`reference` \| `name` \| `group_key`; defaults to `reference`). See "one_to_many pass" above. |
+| `many_to_many` | Matches M left rows against N right rows sharing the same grouping key by summing both sides. Accepts an optional `group_by` field (`reference` \| `name` \| `group_key`; defaults to `reference`). See "many_to_many pass" above. |
 
 **`passes` vs `rights`**: `rights` selects which counterpart *sources* to reconcile against in order. `passes` defines the matching *strategy* used within each counterpart. They are orthogonal — you can combine them.
+
+With `rights: [stripe, paypal]`, `many_to_many` runs against `stripe` first, carries only unmatched left rows forward, then runs against `paypal`. It does not match one group across multiple right sources at once.
 
 Omitting `passes` preserves the legacy behavior exactly. When `passes` is set, `name_mode: tokens` is rejected; add a `name_tokens_one_to_one` pass instead.
 

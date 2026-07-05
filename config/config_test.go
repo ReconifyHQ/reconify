@@ -350,7 +350,7 @@ func TestConfigValidate_PassesWithNameModeTokens_IsRejected(t *testing.T) {
 }
 
 func TestConfigValidate_SupportedPassTypes_AreValid(t *testing.T) {
-	for _, passType := range []string{PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne} {
+	for _, passType := range []string{PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne, PassTypeManyToMany} {
 		t.Run(passType, func(t *testing.T) {
 			cfg := baseValidConfig()
 			p := cfg.Pairs["p"]
@@ -373,6 +373,18 @@ func TestConfigValidate_OneToManyPass_IsAccepted(t *testing.T) {
 	errs := cfg.Validate()
 	if len(errs) != 0 {
 		t.Fatalf("expected one_to_many pass to be accepted, got errors: %v", errs)
+	}
+}
+
+func TestConfigValidate_ManyToManyPass_IsAccepted(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.Passes = []PassConfig{{Type: PassTypeManyToMany}}
+	cfg.Pairs["p"] = p
+
+	errs := cfg.Validate()
+	if len(errs) != 0 {
+		t.Fatalf("expected many_to_many pass to be accepted, got errors: %v", errs)
 	}
 }
 
@@ -409,13 +421,38 @@ func TestConfigValidate_OneToManyGroupBy_KnownKeysValid(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			cfg := baseValidConfig()
 			p := cfg.Pairs["p"]
-			p.Passes = []PassConfig{{Type: PassTypeOneToMany, GroupBy: key}}
+			p.Passes = []PassConfig{
+				{Type: PassTypeOneToMany, GroupBy: key},
+				{Type: PassTypeManyToMany, GroupBy: key},
+			}
 			cfg.Pairs["p"] = p
 
 			if errs := cfg.Validate(); len(errs) > 0 {
 				t.Fatalf("expected group_by %q to be valid, got errors: %v", key, errs)
 			}
 		})
+	}
+}
+
+func TestConfigValidate_ManyToManyGroupBy_UnknownKeyRejected(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.Passes = []PassConfig{{Type: PassTypeManyToMany, GroupBy: "settlement_id"}}
+	cfg.Pairs["p"] = p
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for unknown group_by key")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "passes[0].group_by") &&
+			strings.Contains(err.Error(), "settlement_id") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected error identifying passes[0].group_by, got: %v", errs)
 	}
 }
 

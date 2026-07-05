@@ -78,6 +78,30 @@ func assertRowCoverage(t *testing.T, left, right []Transaction, res *Result) {
 			gotRight[r.ID] = true
 		}
 	}
+	for _, mm := range res.ManyToManyMatched {
+		for _, tx := range mm.Lefts {
+			gotLeft[tx.ID] = true
+		}
+		for _, r := range mm.Rights {
+			gotRight[r.ID] = true
+		}
+	}
+	for _, md := range res.ManyToManyAmountDiff {
+		for _, tx := range md.Lefts {
+			gotLeft[tx.ID] = true
+		}
+		for _, r := range md.Rights {
+			gotRight[r.ID] = true
+		}
+	}
+	for _, mt := range res.ManyToManyTimingDiff {
+		for _, tx := range mt.Lefts {
+			gotLeft[tx.ID] = true
+		}
+		for _, r := range mt.Rights {
+			gotRight[r.ID] = true
+		}
+	}
 
 	for id := range wantLeft {
 		if !gotLeft[id] {
@@ -144,6 +168,15 @@ func assertSummaryMatchesCounts(t *testing.T, res *Result) {
 	}
 	if res.Summary.GroupedTimingDiffCount != len(res.GroupedTimingDiff) {
 		t.Errorf("Summary.GroupedTimingDiffCount=%d len(GroupedTimingDiff)=%d", res.Summary.GroupedTimingDiffCount, len(res.GroupedTimingDiff))
+	}
+	if res.Summary.ManyToManyMatchedCount != len(res.ManyToManyMatched) {
+		t.Errorf("Summary.ManyToManyMatchedCount=%d len(ManyToManyMatched)=%d", res.Summary.ManyToManyMatchedCount, len(res.ManyToManyMatched))
+	}
+	if res.Summary.ManyToManyAmountDiffCount != len(res.ManyToManyAmountDiff) {
+		t.Errorf("Summary.ManyToManyAmountDiffCount=%d len(ManyToManyAmountDiff)=%d", res.Summary.ManyToManyAmountDiffCount, len(res.ManyToManyAmountDiff))
+	}
+	if res.Summary.ManyToManyTimingDiffCount != len(res.ManyToManyTimingDiff) {
+		t.Errorf("Summary.ManyToManyTimingDiffCount=%d len(ManyToManyTimingDiff)=%d", res.Summary.ManyToManyTimingDiffCount, len(res.ManyToManyTimingDiff))
 	}
 	if res.Summary.AmbiguousGroupCount != len(res.AmbiguousGroups) {
 		t.Errorf("Summary.AmbiguousGroupCount=%d len(AmbiguousGroups)=%d", res.Summary.AmbiguousGroupCount, len(res.AmbiguousGroups))
@@ -924,6 +957,260 @@ func TestOneToMany_AfterRefPass(t *testing.T) {
 	}
 	if len(res.UnmatchedLeft)+len(res.UnmatchedRight) != 0 {
 		t.Errorf("expected no unmatched rows, got left=%d right=%d",
+			len(res.UnmatchedLeft), len(res.UnmatchedRight))
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+// ---------------------------------------------------------------------------
+// many_to_many pass tests
+// ---------------------------------------------------------------------------
+
+func manyToManyPair() config.Pair {
+	return config.Pair{
+		DateWindow:           "0d",
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeManyToMany}},
+	}
+}
+
+func TestManyToMany_BasicGroupedMatch(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	left := []Transaction{
+		makeTxFull("l1", 100, "PAYOUT-001", "", base),
+		makeTxFull("l2", 80, "PAYOUT-001", "", base),
+		makeTxFull("l3", -30, "PAYOUT-001", "", base),
+		makeTxFull("l4", -5, "PAYOUT-001", "", base),
+	}
+	right := []Transaction{
+		makeTxFull("r1", 180, "PAYOUT-001", "", base),
+		makeTxFull("r2", -30, "PAYOUT-001", "", base),
+		makeTxFull("r3", -5, "PAYOUT-001", "", base),
+	}
+
+	res, err := Reconcile("p", "left", "right", left, right, manyToManyPair())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.ManyToManyMatched) != 1 {
+		t.Fatalf("ManyToManyMatched=%d want 1", len(res.ManyToManyMatched))
+	}
+	if len(res.ManyToManyMatched[0].Lefts) != 4 {
+		t.Errorf("ManyToManyMatched[0].Lefts=%d want 4", len(res.ManyToManyMatched[0].Lefts))
+	}
+	if len(res.ManyToManyMatched[0].Rights) != 3 {
+		t.Errorf("ManyToManyMatched[0].Rights=%d want 3", len(res.ManyToManyMatched[0].Rights))
+	}
+	if res.Summary.ManyToManyMatchedCount != 1 {
+		t.Errorf("ManyToManyMatchedCount=%d want 1", res.Summary.ManyToManyMatchedCount)
+	}
+	if res.Summary.MatchedAmountLeft != 145 || res.Summary.MatchedAmountRight != 145 {
+		t.Errorf("matched amounts = left %d right %d, want 145/145",
+			res.Summary.MatchedAmountLeft, res.Summary.MatchedAmountRight)
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+func TestManyToMany_GroupedAmountDiff(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	left := []Transaction{
+		makeTxFull("l1", 100, "PAYOUT-002", "", base),
+		makeTxFull("l2", 80, "PAYOUT-002", "", base),
+	}
+	right := []Transaction{
+		makeTxFull("r1", 170, "PAYOUT-002", "", base),
+		makeTxFull("r2", 5, "PAYOUT-002", "", base),
+	}
+
+	res, err := Reconcile("p", "left", "right", left, right, manyToManyPair())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.ManyToManyAmountDiff) != 1 {
+		t.Fatalf("ManyToManyAmountDiff=%d want 1", len(res.ManyToManyAmountDiff))
+	}
+	if res.ManyToManyAmountDiff[0].DiffMinor != 5 {
+		t.Errorf("DiffMinor=%d want 5", res.ManyToManyAmountDiff[0].DiffMinor)
+	}
+	if res.Summary.AmountDiffTotal != 5 || res.Summary.TotalDiscrepancy != 5 {
+		t.Errorf("summary diff totals = amount %d total %d, want 5/5",
+			res.Summary.AmountDiffTotal, res.Summary.TotalDiscrepancy)
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+func TestManyToMany_GroupedTimingDiff(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	late := time.Date(2024, 1, 9, 0, 0, 0, 0, time.UTC)
+	pair := config.Pair{
+		DateWindow:           "3d",
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeManyToMany}},
+	}
+	left := []Transaction{
+		makeTxFull("l1", 100, "PAYOUT-003", "", base),
+		makeTxFull("l2", 50, "PAYOUT-003", "", base),
+	}
+	right := []Transaction{
+		makeTxFull("r1", 120, "PAYOUT-003", "", base),
+		makeTxFull("r2", 30, "PAYOUT-003", "", late),
+	}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.ManyToManyTimingDiff) != 1 {
+		t.Fatalf("ManyToManyTimingDiff=%d want 1", len(res.ManyToManyTimingDiff))
+	}
+	if res.ManyToManyTimingDiff[0].DaysDiff != 8 {
+		t.Errorf("DaysDiff=%d want 8", res.ManyToManyTimingDiff[0].DaysDiff)
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+func TestManyToMany_BothFail_RowsNotConsumed(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	late := time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC)
+	pair := config.Pair{
+		DateWindow:           "3d",
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeManyToMany}},
+	}
+	left := []Transaction{
+		makeTxFull("l1", 100, "PAYOUT-004", "", base),
+		makeTxFull("l2", 100, "PAYOUT-004", "", base),
+	}
+	right := []Transaction{
+		makeTxFull("r1", 50, "PAYOUT-004", "", late),
+		makeTxFull("r2", 50, "PAYOUT-004", "", late),
+	}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.UnmatchedLeft) != 2 || len(res.UnmatchedRight) != 2 {
+		t.Fatalf("unmatched = left %d right %d, want 2/2", len(res.UnmatchedLeft), len(res.UnmatchedRight))
+	}
+	if len(res.ManyToManyMatched)+len(res.ManyToManyAmountDiff)+len(res.ManyToManyTimingDiff) != 0 {
+		t.Fatal("expected no many_to_many outcomes when both amount and date fail")
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+func TestManyToMany_EmptyGroupKeysRemainUnmatched(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	left := []Transaction{makeTxFull("l1", 100, "", "", base)}
+	right := []Transaction{makeTxFull("r1", 100, "", "", base)}
+
+	res, err := Reconcile("p", "left", "right", left, right, manyToManyPair())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.ManyToManyMatched) != 0 {
+		t.Fatalf("ManyToManyMatched=%d want 0", len(res.ManyToManyMatched))
+	}
+	if len(res.UnmatchedLeft) != 1 || len(res.UnmatchedRight) != 1 {
+		t.Fatalf("unmatched = left %d right %d, want 1/1", len(res.UnmatchedLeft), len(res.UnmatchedRight))
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+func TestManyToMany_GroupByNameAndGroupKey(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	t.Run("name", func(t *testing.T) {
+		pair := config.Pair{
+			DateWindow:           "0d",
+			AmountToleranceMinor: 0,
+			Passes:               []config.PassConfig{{Type: config.PassTypeManyToMany, GroupBy: config.GroupByName}},
+		}
+		left := []Transaction{
+			makeTxFull("l1", 40, "", "Payout 5", base),
+			makeTxFull("l2", 60, "", "Payout 5", base),
+		}
+		right := []Transaction{makeTxFull("r1", 100, "", "Payout 5", base)}
+		res, err := Reconcile("p", "left", "right", left, right, pair)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.ManyToManyMatched) != 1 {
+			t.Fatalf("ManyToManyMatched=%d want 1", len(res.ManyToManyMatched))
+		}
+		assertRowCoverage(t, left, right, res)
+	})
+
+	t.Run("group_key", func(t *testing.T) {
+		pair := config.Pair{
+			DateWindow:           "0d",
+			AmountToleranceMinor: 0,
+			Passes:               []config.PassConfig{{Type: config.PassTypeManyToMany, GroupBy: config.GroupByGroupKey}},
+		}
+		left := []Transaction{
+			makeTxFull("l1", 70, "", "", base),
+			makeTxFull("l2", 30, "", "", base),
+		}
+		right := []Transaction{makeTxFull("r1", 100, "", "", base)}
+		left[0].GroupKey = "SETTLE-1"
+		left[1].GroupKey = "SETTLE-1"
+		right[0].GroupKey = "SETTLE-1"
+		res, err := Reconcile("p", "left", "right", left, right, pair)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.ManyToManyMatched) != 1 {
+			t.Fatalf("ManyToManyMatched=%d want 1", len(res.ManyToManyMatched))
+		}
+		assertRowCoverage(t, left, right, res)
+	})
+}
+
+func TestManyToMany_AfterRefPass(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	pair := config.Pair{
+		DateWindow:           "0d",
+		AmountToleranceMinor: 0,
+		Passes: []config.PassConfig{
+			{Type: config.PassTypeReferenceOneToOne},
+			{Type: config.PassTypeManyToMany, GroupBy: config.GroupByName},
+		},
+	}
+	left := []Transaction{
+		makeTxFull("l1", 100, "SIMPLE-001", "", base),
+		makeTxFull("l2", 80, "", "Payout 005", base),
+		makeTxFull("l3", 20, "", "Payout 005", base),
+	}
+	right := []Transaction{
+		makeTxFull("r1", 100, "SIMPLE-001", "", base),
+		makeTxFull("r2", 50, "", "Payout 005", base),
+		makeTxFull("r3", 50, "", "Payout 005", base),
+	}
+
+	res, err := Reconcile("p", "left", "right", left, right, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Matched) != 1 || res.Matched[0].Left.ID != "l1" {
+		t.Fatalf("Matched=%d, expected exactly l1 from reference pass", len(res.Matched))
+	}
+	if len(res.ManyToManyMatched) != 1 {
+		t.Fatalf("ManyToManyMatched=%d want 1", len(res.ManyToManyMatched))
+	}
+	if len(res.UnmatchedLeft)+len(res.UnmatchedRight) != 0 {
+		t.Fatalf("expected no unmatched rows, got left=%d right=%d",
 			len(res.UnmatchedLeft), len(res.UnmatchedRight))
 	}
 	assertRowCoverage(t, left, right, res)

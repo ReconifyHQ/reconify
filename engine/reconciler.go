@@ -76,6 +76,10 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 				unmatchedLeft, unmatchedRight = matchByReferenceOneToMany(
 					result, unmatchedLeft, unmatchedRight,
 					pair.AmountToleranceMinor, dateWindowDays, pass.ResolvedGroupBy())
+			case config.PassTypeManyToMany:
+				unmatchedLeft, unmatchedRight = matchByReferenceManyToMany(
+					result, unmatchedLeft, unmatchedRight,
+					pair.AmountToleranceMinor, dateWindowDays, pass.ResolvedGroupBy())
 			default:
 				return nil, fmt.Errorf("unsupported pass type %q", pass.Type)
 			}
@@ -126,7 +130,8 @@ func buildSummary(totalLeft, totalRight int, result *Result) Summary {
 		matchRate = math.Round(float64(len(result.Matched))/float64(total)*10000) / 100
 	}
 	reconciledCount := len(result.Matched) + len(result.AmountDiff) + len(result.TimingDiff) +
-		len(result.GroupedMatched) + len(result.GroupedAmountDiff) + len(result.GroupedTimingDiff)
+		len(result.GroupedMatched) + len(result.GroupedAmountDiff) + len(result.GroupedTimingDiff) +
+		len(result.ManyToManyMatched) + len(result.ManyToManyAmountDiff) + len(result.ManyToManyTimingDiff)
 	reconciledRate := 0.0
 	if total > 0 {
 		reconciledRate = math.Round(float64(reconciledCount)/float64(total)*10000) / 100
@@ -146,6 +151,14 @@ func buildSummary(totalLeft, totalRight int, result *Result) Summary {
 	for _, gm := range result.GroupedMatched {
 		matchedAmtLeft += gm.Left.Amount
 		for _, r := range gm.Rights {
+			matchedAmtRight += r.Amount
+		}
+	}
+	for _, mm := range result.ManyToManyMatched {
+		for _, l := range mm.Lefts {
+			matchedAmtLeft += l.Amount
+		}
+		for _, r := range mm.Rights {
 			matchedAmtRight += r.Amount
 		}
 	}
@@ -172,6 +185,13 @@ func buildSummary(totalLeft, totalRight int, result *Result) Summary {
 		}
 		amountDiffTotal += d
 	}
+	for _, md := range result.ManyToManyAmountDiff {
+		d := md.DiffMinor
+		if d < 0 {
+			d = -d
+		}
+		amountDiffTotal += d
+	}
 	// Ambiguous groups require manual reconciliation — their amounts count toward
 	// TotalDiscrepancy separately from unmatched rows.
 	var ambiguousAmtLeft, ambiguousAmtRight int64
@@ -185,28 +205,31 @@ func buildSummary(totalLeft, totalRight int, result *Result) Summary {
 	}
 
 	return Summary{
-		TotalLeft:              totalLeft,
-		TotalRight:             totalRight,
-		MatchedCount:           len(result.Matched),
-		UnmatchedLeft:          len(result.UnmatchedLeft),
-		UnmatchedRight:         len(result.UnmatchedRight),
-		AmountDiffCount:        len(result.AmountDiff),
-		TimingDiffCount:        len(result.TimingDiff),
-		DuplicateCount:         dupTxnCount,
-		MatchRatePct:           matchRate,
-		ReconciledRatePct:      reconciledRate,
-		GroupedMatchedCount:    len(result.GroupedMatched),
-		GroupedAmountDiffCount: len(result.GroupedAmountDiff),
-		GroupedTimingDiffCount: len(result.GroupedTimingDiff),
-		AmbiguousGroupCount:    len(result.AmbiguousGroups),
-		MatchedAmountLeft:      matchedAmtLeft,
-		MatchedAmountRight:     matchedAmtRight,
-		UnmatchedAmountLeft:    unmatchedAmtLeft,
-		UnmatchedAmountRight:   unmatchedAmtRight,
-		AmountDiffTotal:        amountDiffTotal,
-		AmbiguousAmountLeft:    ambiguousAmtLeft,
-		AmbiguousAmountRight:   ambiguousAmtRight,
-		TotalDiscrepancy:       unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal + ambiguousAmtLeft + ambiguousAmtRight,
+		TotalLeft:                 totalLeft,
+		TotalRight:                totalRight,
+		MatchedCount:              len(result.Matched),
+		UnmatchedLeft:             len(result.UnmatchedLeft),
+		UnmatchedRight:            len(result.UnmatchedRight),
+		AmountDiffCount:           len(result.AmountDiff),
+		TimingDiffCount:           len(result.TimingDiff),
+		DuplicateCount:            dupTxnCount,
+		MatchRatePct:              matchRate,
+		ReconciledRatePct:         reconciledRate,
+		GroupedMatchedCount:       len(result.GroupedMatched),
+		GroupedAmountDiffCount:    len(result.GroupedAmountDiff),
+		GroupedTimingDiffCount:    len(result.GroupedTimingDiff),
+		ManyToManyMatchedCount:    len(result.ManyToManyMatched),
+		ManyToManyAmountDiffCount: len(result.ManyToManyAmountDiff),
+		ManyToManyTimingDiffCount: len(result.ManyToManyTimingDiff),
+		AmbiguousGroupCount:       len(result.AmbiguousGroups),
+		MatchedAmountLeft:         matchedAmtLeft,
+		MatchedAmountRight:        matchedAmtRight,
+		UnmatchedAmountLeft:       unmatchedAmtLeft,
+		UnmatchedAmountRight:      unmatchedAmtRight,
+		AmountDiffTotal:           amountDiffTotal,
+		AmbiguousAmountLeft:       ambiguousAmtLeft,
+		AmbiguousAmountRight:      ambiguousAmtRight,
+		TotalDiscrepancy:          unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal + ambiguousAmtLeft + ambiguousAmtRight,
 	}
 }
 
@@ -1217,6 +1240,136 @@ func matchByReferenceOneToMany(
 	}
 
 	return unmatchedLeft, unmatchedRight
+}
+
+// matchByReferenceManyToMany handles grouped settlement reconciliation where M
+// left rows reconcile against N right rows that share the same grouping key. It
+// does not search arbitrary row combinations; the configured key defines the
+// group boundary.
+func matchByReferenceManyToMany(
+	result *Result,
+	left, right []Transaction,
+	tolerance int64,
+	windowDays int,
+	groupBy string,
+) (unmatchedLeft, unmatchedRight []Transaction) {
+	keyOf := func(tx Transaction) string {
+		switch groupBy {
+		case config.GroupByName:
+			return tx.Name
+		case config.GroupByGroupKey:
+			return tx.GroupKey
+		default:
+			return tx.Reference
+		}
+	}
+
+	rightByKey := make(map[string][]Transaction, len(right))
+	for _, tx := range right {
+		if k := keyOf(tx); k != "" {
+			rightByKey[k] = append(rightByKey[k], tx)
+		}
+	}
+
+	leftByKey := make(map[string][]int, len(left))
+	leftKeyOrder := make([]string, 0)
+	for i, tx := range left {
+		if k := keyOf(tx); k != "" {
+			if _, ok := leftByKey[k]; !ok {
+				leftKeyOrder = append(leftKeyOrder, k)
+			}
+			leftByKey[k] = append(leftByKey[k], i)
+		}
+	}
+
+	consumedLeft := make(map[int]bool)
+	usedRight := make(map[string]bool)
+
+	for _, key := range leftKeyOrder {
+		indices := leftByKey[key]
+		rights := rightByKey[key]
+		if len(rights) == 0 {
+			continue
+		}
+
+		lefts := make([]Transaction, len(indices))
+		for i, idx := range indices {
+			lefts[i] = left[idx]
+		}
+
+		leftSum := sumTransactions(lefts)
+		rightSum := sumTransactions(rights)
+		signedDiff := leftSum - rightSum
+		absDiff := signedDiff
+		if absDiff < 0 {
+			absDiff = -absDiff
+		}
+		amtOk := absDiff <= tolerance
+		maxDaysDiff := maxCrossSideDaysDiff(lefts, rights)
+		dateOk := windowDays == 0 || maxDaysDiff <= windowDays
+
+		switch {
+		case amtOk && dateOk:
+			result.ManyToManyMatched = append(result.ManyToManyMatched, ManyToManyMatchedPair{
+				Lefts:  lefts,
+				Rights: rights,
+			})
+		case !amtOk && dateOk:
+			result.ManyToManyAmountDiff = append(result.ManyToManyAmountDiff, ManyToManyAmountDiffPair{
+				Lefts:     lefts,
+				Rights:    rights,
+				DiffMinor: signedDiff,
+			})
+		case amtOk && !dateOk:
+			result.ManyToManyTimingDiff = append(result.ManyToManyTimingDiff, ManyToManyTimingDiffPair{
+				Lefts:    lefts,
+				Rights:   rights,
+				DaysDiff: maxDaysDiff,
+			})
+		default:
+			continue
+		}
+
+		for _, idx := range indices {
+			consumedLeft[idx] = true
+		}
+		for _, r := range rights {
+			usedRight[r.ID] = true
+		}
+	}
+
+	for i, ltx := range left {
+		if !consumedLeft[i] {
+			unmatchedLeft = append(unmatchedLeft, ltx)
+		}
+	}
+	for _, rtx := range right {
+		if !usedRight[rtx.ID] {
+			unmatchedRight = append(unmatchedRight, rtx)
+		}
+	}
+
+	return unmatchedLeft, unmatchedRight
+}
+
+func sumTransactions(txns []Transaction) int64 {
+	var sum int64
+	for _, tx := range txns {
+		sum += tx.Amount
+	}
+	return sum
+}
+
+func maxCrossSideDaysDiff(lefts, rights []Transaction) int {
+	maxDaysDiff := 0
+	for _, l := range lefts {
+		for _, r := range rights {
+			if d := daysBetween(l.Date, r.Date); d > maxDaysDiff {
+				maxDaysDiff = d
+			}
+		}
+	}
+	return maxDaysDiff
 }
 
 // matchByNameTokens attempts secondary matching using word-token overlap on the Name field.

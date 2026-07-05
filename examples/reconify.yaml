@@ -134,3 +134,23 @@ pairs:
     amount_tolerance_minor: 0
     passes:
       - type: one_to_many  # sums all installments per invoice reference
+
+  # many_to_many example: a store ledger and payment gateway export split the
+  # same payout differently. The ledger may have order sales, refunds, and fees
+  # as separate rows; Stripe may have payout payments, refunds, and fees as
+  # different aggregate rows. If both sides carry the same payout reference,
+  # many_to_many groups both sides by that key and compares the group totals.
+  #
+  # This does not search arbitrary row combinations and does not use fuzzy
+  # matching. It only reconciles rows that already share the configured group key.
+  # With rights: [stripe, paypal], the same grouped pass runs against each
+  # counterpart in order; one group is not matched across multiple right sources
+  # at once.
+  store_payouts_vs_stripe:
+    left: bank
+    right: stripe
+    date_window: "3d"
+    amount_tolerance_minor: 0
+    passes:
+      - type: many_to_many
+        group_by: reference # default; use payout_id/settlement_id as ref_col when possible

@@ -141,7 +141,8 @@ The reconciliation engine:
 2. **Detects duplicates** within each source by reference field
 3. **Matches transactions** across sources by reference, then validates amount tolerance and date window
 4. **Optionally matches by name** using token-based Jaccard similarity
-5. **Produces a JSON report** with matched pairs, unmatched entries, and summary statistics
+5. **Optionally reconciles grouped settlements** with explicit `one_to_many` or `many_to_many` passes
+6. **Produces a JSON report** with matched pairs, grouped matches, unmatched entries, and summary statistics
 
 See the [engine internals guide](docs/content/docs/engine/index.md) for algorithm details. See the [Configuration reference](docs/content/docs/configuration.md) for the full set of source parser and pair options.
 

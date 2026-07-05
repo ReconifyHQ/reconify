@@ -186,9 +186,9 @@ The CLI (`internal/cli/reconcile.go`) calls the existing single-counterpart path
 
 Output gets one additive field, `BySource`, giving a per-counterpart breakdown alongside the aggregate `Summary` (see "Result shape" above). Writers that support a breakdown (`json`, `json-stream`, `ndjson`) implement an optional `SourceBreakdownWriter` interface; `csv` and `table` silently omit it, same pattern as the existing optional `RunInfoSetter` interface for `--audit`.
 
-This `rights` behavior is ordered multi-counterpart reconciliation across sources; it is separate from grouped transaction matching within a single source (see `one_to_many` below).
+This `rights` behavior is ordered multi-counterpart reconciliation across sources; it is separate from grouped transaction matching within a single source (see `one_to_many` and `many_to_many` below).
 
-## Explicit pass pipelines and the `one_to_many` pass
+## Explicit pass pipelines and grouped passes
 
 By default the engine runs reference matching then optionally name-token matching (via `name_mode: tokens`). For more control, a pair can declare an explicit ordered `passes` list instead:
 
@@ -207,6 +207,7 @@ Valid pass types:
 - `reference_one_to_one` — best-candidate reference matching (same as Tier 1 above).
 - `name_tokens_one_to_one` — Jaccard name-token matching (same as Tier 2 above). Cannot be combined with `name_mode: tokens`.
 - `one_to_many` — one left transaction settled by N right transactions sharing the same reference (installment payments). See below.
+- `many_to_many` — M left transactions reconciled against N right transactions sharing the same grouping key (settlement or payout groups). See below.
 
 **`[reference_one_to_one, one_to_many]` pipeline caveat.** The `reference_one_to_one` pass greedily picks the best 1-to-1 candidate for any left row whose reference appears on the right. For same-date installments this means the pass classifies them as `amount_diff` (each installment's amount differs from the invoice total), consuming the left row before `one_to_many` can see it. Use `[reference_one_to_one, one_to_many]` only when some rows are genuine 1-to-1 matches *and* the installments fail **both** amount and date in the ref pass for each individual right row — otherwise use `one_to_many` alone.
 
@@ -259,3 +260,44 @@ TotalDiscrepancy = UnmatchedAmountLeft + UnmatchedAmountRight + AmountDiffTotal
 **`reconciled_rate_pct` denominator caveat.** The `one_to_many` pass inflates `total_right` because N right rows correspond to one left row. A fully reconciled grouped dataset can report a sub-100% `reconciled_rate_pct` — this is expected. `match_rate_pct` counts only exact 1-to-1 matches (unchanged); `reconciled_rate_pct` includes grouped matched, grouped amount diff, and grouped timing diff outcomes.
 
 **Batch-only.** The `one_to_many` pass requires all right rows for a reference to be in memory simultaneously (to sum amounts and detect ambiguous left references). This fundamentally breaks the streaming memory contract. The CLI detects `one_to_many` in a pair's passes and automatically routes to the in-memory batch path (`engine.Reconcile` / `engine.ReconcileMultiSource`). `--audit` is not yet supported with `one_to_many` passes; `--progress` is silently skipped. Writers that do not support grouped events (`csv`, `table`) receive a warning on stderr; use `--format=json` or `--format=ndjson` to capture the full output including `grouped_matched`, `grouped_amount_diff`, `grouped_timing_diff`, and `ambiguous_groups`.
+
+### `many_to_many` pass
+
+The `many_to_many` pass handles grouped settlements where both systems split the same business event differently. For example, a store ledger may contain separate rows for order sales, refunds, and gateway fees, while a Stripe payout export contains separate payout rows for card payments, refunds, and fees. If all rows carry the same payout reference, the pass reconciles the two groups by comparing totals:
+
+| Store ledger rows | Reference | Amount |
+|---|---|---:|
+| Order A sale | `payout_123` | 10000 |
+| Order B sale | `payout_123` | 8000 |
+| Order C refund | `payout_123` | -3000 |
+| Stripe fee | `payout_123` | -500 |
+
+| Stripe payout rows | Reference | Amount |
+|---|---|---:|
+| Card payments total | `payout_123` | 18000 |
+| Refunds total | `payout_123` | -3000 |
+| Stripe fees | `payout_123` | -500 |
+
+Both sides sum to `14500`, so the output contains one explainable `many_to_many_matched` event with `lefts` and `rights` arrays.
+
+Use it for PSP payout reconciliation, partial payments, marketplace settlements, and fees/refunds/adjustments that are split differently across systems. Good grouping keys include payout IDs, invoice IDs, settlement IDs, payment run IDs, and remittance references.
+
+Configuration mirrors `one_to_many`:
+
+```yaml
+passes:
+  - type: many_to_many
+    group_by: reference   # default; also supports name or group_key
+```
+
+**Outcomes:**
+- **`many_to_many_matched`** — summed left and right amounts are within tolerance, and group dates are within window.
+- **`many_to_many_amount_diff`** — dates are OK, but summed amounts differ beyond tolerance. `DiffMinor = sum(lefts) - sum(rights)`.
+- **`many_to_many_timing_diff`** — amounts reconcile within tolerance, but at least one cross-side row date is outside the window. `DaysDiff` is the max `abs(daysBetween)` across the group.
+- **Both fail** — all rows stay unmatched and available for later passes.
+
+**What it does not do.** The pass does not search arbitrary combinations of rows that happen to sum to the same amount, and it does not use fuzzy matching. Rows must share the configured group key. With `rights: [stripe, paypal]`, the pass runs against each counterpart in order and carries forward unmatched left rows; it does not reconcile one group across multiple right sources at once.
+
+**Pass-order caveat.** If `reference_one_to_one` runs before `many_to_many` and the grouped rows share the same reference, the reference pass can consume individual rows as matches, amount diffs, or timing diffs before the group pass sees them. Use `many_to_many` alone for settlement groups where the reference is the group key, or use a different `group_by` key such as `name` or `group_key` when the reference pass should run first.
+
+**Performance.** The pass is linear in the number of rows for grouping and summing, but it must hold both side groups in memory. It is batch-only by design. The CLI routes pairs containing `one_to_many` or `many_to_many` to the batch path; `--audit` is not yet supported with grouped passes. Writers that do not support grouped detail (`csv`, `table`) receive a warning on stderr; use `--format=json`, `--format=json-stream`, or `--format=ndjson` to capture N:M event detail.
