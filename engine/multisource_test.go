@@ -132,6 +132,49 @@ func TestReconcileMultiSource_DuplicatesAnnotatedOncePerLeftRow(t *testing.T) {
 	}
 }
 
+func TestReconcileMultiSource_ManyToManyAggregatesBySource(t *testing.T) {
+	left := []Transaction{
+		makeTx("l1", 70, "STRIPE-PAYOUT"),
+		makeTx("l2", 30, "STRIPE-PAYOUT"),
+		makeTx("l3", 40, "PAYPAL-PAYOUT"),
+		makeTx("l4", 60, "PAYPAL-PAYOUT"),
+	}
+	counterparts := []CounterpartInput{
+		{SourceName: "stripe", Transactions: []Transaction{
+			makeTx("s1", 50, "STRIPE-PAYOUT"),
+			makeTx("s2", 50, "STRIPE-PAYOUT"),
+		}},
+		{SourceName: "paypal", Transactions: []Transaction{
+			makeTx("p1", 100, "PAYPAL-PAYOUT"),
+		}},
+	}
+	pair := config.Pair{
+		DateWindow:           "0d",
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeManyToMany}},
+	}
+
+	res, err := ReconcileMultiSource("p", "left", left, counterparts, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.ManyToManyMatched) != 2 {
+		t.Fatalf("ManyToManyMatched=%d want 2", len(res.ManyToManyMatched))
+	}
+	if len(res.UnmatchedLeft) != 0 || len(res.UnmatchedRight) != 0 {
+		t.Fatalf("unmatched = left %d right %d, want 0/0", len(res.UnmatchedLeft), len(res.UnmatchedRight))
+	}
+	if res.BySource["stripe"].ManyToManyMatchedCount != 1 {
+		t.Errorf("stripe ManyToManyMatchedCount=%d want 1", res.BySource["stripe"].ManyToManyMatchedCount)
+	}
+	if res.BySource["paypal"].ManyToManyMatchedCount != 1 {
+		t.Errorf("paypal ManyToManyMatchedCount=%d want 1", res.BySource["paypal"].ManyToManyMatchedCount)
+	}
+	if res.Summary.ManyToManyMatchedCount != 2 {
+		t.Errorf("summary ManyToManyMatchedCount=%d want 2", res.Summary.ManyToManyMatchedCount)
+	}
+}
+
 func TestReconcileStreamingMultiSource_ProgressiveConsumption(t *testing.T) {
 	dir := t.TempDir()
 	leftPath := filepath.Join(dir, "left.csv")

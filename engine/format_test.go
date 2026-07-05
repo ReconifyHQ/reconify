@@ -126,6 +126,41 @@ func TestJSONWriter_SetDeterministic_StableOutput(t *testing.T) {
 	}
 }
 
+func TestJSONWriter_ManyToManyEvents(t *testing.T) {
+	var buf bytes.Buffer
+	w := newJSONWriter(&buf)
+	requireNoFormatErr(t, w.WriteManyToManyMatch(ManyToManyMatchedPair{
+		Lefts:  []Transaction{{ID: "l1"}, {ID: "l2"}},
+		Rights: []Transaction{{ID: "r1"}},
+	}))
+	requireNoFormatErr(t, w.WriteManyToManyAmountDiff(ManyToManyAmountDiffPair{
+		Lefts:     []Transaction{{ID: "l3"}},
+		Rights:    []Transaction{{ID: "r2"}, {ID: "r3"}},
+		DiffMinor: 5,
+	}))
+	requireNoFormatErr(t, w.WriteManyToManyTimingDiff(ManyToManyTimingDiffPair{
+		Lefts:    []Transaction{{ID: "l4"}},
+		Rights:   []Transaction{{ID: "r4"}},
+		DaysDiff: 3,
+	}))
+	requireNoFormatErr(t, w.WriteSummary(Summary{}))
+	requireNoFormatErr(t, w.Flush())
+
+	var result Result
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("json unmarshal: %v", err)
+	}
+	if len(result.ManyToManyMatched) != 1 {
+		t.Fatalf("ManyToManyMatched=%d want 1", len(result.ManyToManyMatched))
+	}
+	if len(result.ManyToManyAmountDiff) != 1 || result.ManyToManyAmountDiff[0].DiffMinor != 5 {
+		t.Fatalf("ManyToManyAmountDiff=%+v, want one diff_minor=5", result.ManyToManyAmountDiff)
+	}
+	if len(result.ManyToManyTimingDiff) != 1 || result.ManyToManyTimingDiff[0].DaysDiff != 3 {
+		t.Fatalf("ManyToManyTimingDiff=%+v, want one days_diff=3", result.ManyToManyTimingDiff)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // jsonStreamWriter
 // -----------------------------------------------------------------------------
@@ -161,6 +196,37 @@ func TestJSONStreamWriter_NoRunInfoByDefault(t *testing.T) {
 	}
 	if _, ok := result["run_info"]; ok {
 		t.Error("run_info present in json-stream output when SetRunInfo was not called")
+	}
+}
+
+func TestJSONStreamWriter_ManyToManyEvents(t *testing.T) {
+	var buf bytes.Buffer
+	w := newJSONStreamWriter(&buf)
+	requireNoFormatErr(t, w.WriteManyToManyMatch(ManyToManyMatchedPair{
+		Lefts:  []Transaction{{ID: "l1"}},
+		Rights: []Transaction{{ID: "r1"}},
+	}))
+	requireNoFormatErr(t, w.WriteManyToManyAmountDiff(ManyToManyAmountDiffPair{
+		Lefts:     []Transaction{{ID: "l2"}},
+		Rights:    []Transaction{{ID: "r2"}},
+		DiffMinor: 7,
+	}))
+	requireNoFormatErr(t, w.WriteManyToManyTimingDiff(ManyToManyTimingDiffPair{
+		Lefts:    []Transaction{{ID: "l3"}},
+		Rights:   []Transaction{{ID: "r3"}},
+		DaysDiff: 4,
+	}))
+	requireNoFormatErr(t, w.WriteSummary(Summary{}))
+	requireNoFormatErr(t, w.Flush())
+
+	var result map[string]json.RawMessage
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("json unmarshal: %v", err)
+	}
+	for _, key := range []string{keyManyToManyMatched, keyManyToManyAmountDiff, keyManyToManyTimingDiff} {
+		if _, ok := result[key]; !ok {
+			t.Fatalf("%s key missing from json-stream output", key)
+		}
 	}
 }
 
@@ -206,6 +272,40 @@ func TestNDJSONWriter_EachLineValidJSON(t *testing.T) {
 	for i, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
 		if !json.Valid([]byte(line)) {
 			t.Errorf("line %d is not valid JSON: %q", i, line)
+		}
+	}
+}
+
+func TestNDJSONWriter_ManyToManyEvents(t *testing.T) {
+	var buf bytes.Buffer
+	w := newNDJSONWriter(&buf)
+	requireNoFormatErr(t, w.WriteManyToManyMatch(ManyToManyMatchedPair{
+		Lefts:  []Transaction{{ID: "l1"}},
+		Rights: []Transaction{{ID: "r1"}},
+	}))
+	requireNoFormatErr(t, w.WriteManyToManyAmountDiff(ManyToManyAmountDiffPair{
+		Lefts:     []Transaction{{ID: "l2"}},
+		Rights:    []Transaction{{ID: "r2"}},
+		DiffMinor: 9,
+	}))
+	requireNoFormatErr(t, w.WriteManyToManyTimingDiff(ManyToManyTimingDiffPair{
+		Lefts:    []Transaction{{ID: "l3"}},
+		Rights:   []Transaction{{ID: "r3"}},
+		DaysDiff: 6,
+	}))
+	requireNoFormatErr(t, w.Flush())
+
+	gotTypes := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var env ndjsonEnvelope
+		if err := json.Unmarshal([]byte(line), &env); err != nil {
+			t.Fatalf("unmarshal line: %v", err)
+		}
+		gotTypes[env.Type] = true
+	}
+	for _, typ := range []string{eventManyToManyMatch, keyManyToManyAmountDiff, keyManyToManyTimingDiff} {
+		if !gotTypes[typ] {
+			t.Fatalf("missing ndjson event type %q in %v", typ, gotTypes)
 		}
 	}
 }

@@ -149,13 +149,12 @@ Formats:
 
 			jobStart := time.Now()
 
-			// one_to_many passes need all right rows in memory to sum installments and
-			// detect ambiguous references — this breaks the streaming memory contract.
-			// Route to the batch path when the pair pipeline contains one_to_many; the
-			// streaming paths below are only reached when no one_to_many pass is configured.
-			if containsOneToManyPass(pair.Passes) {
+			// Grouped passes need complete groups in memory before they can compare
+			// summed amounts and group dates — this breaks the streaming memory contract.
+			// Route to the batch path when the pair pipeline contains one.
+			if containsBatchOnlyGroupedPass(pair.Passes) {
 				if auditMode {
-					return fmt.Errorf("--audit is not yet supported with one_to_many passes")
+					return fmt.Errorf("--audit is not yet supported with grouped passes")
 				}
 				leftTxns, parseErr := engine.Parse(pair.Left, leftPath, leftSrc.Parser)
 				if parseErr != nil {
@@ -502,6 +501,26 @@ func (s *summaryCapture) WriteAmbiguousGroup(p engine.AmbiguousGroupPair) error 
 	return nil
 }
 
+// ManyToManyEventWriter forwarding — delegates to inner when supported.
+func (s *summaryCapture) WriteManyToManyMatch(p engine.ManyToManyMatchedPair) error {
+	if mw, ok := s.inner.(engine.ManyToManyEventWriter); ok {
+		return mw.WriteManyToManyMatch(p)
+	}
+	return nil
+}
+func (s *summaryCapture) WriteManyToManyAmountDiff(p engine.ManyToManyAmountDiffPair) error {
+	if mw, ok := s.inner.(engine.ManyToManyEventWriter); ok {
+		return mw.WriteManyToManyAmountDiff(p)
+	}
+	return nil
+}
+func (s *summaryCapture) WriteManyToManyTimingDiff(p engine.ManyToManyTimingDiffPair) error {
+	if mw, ok := s.inner.(engine.ManyToManyEventWriter); ok {
+		return mw.WriteManyToManyTimingDiff(p)
+	}
+	return nil
+}
+
 type reconcileOutput struct {
 	File         *os.File
 	finalPath    string
@@ -661,11 +680,11 @@ func replaceExistingOutputFile(tempPath, finalPath string, renameErr error) erro
 	return nil
 }
 
-// containsOneToManyPass reports whether any pass in passes is a one_to_many pass.
+// containsBatchOnlyGroupedPass reports whether any pass requires grouped batch matching.
 // engine.containsPass is unexported, so the CLI keeps its own copy.
-func containsOneToManyPass(passes []config.PassConfig) bool {
+func containsBatchOnlyGroupedPass(passes []config.PassConfig) bool {
 	for _, p := range passes {
-		if p.Type == config.PassTypeOneToMany {
+		if p.Type == config.PassTypeOneToMany || p.Type == config.PassTypeManyToMany {
 			return true
 		}
 	}
@@ -673,9 +692,9 @@ func containsOneToManyPass(passes []config.PassConfig) bool {
 }
 
 // drainResultToWriter replays all events from a batch Result through a ResultWriter.
-// Writers that implement GroupedEventWriter receive grouped/ambiguous events; for
-// writers that do not (csv, table), a single warning is printed to stderr and those
-// events are skipped — all standard events are still emitted.
+// Writers that implement GroupedEventWriter or ManyToManyEventWriter receive grouped
+// events; for writers that do not (csv, table), a single warning is printed to stderr
+// and those events are skipped — all standard events are still emitted.
 // ambiguous_groups require manual reconciliation and are never silently dropped from
 // the Summary that is always written last.
 func drainResultToWriter(w engine.ResultWriter, res *engine.Result) error {
@@ -736,6 +755,29 @@ func drainResultToWriter(w engine.ResultWriter, res *engine.Result) error {
 		fmt.Fprintln(os.Stderr,
 			"warning: current --format does not support grouped or ambiguous match events; "+
 				"use --format=json or --format=ndjson to capture all one_to_many output")
+	}
+	hasManyToMany := len(res.ManyToManyMatched)+len(res.ManyToManyAmountDiff)+
+		len(res.ManyToManyTimingDiff) > 0
+	if mw, ok := w.(engine.ManyToManyEventWriter); ok {
+		for _, mm := range res.ManyToManyMatched {
+			if err := mw.WriteManyToManyMatch(mm); err != nil {
+				return err
+			}
+		}
+		for _, md := range res.ManyToManyAmountDiff {
+			if err := mw.WriteManyToManyAmountDiff(md); err != nil {
+				return err
+			}
+		}
+		for _, mt := range res.ManyToManyTimingDiff {
+			if err := mw.WriteManyToManyTimingDiff(mt); err != nil {
+				return err
+			}
+		}
+	} else if hasManyToMany {
+		fmt.Fprintln(os.Stderr,
+			"warning: current --format does not support many_to_many match events; "+
+				"use --format=json or --format=ndjson to capture all many_to_many output")
 	}
 	// Emit warnings to stderr — mirrors what the streaming path does via cc.Warnings().
 	for _, warning := range res.Warnings {

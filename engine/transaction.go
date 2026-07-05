@@ -64,6 +64,29 @@ type GroupedTimingDiffPair struct {
 	DaysDiff int           `json:"days_diff"`
 }
 
+// ManyToManyMatchedPair is a group-level match where M left transactions reconcile
+// against N right transactions sharing the same grouping key.
+type ManyToManyMatchedPair struct {
+	Lefts  []Transaction `json:"lefts"`
+	Rights []Transaction `json:"rights"`
+}
+
+// ManyToManyAmountDiffPair is a group-level match where summed left and right
+// amounts differ beyond tolerance. DiffMinor = sum(Lefts.Amount) - sum(Rights.Amount).
+type ManyToManyAmountDiffPair struct {
+	Lefts     []Transaction `json:"lefts"`
+	Rights    []Transaction `json:"rights"`
+	DiffMinor int64         `json:"diff_minor"`
+}
+
+// ManyToManyTimingDiffPair is a group-level match where summed amounts reconcile
+// within tolerance but at least one cross-side date distance is outside the window.
+type ManyToManyTimingDiffPair struct {
+	Lefts    []Transaction `json:"lefts"`
+	Rights   []Transaction `json:"rights"`
+	DaysDiff int           `json:"days_diff"`
+}
+
 // AmbiguousGroupPair is emitted by the one_to_many pass when more than one left row
 // shares the same reference — grouping is undetermined and manual reconciliation is
 // required. All rows in the group are excluded from matching.
@@ -95,13 +118,18 @@ type Summary struct {
 	// ReconciledRatePct is (matched + amount_diff + timing_diff + grouped variants) / total.
 	// MatchRatePct only counts exact 1-to-1 matches; use this field for the full picture.
 	// Note: one_to_many passes inflate total_right (N rights per left), so a fully-reconciled
-	// grouped dataset may report a sub-100% reconciled_rate_pct — this is expected.
+	// grouped dataset may report a sub-100% reconciled_rate_pct. many_to_many counts one
+	// reconciled group event for M+N rows. These grouped rates are expected.
 	ReconciledRatePct float64 `json:"reconciled_rate_pct"`
 
 	// Grouped match counts (one_to_many pass). Omitted when zero.
 	GroupedMatchedCount    int `json:"grouped_matched_count,omitempty"`
 	GroupedAmountDiffCount int `json:"grouped_amount_diff_count,omitempty"`
 	GroupedTimingDiffCount int `json:"grouped_timing_diff_count,omitempty"`
+	// Many-to-many grouped match counts. Omitted when zero.
+	ManyToManyMatchedCount    int `json:"many_to_many_matched_count,omitempty"`
+	ManyToManyAmountDiffCount int `json:"many_to_many_amount_diff_count,omitempty"`
+	ManyToManyTimingDiffCount int `json:"many_to_many_timing_diff_count,omitempty"`
 	// AmbiguousGroupCount is the number of reference groups where >1 left row shared the
 	// same reference, making grouping undetermined. These require manual reconciliation.
 	AmbiguousGroupCount int `json:"ambiguous_group_count,omitempty"`
@@ -140,6 +168,11 @@ type Result struct {
 	GroupedMatched    []GroupedMatchedPair    `json:"grouped_matched,omitempty"`
 	GroupedAmountDiff []GroupedAmountDiffPair `json:"grouped_amount_diff,omitempty"`
 	GroupedTimingDiff []GroupedTimingDiffPair `json:"grouped_timing_diff,omitempty"`
+	// Many-to-many slices are populated by the many_to_many pass. Omitted when empty
+	// so output remains backwards-compatible for runs without many_to_many.
+	ManyToManyMatched    []ManyToManyMatchedPair    `json:"many_to_many_matched,omitempty"`
+	ManyToManyAmountDiff []ManyToManyAmountDiffPair `json:"many_to_many_amount_diff,omitempty"`
+	ManyToManyTimingDiff []ManyToManyTimingDiffPair `json:"many_to_many_timing_diff,omitempty"`
 	// AmbiguousGroups holds reference groups where >1 left row shares a reference,
 	// making grouping undetermined. These rows require manual reconciliation.
 	AmbiguousGroups []AmbiguousGroupPair `json:"ambiguous_groups,omitempty"`

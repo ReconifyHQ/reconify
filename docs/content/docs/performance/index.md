@@ -75,6 +75,18 @@ per event and use O(1) memory regardless of result size. `json` accumulates all
 results in memory before flushing and is intended for smaller datasets or API
 integration.
 
+### Grouped settlement passes
+
+The `one_to_many` and `many_to_many` passes are batch-only. They need complete
+groups in memory before they can sum amounts, compare group dates, and decide
+which rows to consume. The grouping itself is linear in row count, but peak memory
+is higher than the streaming 1:1 path because both side groups are held at once.
+
+`many_to_many` does not perform subset-sum or fuzzy combination search. It only
+groups rows by an explicit key such as a payout ID, invoice ID, settlement ID, or
+payment run ID, then compares the left and right group totals. This keeps the
+runtime predictable and the output explainable.
+
 ---
 
 ## Benchmark Environment

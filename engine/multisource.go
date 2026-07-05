@@ -88,6 +88,9 @@ func ReconcileMultiSource(
 		result.GroupedMatched = append(result.GroupedMatched, passResult.GroupedMatched...)
 		result.GroupedAmountDiff = append(result.GroupedAmountDiff, passResult.GroupedAmountDiff...)
 		result.GroupedTimingDiff = append(result.GroupedTimingDiff, passResult.GroupedTimingDiff...)
+		result.ManyToManyMatched = append(result.ManyToManyMatched, passResult.ManyToManyMatched...)
+		result.ManyToManyAmountDiff = append(result.ManyToManyAmountDiff, passResult.ManyToManyAmountDiff...)
+		result.ManyToManyTimingDiff = append(result.ManyToManyTimingDiff, passResult.ManyToManyTimingDiff...)
 		result.AmbiguousGroups = append(result.AmbiguousGroups, passResult.AmbiguousGroups...)
 		result.Warnings = append(result.Warnings, passResult.Warnings...)
 		result.BySource[cp.SourceName] = passResult.Summary
@@ -154,10 +157,10 @@ func ReconcileStreamingMultiSource(
 	if pair.NameMode == "tokens" {
 		return fmt.Errorf("name_mode=tokens is not yet supported for multi-source (rights) reconciliation")
 	}
-	if containsPass(pair.Passes, config.PassTypeOneToMany) {
-		return fmt.Errorf("one_to_many pass is not supported in the streaming " +
+	if containsPass(pair.Passes, config.PassTypeOneToMany) || containsPass(pair.Passes, config.PassTypeManyToMany) {
+		return fmt.Errorf("grouped passes are not supported in the streaming " +
 			"multi-source path — the CLI routes to batch automatically when " +
-			"one_to_many is configured")
+			"one_to_many or many_to_many is configured")
 	}
 
 	cc := &currencyTracker{}

@@ -61,9 +61,10 @@ const (
 	PassTypeReferenceOneToOne  = "reference_one_to_one"
 	PassTypeNameTokensOneToOne = "name_tokens_one_to_one"
 	PassTypeOneToMany          = "one_to_many"
+	PassTypeManyToMany         = "many_to_many"
 )
 
-// GroupBy constants for one_to_many passes.
+// GroupBy constants for grouped passes.
 const (
 	GroupByReference = "reference"
 	GroupByName      = "name"
@@ -359,14 +360,15 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 			PassTypeReferenceOneToOne:  true,
 			PassTypeNameTokensOneToOne: true,
 			PassTypeOneToMany:          true,
+			PassTypeManyToMany:         true,
 		}
 		for i, pass := range pair.Passes {
 			if !validPassTypes[pass.Type] {
-				errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].type: unknown pass type %q (valid: %s, %s, %s)",
+				errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].type: unknown pass type %q (valid: %s, %s, %s, %s)",
 					name, i, pass.Type,
-					PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne, PassTypeOneToMany))
+					PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne, PassTypeOneToMany, PassTypeManyToMany))
 			}
-			if pass.Type == PassTypeOneToMany && pass.GroupBy != "" {
+			if (pass.Type == PassTypeOneToMany || pass.Type == PassTypeManyToMany) && pass.GroupBy != "" {
 				switch pass.GroupBy {
 				case GroupByReference, GroupByName, GroupByGroupKey:
 					// valid built-in key

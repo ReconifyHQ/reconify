@@ -60,19 +60,31 @@ type GroupedEventWriter interface {
 	WriteAmbiguousGroup(pair AmbiguousGroupPair) error
 }
 
+// ManyToManyEventWriter is an optional interface implemented by writers that can
+// render grouped match events produced by the many_to_many pass.
+type ManyToManyEventWriter interface {
+	WriteManyToManyMatch(pair ManyToManyMatchedPair) error
+	WriteManyToManyAmountDiff(pair ManyToManyAmountDiffPair) error
+	WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPair) error
+}
+
 // JSON section key names for grouped/ambiguous slices (used by jsonStreamWriter)
 // and ndjson event type tags (used by ndjsonWriter).
 // The JSON section keys mirror the Result struct field names (plural);
 // the ndjson tags follow the event-name convention (singular action noun).
 // grouped_amount_diff and grouped_timing_diff are identical in both forms.
 const (
-	keyGroupedMatched    = "grouped_matched"
-	keyGroupedAmountDiff = "grouped_amount_diff"
-	keyGroupedTimingDiff = "grouped_timing_diff"
-	keyAmbiguousGroups   = "ambiguous_groups"
+	keyGroupedMatched       = "grouped_matched"
+	keyGroupedAmountDiff    = "grouped_amount_diff"
+	keyGroupedTimingDiff    = "grouped_timing_diff"
+	keyAmbiguousGroups      = "ambiguous_groups"
+	keyManyToManyMatched    = "many_to_many_matched"
+	keyManyToManyAmountDiff = "many_to_many_amount_diff"
+	keyManyToManyTimingDiff = "many_to_many_timing_diff"
 
-	eventGroupedMatch   = "grouped_match"   // ndjson type tag (singular)
-	eventAmbiguousGroup = "ambiguous_group" // ndjson type tag (singular)
+	eventGroupedMatch    = "grouped_match"      // ndjson type tag (singular)
+	eventAmbiguousGroup  = "ambiguous_group"    // ndjson type tag (singular)
+	eventManyToManyMatch = "many_to_many_match" // ndjson type tag (singular)
 )
 
 // NewResultWriter returns a ResultWriter for the given format name.
@@ -165,6 +177,20 @@ func (j *jsonWriter) WriteAmbiguousGroup(pair AmbiguousGroupPair) error {
 	return nil
 }
 
+// ManyToManyEventWriter implementation — appends to the result struct fields flushed by Flush().
+func (j *jsonWriter) WriteManyToManyMatch(pair ManyToManyMatchedPair) error {
+	j.result.ManyToManyMatched = append(j.result.ManyToManyMatched, pair)
+	return nil
+}
+func (j *jsonWriter) WriteManyToManyAmountDiff(pair ManyToManyAmountDiffPair) error {
+	j.result.ManyToManyAmountDiff = append(j.result.ManyToManyAmountDiff, pair)
+	return nil
+}
+func (j *jsonWriter) WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPair) error {
+	j.result.ManyToManyTimingDiff = append(j.result.ManyToManyTimingDiff, pair)
+	return nil
+}
+
 // SetMeta sets pair and source names on the result. Fixes the pre-existing bug
 // where PairName/LeftSource/RightSource were never populated in the JSON output.
 func (j *jsonWriter) SetMeta(pairName, leftSource, rightSource string) {
@@ -220,6 +246,15 @@ func (j *jsonWriter) sortResult() {
 	sort.Slice(j.result.AmbiguousGroups, func(i, k int) bool {
 		return j.result.AmbiguousGroups[i].Reference < j.result.AmbiguousGroups[k].Reference
 	})
+	sort.Slice(j.result.ManyToManyMatched, func(i, k int) bool {
+		return firstTransactionID(j.result.ManyToManyMatched[i].Lefts) < firstTransactionID(j.result.ManyToManyMatched[k].Lefts)
+	})
+	sort.Slice(j.result.ManyToManyAmountDiff, func(i, k int) bool {
+		return firstTransactionID(j.result.ManyToManyAmountDiff[i].Lefts) < firstTransactionID(j.result.ManyToManyAmountDiff[k].Lefts)
+	})
+	sort.Slice(j.result.ManyToManyTimingDiff, func(i, k int) bool {
+		return firstTransactionID(j.result.ManyToManyTimingDiff[i].Lefts) < firstTransactionID(j.result.ManyToManyTimingDiff[k].Lefts)
+	})
 }
 
 func (j *jsonWriter) Flush() error {
@@ -260,10 +295,13 @@ type jsonStreamWriter struct {
 	summary  *Summary
 	bySource map[string]Summary
 	// grouped/ambiguous events from one_to_many pass — only emitted when non-empty
-	groupedMatched    []json.RawMessage
-	groupedAmountDiff []json.RawMessage
-	groupedTimingDiff []json.RawMessage
-	ambiguousGroups   []json.RawMessage
+	groupedMatched       []json.RawMessage
+	groupedAmountDiff    []json.RawMessage
+	groupedTimingDiff    []json.RawMessage
+	ambiguousGroups      []json.RawMessage
+	manyToManyMatched    []json.RawMessage
+	manyToManyAmountDiff []json.RawMessage
+	manyToManyTimingDiff []json.RawMessage
 }
 
 func newJSONStreamWriter(w io.Writer) *jsonStreamWriter {
@@ -364,6 +402,32 @@ func (j *jsonStreamWriter) WriteAmbiguousGroup(pair AmbiguousGroupPair) error {
 	return nil
 }
 
+// ManyToManyEventWriter implementation — buffers encoded JSON; emitted in Flush() only when non-empty.
+func (j *jsonStreamWriter) WriteManyToManyMatch(pair ManyToManyMatchedPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.manyToManyMatched = append(j.manyToManyMatched, b)
+	return nil
+}
+func (j *jsonStreamWriter) WriteManyToManyAmountDiff(pair ManyToManyAmountDiffPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.manyToManyAmountDiff = append(j.manyToManyAmountDiff, b)
+	return nil
+}
+func (j *jsonStreamWriter) WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.manyToManyTimingDiff = append(j.manyToManyTimingDiff, b)
+	return nil
+}
+
 func (j *jsonStreamWriter) Flush() error {
 	result := map[string]any{
 		"pair":         j.meta.PairName,
@@ -401,6 +465,15 @@ func (j *jsonStreamWriter) Flush() error {
 	}
 	if len(j.ambiguousGroups) > 0 {
 		result[keyAmbiguousGroups] = j.ambiguousGroups
+	}
+	if len(j.manyToManyMatched) > 0 {
+		result[keyManyToManyMatched] = j.manyToManyMatched
+	}
+	if len(j.manyToManyAmountDiff) > 0 {
+		result[keyManyToManyAmountDiff] = j.manyToManyAmountDiff
+	}
+	if len(j.manyToManyTimingDiff) > 0 {
+		result[keyManyToManyTimingDiff] = j.manyToManyTimingDiff
 	}
 	enc := json.NewEncoder(j.w)
 	enc.SetIndent("", "  ")
@@ -487,6 +560,17 @@ func (n *ndjsonWriter) WriteAmbiguousGroup(pair AmbiguousGroupPair) error {
 	return n.emit(eventAmbiguousGroup, pair)
 }
 
+// ManyToManyEventWriter implementation — one tagged line per event.
+func (n *ndjsonWriter) WriteManyToManyMatch(pair ManyToManyMatchedPair) error {
+	return n.emit(eventManyToManyMatch, pair)
+}
+func (n *ndjsonWriter) WriteManyToManyAmountDiff(pair ManyToManyAmountDiffPair) error {
+	return n.emit(keyManyToManyAmountDiff, pair)
+}
+func (n *ndjsonWriter) WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPair) error {
+	return n.emit(keyManyToManyTimingDiff, pair)
+}
+
 // ---------------------------------------------------------------------------
 // CSVWriter — fixed schema, one row per event. O(1) memory. Versioned contract.
 //
@@ -544,6 +628,13 @@ func emptyRow(typ string) []string {
 func fmtDate(t time.Time) string { return t.Format(time.RFC3339) }
 func fmtI64(v int64) string      { return strconv.FormatInt(v, 10) }
 func fmtInt(v int) string        { return strconv.Itoa(v) }
+
+func firstTransactionID(txns []Transaction) string {
+	if len(txns) == 0 {
+		return ""
+	}
+	return txns[0].ID
+}
 
 // SanitizeCSVField prevents spreadsheet formula injection by prefixing cells
 // that start with a formula trigger character with a single quote.
