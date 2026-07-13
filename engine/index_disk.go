@@ -19,11 +19,15 @@ import (
 // It is intended for very large datasets where the in-memory index does not fit.
 type diskIndex struct {
 	db        *sql.DB
+	insertTx  *sql.Tx
 	insertSQL *sql.Stmt
+	insertN   int
 	getSQL    *sql.Stmt
 	markSQL   *sql.Stmt
 	tmpDir    string
 }
+
+const diskIndexBatchSize = 10_000
 
 // NewDiskIndex creates a disk-backed RightIndex.
 //
@@ -82,22 +86,12 @@ func NewDiskIndex(spillDir string) (RightIndex, error) {
 		return nil, fmt.Errorf("create tx index: %w", err)
 	}
 
-	insertSQL, err := db.Prepare(`
-		INSERT INTO tx (ref, id, date_unix, amount, currency, name, source, used)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0);
-	`)
-	if err != nil {
-		_ = db.Close()
-		_ = os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("prepare insert: %w", err)
-	}
 	getSQL, err := db.Prepare(`
 		SELECT rowid, id, date_unix, amount, currency, name, source
 		FROM tx
 		WHERE ref = ? AND used = 0;
 	`)
 	if err != nil {
-		_ = insertSQL.Close()
 		_ = db.Close()
 		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("prepare get: %w", err)
@@ -105,22 +99,37 @@ func NewDiskIndex(spillDir string) (RightIndex, error) {
 	markSQL, err := db.Prepare(`UPDATE tx SET used = 1 WHERE rowid = ? AND used = 0;`)
 	if err != nil {
 		_ = getSQL.Close()
-		_ = insertSQL.Close()
 		_ = db.Close()
 		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("prepare mark-used: %w", err)
 	}
 
 	return &diskIndex{
-		db:        db,
-		insertSQL: insertSQL,
-		getSQL:    getSQL,
-		markSQL:   markSQL,
-		tmpDir:    tmpDir,
+		db:      db,
+		getSQL:  getSQL,
+		markSQL: markSQL,
+		tmpDir:  tmpDir,
 	}, nil
 }
 
 func (d *diskIndex) Add(tx Transaction) error {
+	if d.insertTx == nil {
+		insertTx, err := d.db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin disk index insert transaction: %w", err)
+		}
+		insertSQL, err := insertTx.Prepare(`
+			INSERT INTO tx (ref, id, date_unix, amount, currency, name, source, used)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 0);
+		`)
+		if err != nil {
+			_ = insertTx.Rollback()
+			return fmt.Errorf("prepare insert: %w", err)
+		}
+		d.insertTx = insertTx
+		d.insertSQL = insertSQL
+		d.insertN = 0
+	}
 	if _, err := d.insertSQL.Exec(
 		tx.Reference,
 		tx.ID,
@@ -132,10 +141,40 @@ func (d *diskIndex) Add(tx Transaction) error {
 	); err != nil {
 		return fmt.Errorf("disk index insert: %w", err)
 	}
+	d.insertN++
+	if d.insertN >= diskIndexBatchSize {
+		if err := d.flushInserts(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *diskIndex) flushInserts() error {
+	if d.insertTx == nil {
+		return nil
+	}
+	if err := d.insertSQL.Close(); err != nil {
+		_ = d.insertTx.Rollback()
+		d.insertTx = nil
+		d.insertSQL = nil
+		return fmt.Errorf("close insert statement: %w", err)
+	}
+	if err := d.insertTx.Commit(); err != nil {
+		d.insertTx = nil
+		d.insertSQL = nil
+		return fmt.Errorf("commit disk index batch: %w", err)
+	}
+	d.insertTx = nil
+	d.insertSQL = nil
+	d.insertN = 0
 	return nil
 }
 
 func (d *diskIndex) Get(ref string) (buckets []*bucket, err error) {
+	if err := d.flushInserts(); err != nil {
+		return nil, err
+	}
 	rows, err := d.getSQL.Query(ref)
 	if err != nil {
 		return nil, fmt.Errorf("disk index get query: %w", err)
@@ -175,6 +214,9 @@ func (d *diskIndex) MarkUsed(b *bucket) error {
 }
 
 func (d *diskIndex) IterateUnused(fn func(tx Transaction) error) (err error) {
+	if err := d.flushInserts(); err != nil {
+		return err
+	}
 	rows, err := d.db.Query(`
 		SELECT ref, id, date_unix, amount, currency, name, source
 		FROM tx
@@ -222,6 +264,9 @@ func (d *diskIndex) IterateUnused(fn func(tx Transaction) error) (err error) {
 
 func (d *diskIndex) Close() error {
 	var firstErr error
+	if err := d.flushInserts(); err != nil {
+		firstErr = err
+	}
 	if d.markSQL != nil {
 		if err := d.markSQL.Close(); err != nil && firstErr == nil {
 			firstErr = err
@@ -229,11 +274,6 @@ func (d *diskIndex) Close() error {
 	}
 	if d.getSQL != nil {
 		if err := d.getSQL.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	if d.insertSQL != nil {
-		if err := d.insertSQL.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
