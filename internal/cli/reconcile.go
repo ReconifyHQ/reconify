@@ -84,6 +84,9 @@ Formats:
 			if len(counterparts) == 0 {
 				return configErrf("pair %q has no right or rights configured", pairName)
 			}
+			if cfg.Index.Backend == "partitioned" && len(counterparts) != 1 {
+				return configErr("index.backend=partitioned currently supports one left source and one counterpart; multi-source pairs use memory or disk")
+			}
 
 			// Resolve left file path: explicit flag overrides the glob pattern.
 			leftPath, err := resolveFile(leftFile, leftSrc.FilePattern, configDir)
