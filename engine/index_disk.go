@@ -23,7 +23,7 @@ type diskIndex struct {
 	insertSQL *sql.Stmt
 	insertN   int
 	getSQL    *sql.Stmt
-	markSQL   *sql.Stmt
+	usedBits  []uint64
 	tmpDir    string
 }
 
@@ -89,26 +89,17 @@ func NewDiskIndex(spillDir string) (RightIndex, error) {
 	getSQL, err := db.Prepare(`
 		SELECT rowid, id, date_unix, amount, currency, name, source
 		FROM tx
-		WHERE ref = ? AND used = 0;
+		WHERE ref = ?;
 	`)
 	if err != nil {
 		_ = db.Close()
 		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("prepare get: %w", err)
 	}
-	markSQL, err := db.Prepare(`UPDATE tx SET used = 1 WHERE rowid = ? AND used = 0;`)
-	if err != nil {
-		_ = getSQL.Close()
-		_ = db.Close()
-		_ = os.RemoveAll(tmpDir)
-		return nil, fmt.Errorf("prepare mark-used: %w", err)
-	}
-
 	return &diskIndex{
-		db:      db,
-		getSQL:  getSQL,
-		markSQL: markSQL,
-		tmpDir:  tmpDir,
+		db:     db,
+		getSQL: getSQL,
+		tmpDir: tmpDir,
 	}, nil
 }
 
@@ -191,6 +182,9 @@ func (d *diskIndex) Get(ref string) (buckets []*bucket, err error) {
 		if err := rows.Scan(&b.rowID, &b.id, &b.dateUnix, &b.amount, &b.currency, &b.name, &b.source); err != nil {
 			return nil, fmt.Errorf("disk index get scan: %w", err)
 		}
+		if d.isUsed(b.rowID) {
+			continue
+		}
 		buckets = append(buckets, b)
 	}
 	if err := rows.Err(); err != nil {
@@ -206,11 +200,28 @@ func (d *diskIndex) MarkUsed(b *bucket) error {
 	if b.rowID == 0 {
 		return fmt.Errorf("disk index bucket missing rowid")
 	}
-	if _, err := d.markSQL.Exec(b.rowID); err != nil {
-		return fmt.Errorf("disk index mark used: %w", err)
-	}
+	d.setUsed(b.rowID)
 	b.used = true
 	return nil
+}
+
+func (d *diskIndex) setUsed(rowID int64) {
+	if rowID <= 0 {
+		return
+	}
+	word := int(rowID / 64)
+	if word >= len(d.usedBits) {
+		d.usedBits = append(d.usedBits, make([]uint64, word-len(d.usedBits)+1)...)
+	}
+	d.usedBits[word] |= uint64(1) << uint(rowID%64)
+}
+
+func (d *diskIndex) isUsed(rowID int64) bool {
+	if rowID <= 0 {
+		return false
+	}
+	word := int(rowID / 64)
+	return word < len(d.usedBits) && d.usedBits[word]&(uint64(1)<<uint(rowID%64)) != 0
 }
 
 func (d *diskIndex) IterateUnused(fn func(tx Transaction) error) (err error) {
@@ -218,9 +229,8 @@ func (d *diskIndex) IterateUnused(fn func(tx Transaction) error) (err error) {
 		return err
 	}
 	rows, err := d.db.Query(`
-		SELECT ref, id, date_unix, amount, currency, name, source
-		FROM tx
-		WHERE used = 0;
+		SELECT rowid, ref, id, date_unix, amount, currency, name, source
+		FROM tx;
 	`)
 	if err != nil {
 		return fmt.Errorf("iterate unused: %w", err)
@@ -233,6 +243,7 @@ func (d *diskIndex) IterateUnused(fn func(tx Transaction) error) (err error) {
 
 	for rows.Next() {
 		var (
+			rowID    int64
 			ref      string
 			id       string
 			dateUnix int64
@@ -241,8 +252,11 @@ func (d *diskIndex) IterateUnused(fn func(tx Transaction) error) (err error) {
 			name     string
 			source   string
 		)
-		if err := rows.Scan(&ref, &id, &dateUnix, &amount, &currency, &name, &source); err != nil {
+		if err := rows.Scan(&rowID, &ref, &id, &dateUnix, &amount, &currency, &name, &source); err != nil {
 			return fmt.Errorf("iterate unused scan: %w", err)
+		}
+		if d.isUsed(rowID) {
+			continue
 		}
 		if err := fn(Transaction{
 			ID:        id,
@@ -266,11 +280,6 @@ func (d *diskIndex) Close() error {
 	var firstErr error
 	if err := d.flushInserts(); err != nil {
 		firstErr = err
-	}
-	if d.markSQL != nil {
-		if err := d.markSQL.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
 	}
 	if d.getSQL != nil {
 		if err := d.getSQL.Close(); err != nil && firstErr == nil {
