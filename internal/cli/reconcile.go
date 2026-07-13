@@ -238,6 +238,18 @@ Formats:
 				if err != nil {
 					return configErrf("right source: %v", err)
 				}
+				if cfg.Index.Backend == "partitioned" {
+					if auditMode {
+						return configErr("--audit is not supported with the partitioned backend")
+					}
+					if err := engine.ReconcilePartitioned(context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, maxTokenBuffer, cfg.Index.PartitionCount); err != nil {
+						return err
+					}
+					if sc != nil && (sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 && failIfUnmatched {
+						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+					}
+					return nil
+				}
 
 				if auditMode {
 					// Check the inner writer directly: when summaryCapture wraps w, the

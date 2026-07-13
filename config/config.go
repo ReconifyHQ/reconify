@@ -157,7 +157,7 @@ func (p Pair) Counterparts() []string {
 
 // IndexCfg controls which right-side index backend ReconcileStreaming uses.
 type IndexCfg struct {
-	// Backend is one of: memory, disk, auto.
+	// Backend is one of: memory, disk, auto, partitioned.
 	// Default (empty) is memory.
 	Backend string `yaml:"backend,omitempty"`
 	// SpillDir is the directory used for disk index temporary files.
@@ -167,6 +167,8 @@ type IndexCfg struct {
 	// If right file size exceeds this value, disk backend is selected.
 	// Default (0) is 2048 MB.
 	AutoMaxRightFileMB int64 `yaml:"auto_max_right_file_mb,omitempty"`
+	// PartitionCount controls the number of hash partitions for the bounded-memory backend.
+	PartitionCount int `yaml:"partition_count,omitempty"`
 }
 
 // Load reads and parses a YAML configuration file
@@ -391,9 +393,10 @@ func validateIndex(index IndexCfg) []error {
 		backend = "memory"
 	}
 	allowed := map[string]bool{
-		"memory": true,
-		"disk":   true,
-		"auto":   true,
+		"memory":      true,
+		"disk":        true,
+		"auto":        true,
+		"partitioned": true,
 	}
 	if !allowed[backend] {
 		errs = append(errs, fmt.Errorf("index.backend: must be one of [memory, disk, auto] (got %q)", index.Backend))
