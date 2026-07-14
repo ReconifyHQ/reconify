@@ -55,7 +55,7 @@ mod-check: ## Verify modules and fail on go.mod/go.sum drift
 # Linting
 lint: ## Run linters
 	@if command -v golangci-lint > /dev/null; then \
-		golangci-lint run ./...; \
+		GOOS=linux GOARCH=amd64 golangci-lint run ./...; \
 	else \
 		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
 		exit 1; \
@@ -63,15 +63,15 @@ lint: ## Run linters
 
 security: ## Run vulnerability and security checks
 	@if command -v govulncheck > /dev/null; then \
-		govulncheck ./...; \
+		GOOS=linux GOARCH=amd64 govulncheck ./...; \
 	elif test -x "$$(go env GOPATH)/bin/govulncheck"; then \
-		"$$(go env GOPATH)/bin/govulncheck" ./...; \
+		GOOS=linux GOARCH=amd64 "$$(go env GOPATH)/bin/govulncheck" ./...; \
 	else \
 		echo "govulncheck not installed. Install with: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
 		exit 1; \
 	fi
 	@if command -v golangci-lint > /dev/null; then \
-		golangci-lint run --enable-only=gosec ./...; \
+		GOOS=linux GOARCH=amd64 golangci-lint run --enable-only=gosec ./...; \
 	else \
 		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
 		exit 1; \
