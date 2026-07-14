@@ -84,6 +84,9 @@ Formats:
 			if len(counterparts) == 0 {
 				return configErrf("pair %q has no right or rights configured", pairName)
 			}
+			if cfg.Index.Backend == "partitioned" && len(counterparts) != 1 {
+				return configErr("index.backend=partitioned currently supports one left source and one counterpart; multi-source pairs use memory or disk")
+			}
 
 			// Resolve left file path: explicit flag overrides the glob pattern.
 			leftPath, err := resolveFile(leftFile, leftSrc.FilePattern, configDir)
@@ -237,6 +240,18 @@ Formats:
 				rightPath, err := resolveFile(rightFile, rightSrc.FilePattern, configDir)
 				if err != nil {
 					return configErrf("right source: %v", err)
+				}
+				if cfg.Index.Backend == "partitioned" {
+					if auditMode {
+						return configErr("--audit is not supported with the partitioned backend")
+					}
+					if err := engine.ReconcilePartitioned(context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, maxTokenBuffer, cfg.Index.PartitionCount); err != nil {
+						return err
+					}
+					if sc != nil && (sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 && failIfUnmatched {
+						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+					}
+					return nil
 				}
 
 				if auditMode {

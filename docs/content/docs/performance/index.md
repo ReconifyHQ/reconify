@@ -75,6 +75,33 @@ per event and use O(1) memory regardless of result size. `json` accumulates all
 results in memory before flushing and is intended for smaller datasets or API
 integration.
 
+### Bounded-memory partitioning
+
+For a large CSV one-to-one reconciliation, select the partitioned backend:
+
+```yaml
+index:
+  backend: partitioned
+  partition_count: 64
+```
+
+Reconify first hashes the reference value in both inputs and writes each row to
+one of `partition_count` temporary files. It then repeats the normal streaming
+reconciliation for each partition: the right partition is indexed in memory,
+the corresponding left partition is streamed, and the temporary index is
+released. Equal reference values always select the same partition, so the
+matching algorithm remains unchanged while peak memory is bounded by the
+largest partition.
+
+`partition_count: 0` uses the default of 32; explicit values must be at least 2.
+More partitions reduce memory but increase partition-file overhead and disk
+passes. Use `ndjson` or `csv` output so results do not accumulate in memory.
+
+The partitioned backend currently applies only to CSV reference-based
+one-to-one pairs with one counterpart. Grouped `one_to_many` and `many_to_many`
+passes continue through the existing batch implementation, and multi-source
+pairs should use the `memory` or `disk` backend.
+
 ### Grouped settlement passes
 
 The `one_to_many` and `many_to_many` passes are batch-only. They need complete

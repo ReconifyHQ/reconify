@@ -246,6 +246,7 @@ Reconify supports multiple right-side index backends:
 | `memory` | You want the fastest lookups and the right-side file fits comfortably in RAM. |
 | `disk` | You need lower RAM usage and can accept slower lookups. |
 | `auto` | You want Reconify to choose disk indexing above a file-size threshold. |
+| `partitioned` | You need bounded memory for a large CSV one-to-one reconciliation and can accept extra sequential disk passes. |
 
 ```yaml
 index:
@@ -253,3 +254,34 @@ index:
   spill_dir: "/tmp/reconify"
   auto_max_right_file_mb: 2048
 ```
+
+### Partitioned backend
+
+`partitioned` hashes the configured reference column in both CSV inputs and
+writes rows into temporary partition files. Reconify then loads one right-side
+partition into memory, streams the matching left-side partition, emits results,
+and releases the partition before continuing. This bounds memory by the largest
+partition rather than by the complete right-side file.
+
+```yaml
+index:
+  backend: partitioned
+  partition_count: 32   # optional; 0 defaults to 32, explicit values must be >= 2
+```
+
+Use a streaming output format for large runs:
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_provider \
+  --format ndjson \
+  --out results.ndjson
+```
+
+The partitioned backend currently supports CSV reference-based one-to-one
+reconciliation with `ref_col` configured on both sources. `one_to_many` and
+`many_to_many` passes continue through the existing grouped batch path, and
+multi-source (`rights`) pairs should use `memory` or `disk` until a partition
+coordinator is available. Partitioning must use the same effective reference
+value on both sides; reference normalization should happen before partitioning.

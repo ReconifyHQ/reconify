@@ -77,3 +77,41 @@ func TestDiskIndex_CloseRemovesTempDir(t *testing.T) {
 		t.Fatalf("expected temp dir removed, stat err=%v", err)
 	}
 }
+
+func TestDiskIndex_BatchedInsertsRemainVisibleAndCorrect(t *testing.T) {
+	idx, err := NewDiskIndex(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewDiskIndex: %v", err)
+	}
+	defer idx.Close()
+
+	for i := 0; i < diskIndexBatchSize+1; i++ {
+		if err := idx.Add(Transaction{
+			ID:        "row-" + time.Duration(i).String(),
+			Date:      time.Unix(int64(i), 0).UTC(),
+			Amount:    int64(i),
+			Currency:  "USD",
+			Reference: "BATCH-REF",
+		}); err != nil {
+			t.Fatalf("Add row %d: %v", i, err)
+		}
+	}
+
+	candidates, err := idx.Get("BATCH-REF")
+	if err != nil {
+		t.Fatalf("Get batched rows: %v", err)
+	}
+	if got, want := len(candidates), diskIndexBatchSize+1; got != want {
+		t.Fatalf("candidate count=%d, want %d", got, want)
+	}
+	if err := idx.MarkUsed(candidates[0]); err != nil {
+		t.Fatalf("MarkUsed: %v", err)
+	}
+	remaining, err := idx.Get("BATCH-REF")
+	if err != nil {
+		t.Fatalf("Get after mark-used: %v", err)
+	}
+	if got, want := len(remaining), diskIndexBatchSize; got != want {
+		t.Fatalf("remaining count=%d, want %d", got, want)
+	}
+}
