@@ -117,9 +117,10 @@ version: 1
 timezone: Africa/Lagos
 
 index:
-  backend: auto                # memory | disk | auto
+  backend: auto                # memory | disk | auto | partitioned
   spill_dir: /tmp/reconify     # optional for disk/auto
   auto_max_right_file_mb: 2048 # optional threshold for auto
+  partition_count: 32          # partitioned only; 0 uses the default
 
 sources:
   bank:
