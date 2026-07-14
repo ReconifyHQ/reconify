@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"sort"
@@ -146,6 +147,128 @@ func TestReconcilePartitionedTrimsReferenceBeforeHashing(t *testing.T) {
 	}
 }
 
+func TestReconcilePartitionedPreservesDuplicateGroupsAcrossPartitions(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+
+	refForPartition := func(ref string) int {
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(ref))
+		return int(h.Sum32() % 2)
+	}
+	firstRef := "REF-0"
+	secondRef := "REF-1"
+	for i := 1; refForPartition(firstRef) == refForPartition(secondRef); i++ {
+		secondRef = fmt.Sprintf("REF-%d", i)
+	}
+
+	if err := os.WriteFile(left, []byte("date,amount,reference,group\n2026-01-01,100,"+firstRef+",DUP-1\n2026-01-01,100,"+secondRef+",DUP-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte("date,amount,reference,group\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{
+		Type:       "csv",
+		DateCol:    "date",
+		DateLayout: "2006-01-02",
+		AmountCol:  "amount",
+		RefCol:     "reference",
+		GroupCol:   "group",
+	}
+	pair := config.Pair{Left: "left", Right: "right"}
+
+	var baseline bytes.Buffer
+	bw, err := NewResultWriter("ndjson", &baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := NewMemoryIndex()
+	if err := ReconcileStreaming(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, idx, bw, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var partitioned bytes.Buffer
+	pw, err := NewResultWriter("ndjson", &partitioned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcilePartitioned(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, pw, 0, 2); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := summaryFromNDJSON(partitioned.String()), summaryFromNDJSON(baseline.String()); got != want {
+		t.Fatalf("summary mismatch\npartitioned: %s\nbaseline: %s", got, want)
+	}
+	if got := countNDJSONEvents(partitioned.String(), "duplicate"); got != 1 {
+		t.Fatalf("duplicate events = %d, want 1", got)
+	}
+}
+
+func TestReconcilePartitionedPreservesDuplicatePolicyAcrossPartitions(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	refForPartition := func(ref string) int {
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(ref))
+		return int(h.Sum32() % 2)
+	}
+	firstRef := "REF-0"
+	secondRef := "REF-1"
+	for i := 1; refForPartition(firstRef) == refForPartition(secondRef); i++ {
+		secondRef = fmt.Sprintf("REF-%d", i)
+	}
+	input := "date,amount,reference,group\n2026-01-01,100," + firstRef + ",DUP-1\n2026-01-01,100," + secondRef + ",DUP-1\n"
+	if err := os.WriteFile(left, []byte(input), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte(input), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pair := config.Pair{Left: "left", Right: "right"}
+	for _, policy := range []config.DuplicatePolicy{config.DuplicatePolicyMerge, config.DuplicatePolicyLatest} {
+		t.Run(string(policy), func(t *testing.T) {
+			cfg := config.ParserCfg{
+				Type:            "csv",
+				DateCol:         "date",
+				DateLayout:      "2006-01-02",
+				AmountCol:       "amount",
+				RefCol:          "reference",
+				GroupCol:        "group",
+				DuplicatePolicy: policy,
+			}
+			var baseline bytes.Buffer
+			bw, err := NewResultWriter("ndjson", &baseline)
+			if err != nil {
+				t.Fatal(err)
+			}
+			idx := NewMemoryIndex()
+			if err := ReconcileStreaming(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, idx, bw, 0); err != nil {
+				t.Fatal(err)
+			}
+			if err := idx.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			var partitioned bytes.Buffer
+			pw, err := NewResultWriter("ndjson", &partitioned)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := ReconcilePartitioned(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, pw, 0, 2); err != nil {
+				t.Fatal(err)
+			}
+			if got, want := summaryFromNDJSON(partitioned.String()), summaryFromNDJSON(baseline.String()); got != want {
+				t.Fatalf("summary mismatch\npartitioned: %s\nbaseline: %s", got, want)
+			}
+		})
+	}
+}
+
 func lastSummaryLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -154,6 +277,21 @@ func lastSummaryLine(s string) string {
 		}
 	}
 	return ""
+}
+
+func summaryFromNDJSON(s string) string { return lastSummaryLine(s) }
+
+func countNDJSONEvents(s, wantType string) int {
+	count := 0
+	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+		var event struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal([]byte(line), &event) == nil && event.Type == wantType {
+			count++
+		}
+	}
+	return count
 }
 
 func sortedEventLines(s string) []string {
