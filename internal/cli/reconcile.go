@@ -386,14 +386,18 @@ Formats:
 					}
 				}()
 
-				for _, name := range counterparts {
+				decisions, err := chooseMultiIndexBackends(cfg.Index, leftPath, leftSrc.Parser, counterparts, rightPaths, cfg.Sources, pair)
+				if err != nil {
+					return fmt.Errorf("select index backends: %w", err)
+				}
+				for i, name := range counterparts {
 					src := cfg.Sources[name]
 					path := rightPaths[name]
-					idx, backendLabel, err := newRightIndex(cfg.Index, path)
+					idx, err := openSelectedIndex(cfg.Index, decisions[i])
 					if err != nil {
 						return fmt.Errorf("init index for counterpart %q: %w", name, err)
 					}
-					fmt.Fprintf(os.Stderr, "index: counterpart=%s %s\n", name, backendLabel)
+					fmt.Fprintf(os.Stderr, "index: counterpart=%s %s\n", name, decisions[i].Selection.String())
 					indexes = append(indexes, idx)
 					cps = append(cps, engine.CounterpartStream{
 						SourceName: name,
@@ -994,21 +998,6 @@ func pathWithinDir(dir, path string) (bool, error) {
 
 func startsWithParent(path string) bool {
 	return path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator))
-}
-
-func newRightIndex(indexCfg config.IndexCfg, rightPath string) (engine.RightIndex, string, error) {
-	decision, err := chooseIndexBackend(indexCfg, "", rightPath, config.ParserCfg{}, config.ParserCfg{}, config.Pair{}, 1)
-	if err != nil {
-		return nil, "", err
-	}
-	if decision.Partitioned {
-		return nil, "", fmt.Errorf("partitioned backend is not supported for multi-counterpart streaming indexes")
-	}
-	idx, err := openSelectedIndex(indexCfg, decision)
-	if err != nil {
-		return nil, "", err
-	}
-	return idx, decision.Selection.String(), nil
 }
 
 func reportIndexSelection(w engine.ResultWriter, selection engine.IndexSelection) error {

@@ -122,6 +122,30 @@ func TestReconcilePartitionedWithOptionsCleansConfiguredSpillDir(t *testing.T) {
 	}
 }
 
+func TestReconcilePartitionedTrimsReferenceBeforeHashing(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	if err := os.WriteFile(left, []byte("date,amount,reference\n2026-01-01,100,\" REF-1\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte("date,amount,reference\n2026-01-01,100,REF-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference"}
+	var output bytes.Buffer
+	w, err := NewResultWriter("ndjson", &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcilePartitioned(context.Background(), "p", "left", "right", left, right, cfg, cfg, config.Pair{}, w, 0, 2); err != nil {
+		t.Fatal(err)
+	}
+	if summary := lastSummaryLine(output.String()); !strings.Contains(summary, `"matched":1`) || strings.Contains(summary, `"unmatched_left":1`) {
+		t.Fatalf("summary=%s, want one trimmed-reference match", summary)
+	}
+}
+
 func lastSummaryLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {

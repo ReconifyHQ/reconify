@@ -17,18 +17,24 @@ const (
 	defaultPartitionCount           = 32
 	resourceHeadroomBytes     int64 = 64 << 20
 	resourceRowBytes          int64 = 128
+	resourceMapEntryBytes     int64 = 32
 )
 
 type indexResourceEstimate struct {
-	RightBytes             int64
-	LeftBytes              int64
-	RightRows              int64
-	RetainedFieldBytes     int64
-	MemoryIndexBytes       int64
-	DiskMemoryBytes        int64
-	DiskIndexBytes         int64
-	PartitionMemoryBytes   int64
-	PartitionTempDiskBytes int64
+	RightBytes              int64
+	LeftBytes               int64
+	RightRows               int64
+	LeftRows                int64
+	RetainedFieldBytes      int64
+	LeftRetainedFieldBytes  int64
+	MemoryIndexBytes        int64
+	DiskMemoryBytes         int64
+	DiskIndexBytes          int64
+	PartitionMemoryBytes    int64
+	PartitionTempDiskBytes  int64
+	PerIndexMemoryBytes     int64
+	PerIndexDiskMemoryBytes int64
+	SharedMemoryBytes       int64
 }
 
 type indexSelectionDecision struct {
@@ -39,7 +45,8 @@ type indexSelectionDecision struct {
 var freeDiskBytes = availableDiskBytes
 
 func chooseIndexBackend(indexCfg config.IndexCfg, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, counterpartCount int) (indexSelectionDecision, error) {
-	estimate, err := estimateIndexResources(leftPath, rightPath, rightCfg, indexCfg.PartitionCount)
+	resourcePolicy := indexCfg.MaxMemoryMB > 0 || indexCfg.MaxTempDiskMB > 0
+	estimate, err := estimateIndexResources(leftPath, rightPath, leftCfg, rightCfg, pair, indexCfg.PartitionCount, counterpartCount, resourcePolicy)
 	if err != nil {
 		return indexSelectionDecision{}, fmt.Errorf("estimate index resources: %w", err)
 	}
@@ -53,9 +60,7 @@ func chooseIndexBackend(indexCfg config.IndexCfg, leftPath, rightPath string, le
 	}
 
 	selection := engine.IndexSelection{
-		RequestedBackend:       requested,
-		EstimatedMemoryBytes:   estimate.MemoryIndexBytes,
-		EstimatedTempDiskBytes: estimate.DiskIndexBytes,
+		RequestedBackend: requested,
 	}
 	if requested == "auto" {
 		return chooseAutoBackend(indexCfg, leftPath, rightPath, leftCfg, rightCfg, pair, counterpartCount, estimate, selection)
@@ -169,63 +174,154 @@ func partitionedEligible(leftPath, rightPath string, leftCfg, rightCfg config.Pa
 	return "", true
 }
 
-func estimateIndexResources(leftPath, rightPath string, rightCfg config.ParserCfg, partitionCount int) (indexResourceEstimate, error) {
-	var estimate indexResourceEstimate
-	leftInfo, err := os.Stat(leftPath)
-	if err == nil {
-		estimate.LeftBytes = leftInfo.Size()
-	}
-	rightInfo, err := os.Stat(rightPath)
+type inputShape struct {
+	bytes      int64
+	rows       int64
+	fieldBytes int64
+}
+
+func estimateIndexResources(leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, partitionCount, counterpartCount int, detailed bool) (indexResourceEstimate, error) {
+	left, err := inspectInputShape(leftPath, leftCfg, detailed)
 	if err != nil {
-		return estimate, err
+		return indexResourceEstimate{}, fmt.Errorf("inspect left input: %w", err)
 	}
-	estimate.RightBytes = rightInfo.Size()
-	if isCSVPath(rightPath, rightCfg) {
-		if err := scanCSVShape(rightPath, rightCfg, &estimate); err != nil {
-			return estimate, err
-		}
-	} else {
-		estimate.RightRows = estimate.RightBytes / 128
-		estimate.RetainedFieldBytes = estimate.RightBytes
+	right, err := inspectInputShape(rightPath, rightCfg, detailed)
+	if err != nil {
+		return indexResourceEstimate{}, fmt.Errorf("inspect right input: %w", err)
 	}
-	retained := estimate.RightRows*resourceRowBytes + estimate.RetainedFieldBytes + estimate.RightRows*32
+	return estimateIndexResourcesFromShapes(left, right, leftCfg, rightCfg, pair, partitionCount, counterpartCount), nil
+}
+
+func estimateIndexResourcesFromShapes(left, right inputShape, leftCfg, rightCfg config.ParserCfg, pair config.Pair, partitionCount, counterpartCount int) indexResourceEstimate {
+	estimate := indexResourceEstimate{
+		RightBytes:             right.bytes,
+		LeftBytes:              left.bytes,
+		RightRows:              right.rows,
+		LeftRows:               left.rows,
+		RetainedFieldBytes:     right.fieldBytes,
+		LeftRetainedFieldBytes: left.fieldBytes,
+	}
+	retained := right.rows*resourceRowBytes + right.fieldBytes + right.rows*32
 	if retained < resourceHeadroomBytes {
 		retained = resourceHeadroomBytes
 	}
-	estimate.MemoryIndexBytes = retained*2 + resourceHeadroomBytes
-	estimate.DiskMemoryBytes = 2 * resourceHeadroomBytes
-	estimate.DiskIndexBytes = estimate.RightBytes*3 + resourceHeadroomBytes
+	rightIndexBytes := retained*2 + resourceHeadroomBytes
+	rightTrackingBytes := estimateReferenceTracking(right.rows, rightCfg.ResolvedDuplicatePolicy(), right.fieldBytes, right.rows)
+	leftTrackingBytes := estimateReferenceTracking(left.rows, leftCfg.ResolvedDuplicatePolicy(), left.fieldBytes, left.rows)
+	leftPayloadBytes := estimateRowPayload(left.rows, left.bytes)
+	leftBufferBytes := int64(0)
+	if pair.NameMode == "tokens" || containsIndexPass(pair.Passes, config.PassTypeNameTokensOneToOne) || counterpartCount > 1 || leftCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyLatest {
+		leftBufferBytes = leftPayloadBytes
+	}
+	estimate.SharedMemoryBytes = leftTrackingBytes + leftBufferBytes
+	estimate.PerIndexMemoryBytes = rightIndexBytes + rightTrackingBytes
+	estimate.PerIndexDiskMemoryBytes = resourceHeadroomBytes + rightTrackingBytes
+	estimate.MemoryIndexBytes = estimate.PerIndexMemoryBytes + estimate.SharedMemoryBytes
+	estimate.DiskMemoryBytes = estimate.PerIndexDiskMemoryBytes + estimate.SharedMemoryBytes
+	estimate.DiskIndexBytes = right.bytes*3 + resourceHeadroomBytes
 	if estimate.DiskIndexBytes < resourceHeadroomBytes {
 		estimate.DiskIndexBytes = resourceHeadroomBytes
 	}
 	if partitionCount < 2 {
 		partitionCount = defaultPartitionCount
 	}
-	estimate.PartitionMemoryBytes = (estimate.MemoryIndexBytes+int64(partitionCount)-1)/int64(partitionCount) + resourceHeadroomBytes
+	partitionRows := (right.rows + int64(partitionCount) - 1) / int64(partitionCount)
+	partitionIndexBytes := (rightIndexBytes - resourceHeadroomBytes + int64(partitionCount) - 1) / int64(partitionCount)
+	partitionFieldBytes := (right.fieldBytes + int64(partitionCount) - 1) / int64(partitionCount)
+	partitionTrackingBytes := estimateReferenceTracking(partitionRows, rightCfg.ResolvedDuplicatePolicy(), partitionFieldBytes, partitionRows)
+	estimate.PartitionMemoryBytes = resourceHeadroomBytes + partitionIndexBytes + partitionTrackingBytes + leftTrackingBytes
 	estimate.PartitionTempDiskBytes = estimate.LeftBytes + estimate.RightBytes + resourceHeadroomBytes
-	return estimate, nil
+	return estimate
+}
+
+func inspectInputShape(path string, cfg config.ParserCfg, detailed bool) (inputShape, error) {
+	if path == "" {
+		return inputShape{}, nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return inputShape{}, err
+	}
+	shape := inputShape{bytes: info.Size()}
+	if detailed && isCSVPath(path, cfg) {
+		return scanCSVShape(path, cfg)
+	}
+	shape.rows, shape.fieldBytes = approximateCSVShape(shape.bytes)
+	return shape, nil
+}
+
+func approximateCSVShape(bytes int64) (int64, int64) {
+	if bytes <= 0 {
+		return 0, 0
+	}
+	rows := bytes / resourceRowBytes
+	if rows == 0 {
+		rows = 1
+	}
+	return rows, bytes
+}
+
+func estimateReferenceTracking(rows int64, policy config.DuplicatePolicy, fieldBytes, payloadRows int64) int64 {
+	if rows <= 0 {
+		return 0
+	}
+	var bytes int64
+	switch policy {
+	case config.DuplicatePolicyFlag, config.DuplicatePolicyMerge, config.DuplicatePolicyLatest:
+		bytes = rows * resourceMapEntryBytes
+	}
+	if policy == config.DuplicatePolicyLatest {
+		bytes += estimateRowPayload(payloadRows, fieldBytes)
+	}
+	return bytes
+}
+
+func estimateRowPayload(rows, fieldBytes int64) int64 {
+	if rows <= 0 {
+		return 0
+	}
+	perRow := resourceRowBytes
+	if avg := fieldBytes / rows; avg > 0 {
+		perRow += avg
+	}
+	return rows * perRow
+}
+
+func containsIndexPass(passes []config.PassConfig, passType string) bool {
+	for _, pass := range passes {
+		if pass.Type == passType {
+			return true
+		}
+	}
+	return false
 }
 
 func applySelectedEstimate(selection *engine.IndexSelection, backend string, estimate indexResourceEstimate) {
-	if backend == "disk" {
+	selection.EstimatedMemoryBytes = 0
+	selection.EstimatedTempDiskBytes = 0
+	switch backend {
+	case "memory":
+		selection.EstimatedMemoryBytes = estimate.MemoryIndexBytes
+	case "disk":
 		selection.EstimatedMemoryBytes = estimate.DiskMemoryBytes
-	}
-	if backend == "partitioned" {
+		selection.EstimatedTempDiskBytes = estimate.DiskIndexBytes
+	case "partitioned":
 		selection.EstimatedMemoryBytes = estimate.PartitionMemoryBytes
 		selection.EstimatedTempDiskBytes = estimate.PartitionTempDiskBytes
 	}
 }
 
-func scanCSVShape(path string, cfg config.ParserCfg, estimate *indexResourceEstimate) error {
+func scanCSVShape(path string, cfg config.ParserCfg) (inputShape, error) {
+	var shape inputShape
 	f, err := os.Open(path) // #nosec G304 -- caller resolved the explicit input path.
 	if err != nil {
-		return err
+		return shape, err
 	}
 	defer func() { _ = f.Close() }()
 	r := csv.NewReader(f)
 	header, err := r.Read()
 	if err != nil {
-		return err
+		return shape, err
 	}
 	columns := make(map[string]int, len(header))
 	for i, name := range header {
@@ -237,14 +333,23 @@ func scanCSVShape(path string, cfg config.ParserCfg, estimate *indexResourceEsti
 	for {
 		record, readErr := r.Read()
 		if readErr == io.EOF {
-			return nil
+			shape.bytes, _ = fileSize(path)
+			return shape, nil
 		}
 		if readErr != nil {
-			return readErr
+			return shape, readErr
 		}
-		estimate.RightRows++
-		estimate.RetainedFieldBytes += fieldLen(record, refIndex) + fieldLen(record, currencyIndex) + fieldLen(record, nameIndex)
+		shape.rows++
+		shape.fieldBytes += int64(fieldLen(record, refIndex) + fieldLen(record, currencyIndex) + fieldLen(record, nameIndex))
 	}
+}
+
+func fileSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
 }
 
 func columnIndex(columns map[string]int, name string) int {
@@ -268,6 +373,102 @@ func fieldLen(record []string, index int) int64 {
 func isCSVPath(path string, cfg config.ParserCfg) bool {
 	typ := strings.ToLower(cfg.Type)
 	return typ == "csv" || (typ == "" && strings.EqualFold(filepath.Ext(path), ".csv")) || (typ == "auto" && strings.EqualFold(filepath.Ext(path), ".csv"))
+}
+
+func chooseMultiIndexBackends(indexCfg config.IndexCfg, leftPath string, leftCfg config.ParserCfg, counterparts []string, rightPaths map[string]string, sources map[string]config.Source, pair config.Pair) ([]indexSelectionDecision, error) {
+	if len(counterparts) == 0 {
+		return nil, fmt.Errorf("at least one counterpart source is required")
+	}
+	if indexCfg.Backend == "partitioned" {
+		return nil, fmt.Errorf("partitioned backend requires exactly one counterpart")
+	}
+
+	resourcePolicy := indexCfg.MaxMemoryMB > 0 || indexCfg.MaxTempDiskMB > 0
+	if !resourcePolicy {
+		decisions := make([]indexSelectionDecision, 0, len(counterparts))
+		for _, name := range counterparts {
+			src := sources[name]
+			decision, err := chooseIndexBackend(indexCfg, leftPath, rightPaths[name], leftCfg, src.Parser, pair, len(counterparts))
+			if err != nil {
+				return nil, fmt.Errorf("counterpart %q: %w", name, err)
+			}
+			decisions = append(decisions, decision)
+		}
+		return decisions, nil
+	}
+
+	detailed := true
+	leftShape, err := inspectInputShape(leftPath, leftCfg, detailed)
+	if err != nil {
+		return nil, fmt.Errorf("inspect left input: %w", err)
+	}
+	estimates := make([]indexResourceEstimate, 0, len(counterparts))
+	for _, name := range counterparts {
+		src := sources[name]
+		rightShape, err := inspectInputShape(rightPaths[name], src.Parser, detailed)
+		if err != nil {
+			return nil, fmt.Errorf("counterpart %q: %w", name, err)
+		}
+		estimate := estimateIndexResourcesFromShapes(leftShape, rightShape, leftCfg, src.Parser, pair, indexCfg.PartitionCount, len(counterparts))
+		estimates = append(estimates, estimate)
+	}
+
+	requested := indexCfg.Backend
+	if requested == "" {
+		requested = "memory"
+	}
+	candidates := []string{requested}
+	if requested == "auto" {
+		candidates = []string{"memory", "disk"}
+	}
+	var failures []engine.IndexFallback
+	for _, candidate := range candidates {
+		reason, ok := aggregateBackendFits(candidate, indexCfg, estimates)
+		if !ok {
+			failures = append(failures, engine.IndexFallback{Backend: candidate, Reason: reason})
+			continue
+		}
+		decisions := make([]indexSelectionDecision, 0, len(estimates))
+		for _, estimate := range estimates {
+			selection := engine.IndexSelection{
+				RequestedBackend: requested,
+				Backend:          candidate,
+				Reason:           reason,
+				Fallbacks:        append([]engine.IndexFallback(nil), failures...),
+			}
+			applySelectedEstimate(&selection, candidate, estimate)
+			decisions = append(decisions, indexSelectionDecision{Selection: selection})
+		}
+		return decisions, nil
+	}
+	return nil, fmt.Errorf("no suitable index backend for counterparts: %s", formatIndexFailures(failures))
+}
+
+func aggregateBackendFits(backend string, indexCfg config.IndexCfg, estimates []indexResourceEstimate) (string, bool) {
+	if backend != "memory" && backend != "disk" {
+		return fmt.Sprintf("unsupported backend %q for multi-counterpart streaming", backend), false
+	}
+	var memory, tempDisk int64
+	for _, estimate := range estimates {
+		if backend == "memory" {
+			memory += estimate.PerIndexMemoryBytes
+		} else {
+			memory += estimate.PerIndexDiskMemoryBytes
+			tempDisk += estimate.DiskIndexBytes
+		}
+	}
+	if len(estimates) > 0 {
+		memory += estimates[0].SharedMemoryBytes
+	}
+	if indexCfg.MaxMemoryMB > 0 && memory > mbToBytes(indexCfg.MaxMemoryMB) {
+		return fmt.Sprintf("estimated aggregate memory %s exceeds max_memory_mb=%d", formatBytes(memory), indexCfg.MaxMemoryMB), false
+	}
+	if backend == "disk" {
+		if reason, ok := diskFits(indexCfg, indexCfg.SpillDir, tempDisk); !ok {
+			return fmt.Sprintf("aggregate temporary disk: %s", reason), false
+		}
+	}
+	return fmt.Sprintf("aggregate %s estimate fits configured policy", backend), true
 }
 
 func openSelectedIndex(indexCfg config.IndexCfg, selection indexSelectionDecision) (engine.RightIndex, error) {
