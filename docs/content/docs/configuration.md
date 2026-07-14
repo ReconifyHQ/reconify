@@ -67,6 +67,7 @@ pairs:
 | `amount_tolerance_minor` | no | Amount tolerance in minor units, such as cents or kobo. Defaults to `0`. |
 | `name_mode` | no | `none` (default) or `tokens`. `tokens` enables Tier 2 name-token similarity matching. |
 | `name_match_threshold` | no | Jaccard threshold for `name_mode: tokens`, where `0 < x < 1`. Defaults to `0.5`; `1.0` is rejected. |
+| `result_mode` | no | Controls which events are emitted. One of `all` (default), `exceptions_only`, or `summary_only`. See [Result emission modes](#result-emission-modes). |
 
 `right` and `rights` are mutually exclusive. Set exactly one of them for each pair.
 
@@ -296,3 +297,39 @@ reconciliation with `ref_col` configured on both sources. `one_to_many` and
 multi-source (`rights`) pairs should use `memory` or `disk` until a partition
 coordinator is available. Partitioning must use the same effective reference
 value on both sides; reference normalization should happen before partitioning.
+
+## Result emission modes
+
+`result_mode` controls which reconciliation events the writer emits. It can be set per pair in the config or overridden at runtime with `--result-mode`.
+
+| Value | Emits |
+|---|---|
+| `all` | Every event: matches, diffs, unmatched, duplicates. **Default.** |
+| `exceptions_only` | Unmatched, amount/timing diffs, duplicates, ambiguous groups, and grouped/N:M exception events. Clean matches are suppressed. |
+| `summary_only` | Only the final summary. All item events are suppressed. |
+
+The CLI flag `--result-mode` overrides the pair's `result_mode` when explicitly provided. Omitting the flag preserves the pair-level value (or the default `all`).
+
+```yaml
+pairs:
+  bank_vs_stripe:
+    left: bank
+    right: stripe
+    result_mode: exceptions_only  # suppress clean matches in output
+```
+
+```bash
+# Override at runtime — flag wins over pair config.
+reconify reconcile --pair bank_vs_stripe --result-mode summary_only
+```
+
+**Filtering is applied at the writer boundary.** Classification counts, monetary totals, and the `currency` field in the summary are always computed from the full reconciliation — they are not affected by which events are suppressed. The `result_mode` value is embedded in the `summary` output so consumers can identify which mode was in effect.
+
+**Incomplete output semantics.** A writer error or flush failure prevents the output file from being committed and leaves any existing output file unchanged. A completed summary is never written after a writer or flush failure.
+
+**Telemetry output** (`--progress-out`) is independent of `result_mode`. Lifecycle events are always emitted to the telemetry stream regardless of the result emission mode.
+
+**Recommended patterns for high-volume jobs:**
+- Use `exceptions_only` when downstream consumers only act on discrepancies.
+- Use `summary_only` for dashboard-only integrations that only need aggregate counts and totals.
+- Use `all` (default) for audit trails and when storing results for later replay.

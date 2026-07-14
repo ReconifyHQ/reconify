@@ -110,7 +110,15 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 	}
 
 	// 4. Populate summary
-	result.Summary = buildSummary(len(left), len(right), result)
+	result.Summary = buildSummary(len(left), len(right), result, cc.base)
+	if len(opts) > 0 {
+		if opts[0].ResultMode != "" {
+			result.Summary.ResultMode = string(opts[0].ResultMode)
+		}
+		if opts[0].RunID != "" {
+			result.Summary.RunID = opts[0].RunID
+		}
+	}
 
 	return result, nil
 }
@@ -169,7 +177,8 @@ func ParseWithTelemetry(ctx context.Context, sourceName, filePath string, cfg co
 // Duplicates already set). totalLeft/totalRight are the original input row counts —
 // callers that aggregate multiple passes (ReconcileMultiSource) pass the true
 // original totals here, not a sum of intermediate per-pass unmatched counts.
-func buildSummary(totalLeft, totalRight int, result *Result) Summary {
+// currency is the base currency for monetary totals, forwarded from currencyTracker.base.
+func buildSummary(totalLeft, totalRight int, result *Result, currency string) Summary {
 	total := totalLeft
 	if totalRight > total {
 		total = totalRight
@@ -254,6 +263,7 @@ func buildSummary(totalLeft, totalRight int, result *Result) Summary {
 	}
 
 	return Summary{
+		Currency:                  currency,
 		TotalLeft:                 totalLeft,
 		TotalRight:                totalRight,
 		MatchedCount:              len(result.Matched),
@@ -771,6 +781,7 @@ func reconcileStreaming(
 
 	reporter.start("finalization", leftSource, rightSource, nil)
 	if err := w.WriteSummary(Summary{
+		Currency:             cc.base,
 		TotalLeft:            totalLeft,
 		TotalRight:           totalRight,
 		MatchedCount:         matchedCount,
@@ -1590,6 +1601,10 @@ type ReconcileOptions struct {
 	// RightPolicy overrides the right source's duplicate handling policy.
 	// Defaults to DuplicatePolicyFlag (current behavior) when zero.
 	RightPolicy config.DuplicatePolicy
+	// ResultMode is embedded in Summary.ResultMode. Empty means "all" (the default).
+	ResultMode config.ResultMode
+	// RunID is embedded in Summary.RunID when provided. Matches the telemetry RunID.
+	RunID string
 }
 
 // resolveNameMatchThreshold returns t if it is a valid Jaccard threshold (0 < t <= 1),

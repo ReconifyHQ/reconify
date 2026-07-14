@@ -48,6 +48,20 @@ Use `make test` only when race detection and coverage output are wanted; it is s
 - For large reconciliation jobs, recommend `ndjson` or `csv`; `json` and `table` buffer more data.
 - `--audit` is supported only for structured JSON-style outputs: `json`, `json-stream`, and `ndjson`.
 
+## Result Emission Modes
+
+`--result-mode` controls which reconciliation events appear in the output. Valid values:
+
+| Mode | Emits |
+|---|---|
+| `all` | Every event — matches, diffs, unmatched, duplicates. **Default.** |
+| `exceptions_only` | Exceptions only — unmatched, diffs, duplicates, ambiguous groups. Clean matches suppressed. |
+| `summary_only` | Only the final summary. All item events suppressed. |
+
+The mode can also be set per pair in `reconify.yaml` using `result_mode: exceptions_only`. The `--result-mode` CLI flag overrides the pair config when explicitly provided.
+
+Filtering happens at the writer boundary: classification counts and monetary totals in the `summary` always reflect the full reconciliation regardless of the mode.
+
 ## Documentation Rules
 
 - Keep examples copy-pasteable from the repo root.

@@ -83,6 +83,20 @@ Each line is `{"type":"<name>","data":{...}}`. Events are emitted in this order:
 
 `run_info` is only emitted when `--audit` is set and is always the first line. `summary` is always the last line. Transaction `amount` fields are always in **minor units** (e.g. cents, kobo).
 
+The `summary` event carries three additive metadata fields: `currency` (base currency for monetary totals), `result_mode` (emission mode applied; omitted when `all`), and `run_id` (telemetry run identifier; omitted when telemetry is disabled).
+
+## Result Emission Modes
+
+Use `--result-mode` or `result_mode` in pair config to control which events appear in the output.
+
+| Mode | Description |
+|---|---|
+| `all` | Every event. **Default.** |
+| `exceptions_only` | Unmatched, diffs, duplicates, ambiguous groups. Clean matches suppressed. |
+| `summary_only` | Only the final summary. All item events suppressed. |
+
+CLI flag overrides pair config when explicitly set. Filtering is at the writer boundary — classification counts and monetary totals in the summary are never affected.
+
 ## Common Stderr Messages and Their Meaning
 
 | Message | Exit code | Meaning / Fix |

@@ -106,6 +106,13 @@ type Result struct {
 
 `Summary` carries both `MatchRatePct` (exact Tier 1 matches only, unchanged for backward compatibility) and `ReconciledRatePct` (matched + amount-diff + timing-diff, i.e. every outcome where the two sides were reconciled to each other, just not perfectly). Both are percentages of `max(TotalLeft, TotalRight)`.
 
+`Summary` also carries three additive metadata fields:
+- `Currency` — the base currency for monetary totals in this run; empty when all transactions had no currency.
+- `ResultMode` — the emission mode applied (`all`, `exceptions_only`, or `summary_only`); empty means `all` (default).
+- `RunID` — the telemetry run identifier; empty when telemetry was not active.
+
+These fields are populated at the writer boundary by `WrapWithResultMode` when a non-default mode is configured. Classification counts and monetary totals in `Summary` always reflect the full reconciliation, regardless of which events were suppressed.
+
 `BySource` is populated only when a pair has multiple counterparts (`rights`, see below); for an ordinary single-`right` pair it stays nil/empty and the top-level `Summary` is the only number that exists, so single-counterpart consumers are unaffected.
 
 ## Config file format

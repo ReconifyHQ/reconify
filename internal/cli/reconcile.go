@@ -31,6 +31,7 @@ func newReconcileCmd() *cobra.Command {
 	var heartbeatEvery string
 	var progressOut string
 	var failIfUnmatched bool
+	var resultModeFlag string
 
 	cmd := &cobra.Command{
 		Use:   "reconcile",
@@ -57,6 +58,12 @@ Formats:
 			}
 			if progressEvery <= 0 {
 				return configErr("--progress-every must be greater than zero")
+			}
+			switch config.ResultMode(resultModeFlag) {
+			case "", config.ResultModeAll, config.ResultModeExceptionsOnly, config.ResultModeSummaryOnly:
+				// valid
+			default:
+				return configErrf("--result-mode: must be one of [all, exceptions_only, summary_only] (got %q)", resultModeFlag)
 			}
 			heartbeatInterval, err := time.ParseDuration(heartbeatEvery)
 			if err != nil || heartbeatInterval <= 0 {
@@ -165,6 +172,14 @@ Formats:
 			}); ok {
 				sw.SetMeta(pairName, pair.Left, rightLabel)
 			}
+
+			// Resolve effective result mode: explicit CLI flag > pair config > "all".
+			effectiveMode := config.ResultMode(resultModeFlag)
+			if effectiveMode == "" {
+				effectiveMode = pair.ResultMode
+			}
+			// Always wrap: adds ResultMode/RunID to Summary and filters events by mode.
+			w = engine.WrapWithResultMode(w, effectiveMode, telemetry.RunID)
 
 			// Audit mode: hash both input files and embed run provenance in output.
 			// Not yet supported for multi-counterpart (rights) pairs — BuildRunInfo's
@@ -467,6 +482,9 @@ Formats:
 		"Write live telemetry events as NDJSON to this path (must differ from --out)")
 	cmd.Flags().BoolVar(&failIfUnmatched, "fail-if-unmatched", false,
 		"Exit with code 3 if reconciliation completes with any unmatched rows on either side")
+	cmd.Flags().StringVar(&resultModeFlag, "result-mode", "",
+		`Emission mode: all (default), exceptions_only (suppress clean matches), summary_only (suppress all item events).
+Overrides result_mode in the pair config when set.`)
 
 	return cmd
 }

@@ -149,6 +149,15 @@ func (w *partitionSummaryWriter) FlushSummary() error {
 }
 
 func addSummaries(a, b Summary) Summary {
+	if a.Currency == "" && b.Currency != "" {
+		a.Currency = b.Currency
+	}
+	if a.ResultMode == "" && b.ResultMode != "" {
+		a.ResultMode = b.ResultMode
+	}
+	if a.RunID == "" && b.RunID != "" {
+		a.RunID = b.RunID
+	}
 	a.TotalLeft += b.TotalLeft
 	a.TotalRight += b.TotalRight
 	a.MatchedCount += b.MatchedCount

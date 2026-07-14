@@ -71,6 +71,19 @@ const (
 	GroupByGroupKey  = "group_key"
 )
 
+// ResultMode controls which reconciliation events are emitted by the result writer.
+type ResultMode string
+
+const (
+	// ResultModeAll emits every event: matches, diffs, unmatched, duplicates. Default.
+	ResultModeAll ResultMode = "all"
+	// ResultModeExceptionsOnly suppresses clean matches; emits unmatched, diffs,
+	// duplicates, ambiguous groups, and grouped/N:M exception events.
+	ResultModeExceptionsOnly ResultMode = "exceptions_only"
+	// ResultModeSummaryOnly suppresses all item events; only the summary is emitted.
+	ResultModeSummaryOnly ResultMode = "summary_only"
+)
+
 // DuplicatePolicy controls how transactions sharing the same GroupKey are handled.
 type DuplicatePolicy string
 
@@ -139,6 +152,10 @@ type Pair struct {
 	// followed by optional name_mode=tokens. When Passes is set, name_mode=tokens
 	// is rejected — add a name_tokens_one_to_one pass explicitly instead.
 	Passes []PassConfig `yaml:"passes,omitempty"`
+	// ResultMode controls which events the result writer emits for this pair.
+	// Valid values: "all" (default), "exceptions_only", "summary_only".
+	// The CLI flag --result-mode overrides this when explicitly provided.
+	ResultMode ResultMode `yaml:"result_mode,omitempty"`
 }
 
 // Counterparts returns the ordered list of counterpart source names for this pair,
@@ -356,6 +373,16 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 	// 1.0, so a threshold of exactly 1.0 would be silently unreachable.
 	if pair.NameMatchThreshold != 0 && (pair.NameMatchThreshold <= 0 || pair.NameMatchThreshold >= 1) {
 		errs = append(errs, fmt.Errorf("pairs.%s.name_match_threshold: must be > 0 and < 1 (got %v)", name, pair.NameMatchThreshold))
+	}
+
+	// Validate result_mode.
+	switch pair.ResultMode {
+	case "", ResultModeAll, ResultModeExceptionsOnly, ResultModeSummaryOnly:
+		// valid
+	default:
+		errs = append(errs, fmt.Errorf(
+			"pairs.%s.result_mode: must be one of [all, exceptions_only, summary_only] (got %q)",
+			name, pair.ResultMode))
 	}
 
 	// Validate passes when explicitly set.

@@ -300,3 +300,245 @@ func TestReconcileOutputCommitRefusesSymlinkCreatedAfterOpen(t *testing.T) {
 		t.Fatalf("victim was modified: %q", got)
 	}
 }
+
+// buildTestConfig returns a minimal YAML config string that can be written to disk for
+// --result-mode integration tests.
+func buildTestConfig(leftPath, rightPath string) string {
+	return "version: 1\nsources:\n  left:\n    file_pattern: " + leftPath +
+		"\n    parser: &parser\n      type: csv\n      date_col: date\n      date_layout: \"2006-01-02\"\n" +
+		"      amount_col: amount\n      multiplier: 100\n      ref_col: reference\n" +
+		"  right:\n    file_pattern: " + rightPath + "\n    parser: *parser\n" +
+		"pairs:\n  pair:\n    left: left\n    right: right\n    date_window: 0d\n"
+}
+
+func TestReconcileResultMode_ExceptionsOnly_SuppressesMatches(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.csv")
+	rightPath := filepath.Join(dir, "right.csv")
+	configPath := filepath.Join(dir, "reconify.yaml")
+	resultPath := filepath.Join(dir, "result.ndjson")
+
+	leftCSV := "date,amount,reference\n2024-01-01,1.00,ref-match\n2024-01-01,2.00,ref-only-l\n"
+	rightCSV := "date,amount,reference\n2024-01-01,1.00,ref-match\n"
+	if err := os.WriteFile(leftPath, []byte(leftCSV), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rightPath, []byte(rightCSV), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(buildTestConfig(leftPath, rightPath)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G204 -- test invokes the local Go toolchain with fixed arguments.
+	command := exec.Command("go", "run", "./cmd/reconify", "reconcile",
+		"--config", configPath, "--pair", "pair",
+		"--format", "ndjson", "--out", resultPath,
+		"--result-mode", "exceptions_only")
+	command.Dir = root
+	if out, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("reconcile failed: %v\n%s", err, out)
+	}
+
+	data, err := os.ReadFile(resultPath) // #nosec G304 -- t.TempDir test file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+
+	hasMatch := false
+	hasUnmatchedL := false
+	hasSummary := false
+	var summaryResultMode string
+
+	for _, line := range lines {
+		var ev map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("invalid NDJSON line: %v — %s", err, line)
+		}
+		// NDJSON format: {"type":"...", "data":{...}}
+		switch ev["type"] {
+		case "match":
+			hasMatch = true
+		case "unmatched_left", "unmatched_right":
+			hasUnmatchedL = true
+		case "summary":
+			hasSummary = true
+			if d, ok := ev["data"].(map[string]interface{}); ok {
+				summaryResultMode, _ = d["result_mode"].(string)
+			}
+		}
+	}
+
+	if hasMatch {
+		t.Error("exceptions_only: clean match event should be suppressed")
+	}
+	if !hasUnmatchedL {
+		t.Error("exceptions_only: unmatched event should be present")
+	}
+	if !hasSummary {
+		t.Error("exceptions_only: summary should still be written")
+	}
+	if summaryResultMode != "exceptions_only" {
+		t.Errorf("summary result_mode = %q, want %q", summaryResultMode, "exceptions_only")
+	}
+}
+
+func TestReconcileResultMode_SummaryOnly_NoItemEvents(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.csv")
+	rightPath := filepath.Join(dir, "right.csv")
+	configPath := filepath.Join(dir, "reconify.yaml")
+	resultPath := filepath.Join(dir, "result.ndjson")
+
+	csv := "date,amount,reference\n2024-01-01,1.00,ref-1\n"
+	for _, path := range []string{leftPath, rightPath} {
+		if err := os.WriteFile(path, []byte(csv), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(configPath, []byte(buildTestConfig(leftPath, rightPath)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G204 -- test invokes the local Go toolchain with fixed arguments.
+	command := exec.Command("go", "run", "./cmd/reconify", "reconcile",
+		"--config", configPath, "--pair", "pair",
+		"--format", "ndjson", "--out", resultPath,
+		"--result-mode", "summary_only")
+	command.Dir = root
+	if out, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("reconcile failed: %v\n%s", err, out)
+	}
+
+	data, err := os.ReadFile(resultPath) // #nosec G304 -- t.TempDir test file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+
+	summaryCount := 0
+	itemCount := 0
+	var summaryResultMode string
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var ev map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("invalid NDJSON line: %v — %s", err, line)
+		}
+		// NDJSON format: {"type":"...", "data":{...}}
+		switch ev["type"] {
+		case "summary":
+			summaryCount++
+			if d, ok := ev["data"].(map[string]interface{}); ok {
+				summaryResultMode, _ = d["result_mode"].(string)
+			}
+		case "index_selection", "run_info":
+			// metadata lines are always permitted
+		default:
+			itemCount++
+		}
+	}
+
+	if itemCount != 0 {
+		t.Errorf("summary_only: expected no item events, got %d", itemCount)
+	}
+	if summaryCount != 1 {
+		t.Errorf("summary_only: expected 1 summary, got %d", summaryCount)
+	}
+	if summaryResultMode != "summary_only" {
+		t.Errorf("summary result_mode = %q, want %q", summaryResultMode, "summary_only")
+	}
+}
+
+func TestReconcileResultMode_InvalidValue_Rejected(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G204 -- test invokes the local Go toolchain with a fixed argument.
+	command := exec.Command("go", "run", "./cmd/reconify", "reconcile", "--pair", "pair", "--result-mode", "bad_value")
+	command.Dir = root
+	out, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected invalid --result-mode to fail")
+	}
+	if !strings.Contains(string(out), "result-mode") {
+		t.Fatalf("error should mention result-mode, got: %s", out)
+	}
+}
+
+func TestReconcileResultMode_CLIOverridesPairConfig(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.csv")
+	rightPath := filepath.Join(dir, "right.csv")
+	configPath := filepath.Join(dir, "reconify.yaml")
+	resultPath := filepath.Join(dir, "result.ndjson")
+
+	leftCSV := "date,amount,reference\n2024-01-01,1.00,ref-match\n"
+	rightCSV := "date,amount,reference\n2024-01-01,1.00,ref-match\n"
+	for _, p := range []struct{ path, data string }{{leftPath, leftCSV}, {rightPath, rightCSV}} {
+		if err := os.WriteFile(p.path, []byte(p.data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Pair config says summary_only; CLI flag says exceptions_only → CLI wins.
+	yamlCfg := "version: 1\nsources:\n  left:\n    file_pattern: " + leftPath +
+		"\n    parser: &parser\n      type: csv\n      date_col: date\n      date_layout: \"2006-01-02\"\n" +
+		"      amount_col: amount\n      multiplier: 100\n      ref_col: reference\n" +
+		"  right:\n    file_pattern: " + rightPath + "\n    parser: *parser\n" +
+		"pairs:\n  pair:\n    left: left\n    right: right\n    date_window: 0d\n    result_mode: summary_only\n"
+	if err := os.WriteFile(configPath, []byte(yamlCfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G204 -- test invokes the local Go toolchain with fixed arguments.
+	command := exec.Command("go", "run", "./cmd/reconify", "reconcile",
+		"--config", configPath, "--pair", "pair",
+		"--format", "ndjson", "--out", resultPath,
+		"--result-mode", "exceptions_only") // CLI override
+	command.Dir = root
+	if out, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("reconcile failed: %v\n%s", err, out)
+	}
+
+	data, err := os.ReadFile(resultPath) // #nosec G304 -- t.TempDir test file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summaryResultMode string
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
+		var ev map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		// NDJSON format: {"type":"...", "data":{...}}
+		if ev["type"] == "summary" {
+			if d, ok := ev["data"].(map[string]interface{}); ok {
+				summaryResultMode, _ = d["result_mode"].(string)
+			}
+		}
+	}
+	// CLI --result-mode=exceptions_only overrides pair result_mode=summary_only.
+	if summaryResultMode != "exceptions_only" {
+		t.Errorf("CLI --result-mode did not override pair config: got %q, want %q", summaryResultMode, "exceptions_only")
+	}
+}

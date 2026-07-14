@@ -109,7 +109,15 @@ func ReconcileMultiSource(
 
 	result.RightSource = strings.Join(names, ",")
 	result.UnmatchedLeft = remainingLeft
-	result.Summary = buildSummary(len(left), totalRight, result)
+	// Use the currency from the first pass summary; all passes share the same validated currency.
+	var currency string
+	for _, cp := range counterparts {
+		if s, ok := result.BySource[cp.SourceName]; ok && s.Currency != "" {
+			currency = s.Currency
+			break
+		}
+	}
+	result.Summary = buildSummary(len(left), totalRight, result, currency)
 
 	return result, nil
 }
@@ -322,6 +330,7 @@ func reconcileStreamingMultiSource(
 	}
 
 	aggregate := Summary{
+		Currency:             cc.base,
 		TotalLeft:            totalLeft,
 		TotalRight:           totalRight,
 		MatchedCount:         matchedCount,

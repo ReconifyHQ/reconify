@@ -143,6 +143,30 @@ rejected fallback reasons in JSON-style output and on stderr for CSV/table.
 Runs fail before completion when the selected budget or available temporary
 storage cannot satisfy the estimate.
 
+## Result emission modes
+
+Use `--result-mode` to control which reconciliation events appear in the output:
+
+```bash
+# Suppress clean matches — only exceptions go to the output file.
+reconify reconcile --config reconify.yaml --pair bank_vs_stripe \
+  --format ndjson --out exceptions.ndjson \
+  --result-mode exceptions_only
+
+# Summary-only — useful for dashboard integrations.
+reconify reconcile --config reconify.yaml --pair bank_vs_stripe \
+  --format json --out summary.json \
+  --result-mode summary_only
+```
+
+| Mode | Emits |
+|---|---|
+| `all` | Every event. **Default.** |
+| `exceptions_only` | Unmatched, diffs, duplicates, ambiguous groups. Clean matches are suppressed. |
+| `summary_only` | Only the final summary. All item events are suppressed. |
+
+The mode can also be set per pair in the config with `result_mode: exceptions_only`. The CLI flag overrides the pair config when explicitly provided. Classification counts and monetary totals in the summary always reflect the full reconciliation — filtering is at the output boundary only.
+
 ## Progress telemetry
 
 Use `--progress` for concise human-readable progress on stderr. For a separate
