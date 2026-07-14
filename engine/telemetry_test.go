@@ -84,6 +84,62 @@ func TestReconcileWithTelemetryIncludesKnownTotalsAndETA(t *testing.T) {
 	t.Fatalf("missing left_match completion event: %#v", events)
 }
 
+func TestReconcileWithTelemetryReportsFailureInsteadOfCompletion(t *testing.T) {
+	left := []Transaction{makeTx("left-1", 100, "ref")}
+	right := []Transaction{makeTx("right-1", 100, "ref")}
+	right[0].Currency = "EUR"
+	var events []TelemetryEvent
+	_, err := ReconcileWithTelemetry("pair", "left", "right", left, right, config.Pair{DateWindow: "0d"}, TelemetryOptions{
+		Sink: func(event TelemetryEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected reconciliation failure")
+	}
+	for _, event := range events {
+		if event.Stage != "left_match" {
+			continue
+		}
+		if event.Status == "completed" {
+			t.Fatalf("failed reconciliation emitted a completed stage: %#v", events)
+		}
+		if event.Status == "failed" {
+			return
+		}
+	}
+	t.Fatalf("missing failed telemetry event: %#v", events)
+}
+
+func TestParseWithTelemetryEmitsParsingLifecycle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "input.csv")
+	if err := os.WriteFile(path, []byte("date,amount,reference\n2024-01-01,1.00,ref-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", Multiplier: 100, RefCol: "reference"}
+	var events []TelemetryEvent
+	transactions, err := ParseWithTelemetry(context.Background(), "left", path, cfg, "right", TelemetryOptions{
+		ProgressEvery: 1,
+		Sink: func(event TelemetryEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(transactions) != 1 {
+		t.Fatalf("transactions = %d, want 1", len(transactions))
+	}
+	for _, event := range events {
+		if event.Stage == "parse" && event.Status == "completed" && event.Rows == 1 {
+			return
+		}
+	}
+	t.Fatalf("missing completed parse event: %#v", events)
+}
+
 func TestTelemetrySinkFailureDoesNotAlterReconciliation(t *testing.T) {
 	left := []Transaction{makeTx("left-1", 100, "ref")}
 	right := []Transaction{makeTx("right-1", 100, "ref")}

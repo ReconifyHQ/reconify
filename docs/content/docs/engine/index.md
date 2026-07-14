@@ -312,9 +312,9 @@ err := engine.ReconcileStreamingWithTelemetry(ctx, "bank_vs_stripe", "bank", "st
     }, HeartbeatEvery: 30 * time.Second})
 ```
 
-`TelemetryEvent` records `progress` and wall-clock `heartbeat` events for right
-indexing, left matching, duplicate scans, token/grouped passes, partitioning, and
-finalization. It includes the run ID, RFC3339 timestamp, source/counterpart,
+`TelemetryEvent` records `progress` and wall-clock `heartbeat` events for batch
+input parsing, right indexing, left matching, duplicate scans, token/grouped
+passes, partitioning, and finalization. It includes the run ID, RFC3339 timestamp, source/counterpart,
 stage/status, rows, rate, elapsed time, optional totals/percentage/ETA, and
 best-effort RSS, CPU, heap, and GC measurements. Existing
 `ReconcileStreamingWithProgress` callbacks remain supported through an adapter.

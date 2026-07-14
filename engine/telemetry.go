@@ -62,6 +62,12 @@ type telemetryReporter struct {
 
 var telemetrySequence uint64
 
+// NewTelemetryRunID returns a unique identifier that callers can reuse across
+// several telemetry-enabled operations in one reconciliation run.
+func NewTelemetryRunID() string {
+	return fmt.Sprintf("reconify-%d-%d", time.Now().UTC().UnixNano(), atomic.AddUint64(&telemetrySequence, 1))
+}
+
 func newTelemetryReporter(options TelemetryOptions) *telemetryReporter {
 	if options.Sink == nil {
 		return nil
@@ -70,7 +76,7 @@ func newTelemetryReporter(options TelemetryOptions) *telemetryReporter {
 		options.ProgressEvery = 1_000_000
 	}
 	if options.RunID == "" {
-		options.RunID = fmt.Sprintf("reconify-%d-%d", time.Now().UTC().UnixNano(), atomic.AddUint64(&telemetrySequence, 1))
+		options.RunID = NewTelemetryRunID()
 	}
 	r := &telemetryReporter{
 		options: options,
@@ -143,6 +149,16 @@ func (r *telemetryReporter) complete(rows int) {
 	r.rows = rows
 	r.mu.Unlock()
 	r.emit("progress", "completed")
+}
+
+func (r *telemetryReporter) fail(rows int) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.rows = rows
+	r.mu.Unlock()
+	r.emit("progress", "failed")
 }
 
 func (r *telemetryReporter) emit(eventType, status string) {

@@ -63,11 +63,6 @@ Formats:
 				return configErr("--heartbeat-every must be a positive duration (for example 30s)")
 			}
 			telemetryEnabled := progress || progressOut != ""
-			if progressOut != "" {
-				if err := validateProgressOutput(progressOut, outputPath); err != nil {
-					return configErr(err.Error())
-				}
-			}
 
 			cfgPath := getConfigPath()
 			cfg, err := config.Load(cfgPath)
@@ -110,6 +105,33 @@ Formats:
 			if err != nil {
 				return configErrf("left source: %v", err)
 			}
+			rightPaths := make(map[string]string, len(counterparts))
+			for _, name := range counterparts {
+				src, ok := cfg.Sources[name]
+				if !ok {
+					return configErrf("right source %q not found in config", name)
+				}
+				explicitRight := ""
+				if len(counterparts) == 1 {
+					explicitRight = rightFile
+				} else if rightFile != "" {
+					return configErr("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
+				}
+				path, err := resolveFile(explicitRight, src.FilePattern, configDir)
+				if err != nil {
+					return configErrf("right source %q: %v", name, err)
+				}
+				rightPaths[name] = path
+			}
+			if progressOut != "" {
+				inputs := []string{cfgAbs, leftPath}
+				for _, name := range counterparts {
+					inputs = append(inputs, rightPaths[name])
+				}
+				if err := validateProgressOutput(progressOut, outputPath, inputs...); err != nil {
+					return configErr(err.Error())
+				}
+			}
 
 			output, err := openReconcileOutput(outputPath, auditMode)
 			if err != nil {
@@ -124,6 +146,8 @@ Formats:
 			defer closeTelemetry()
 			if !telemetryEnabled {
 				telemetry = engine.TelemetryOptions{}
+			} else {
+				telemetry.RunID = engine.NewTelemetryRunID()
 			}
 
 			// All formats route through ReconcileStreaming.
@@ -185,21 +209,15 @@ Formats:
 				if auditMode {
 					return fmt.Errorf("--audit is not yet supported with grouped passes")
 				}
-				leftTxns, parseErr := engine.Parse(pair.Left, leftPath, leftSrc.Parser)
+				leftTxns, parseErr := engine.ParseWithTelemetry(context.Background(), pair.Left, leftPath, leftSrc.Parser, strings.Join(counterparts, ","), telemetry)
 				if parseErr != nil {
 					return fmt.Errorf("parse left source: %w", parseErr)
 				}
 				var batchResult *engine.Result
 				if len(counterparts) == 1 {
-					rightSrc, ok := cfg.Sources[counterparts[0]]
-					if !ok {
-						return configErrf("right source %q not found in config", counterparts[0])
-					}
-					rightPath, rErr := resolveFile(rightFile, rightSrc.FilePattern, configDir)
-					if rErr != nil {
-						return configErrf("right source: %v", rErr)
-					}
-					rightTxns, rParseErr := engine.Parse(counterparts[0], rightPath, rightSrc.Parser)
+					rightSrc := cfg.Sources[counterparts[0]]
+					rightPath := rightPaths[counterparts[0]]
+					rightTxns, rParseErr := engine.ParseWithTelemetry(context.Background(), counterparts[0], rightPath, rightSrc.Parser, pair.Left, telemetry)
 					if rParseErr != nil {
 						return fmt.Errorf("parse right source: %w", rParseErr)
 					}
@@ -212,20 +230,11 @@ Formats:
 						return fmt.Errorf("reconciliation failed: %w", parseErr)
 					}
 				} else {
-					if rightFile != "" {
-						return configErr("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
-					}
 					cps := make([]engine.CounterpartInput, 0, len(counterparts))
 					for _, name := range counterparts {
-						src, ok := cfg.Sources[name]
-						if !ok {
-							return configErrf("right source %q not found in config", name)
-						}
-						cpPath, cpErr := resolveFile("", src.FilePattern, configDir)
-						if cpErr != nil {
-							return configErrf("counterpart %q: %v", name, cpErr)
-						}
-						cpTxns, cpParseErr := engine.Parse(name, cpPath, src.Parser)
+						src := cfg.Sources[name]
+						cpPath := rightPaths[name]
+						cpTxns, cpParseErr := engine.ParseWithTelemetry(context.Background(), name, cpPath, src.Parser, pair.Left, telemetry)
 						if cpParseErr != nil {
 							return fmt.Errorf("parse counterpart %q: %w", name, cpParseErr)
 						}
@@ -259,14 +268,8 @@ Formats:
 			if len(counterparts) == 1 {
 				// Single-counterpart path: byte-identical to pre-1-N-source behavior.
 				// Never touches the multi-source code path below.
-				rightSrc, ok := cfg.Sources[counterparts[0]]
-				if !ok {
-					return configErrf("right source %q not found in config", counterparts[0])
-				}
-				rightPath, err := resolveFile(rightFile, rightSrc.FilePattern, configDir)
-				if err != nil {
-					return configErrf("right source: %v", err)
-				}
+				rightSrc := cfg.Sources[counterparts[0]]
+				rightPath := rightPaths[counterparts[0]]
 				if cfg.Index.Backend == "partitioned" {
 					if auditMode {
 						return configErr("--audit is not supported with the partitioned backend")
@@ -352,9 +355,6 @@ Formats:
 				// Multi-counterpart (1-N source) path: each counterpart resolves its
 				// file via its own source's file_pattern; --right-file (a single
 				// explicit override) does not apply here.
-				if rightFile != "" {
-					return fmt.Errorf("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
-				}
 				cps := make([]engine.CounterpartStream, 0, len(counterparts))
 				var indexes []engine.RightIndex
 				defer func() {
@@ -366,14 +366,8 @@ Formats:
 				}()
 
 				for _, name := range counterparts {
-					src, ok := cfg.Sources[name]
-					if !ok {
-						return configErrf("right source %q not found in config", name)
-					}
-					path, err := resolveFile("", src.FilePattern, configDir)
-					if err != nil {
-						return configErrf("counterpart %q: %v", name, err)
-					}
+					src := cfg.Sources[name]
+					path := rightPaths[name]
 					idx, _, err := newRightIndex(cfg.Index, path)
 					if err != nil {
 						return fmt.Errorf("init index for counterpart %q: %w", name, err)
@@ -461,7 +455,7 @@ func openTelemetry(human bool, path string, progressEvery int, heartbeatEvery ti
 	)
 	if path != "" {
 		var err error
-		file, err = os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) // #nosec G304 -- validated explicit telemetry destination.
+		file, err = openTelemetryFile(path)
 		if err != nil {
 			return engine.TelemetryOptions{}, func() {}, fmt.Errorf("open --progress-out: %w", err)
 		}
@@ -498,7 +492,7 @@ func openTelemetry(human bool, path string, progressEvery int, heartbeatEvery ti
 	}, closeFn, nil
 }
 
-func validateProgressOutput(progressPath, resultPath string) error {
+func validateProgressOutput(progressPath, resultPath string, inputPaths ...string) error {
 	if progressPath == "-" || progressPath == "/dev/stdout" {
 		return fmt.Errorf("--progress-out must not write to stdout")
 	}
@@ -506,9 +500,26 @@ func validateProgressOutput(progressPath, resultPath string) error {
 	if err != nil {
 		return fmt.Errorf("resolve --progress-out path: %w", err)
 	}
+	if info, err := os.Lstat(progressAbs); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("--progress-out path %q is a symlink; refusing to follow it", progressPath)
+	}
 	if progressInfo, err := os.Stat(progressAbs); err == nil {
 		if stdoutInfo, statErr := os.Stdout.Stat(); statErr == nil && os.SameFile(progressInfo, stdoutInfo) {
 			return fmt.Errorf("--progress-out must not write to stdout")
+		}
+	}
+	for _, inputPath := range inputPaths {
+		inputAbs, err := filepath.Abs(inputPath)
+		if err != nil {
+			return fmt.Errorf("resolve input path %q: %w", inputPath, err)
+		}
+		if progressAbs == inputAbs {
+			return fmt.Errorf("--progress-out must differ from input path %q", inputPath)
+		}
+		progressInfo, progressErr := os.Stat(progressAbs)
+		inputInfo, inputErr := os.Stat(inputAbs)
+		if progressErr == nil && inputErr == nil && os.SameFile(progressInfo, inputInfo) {
+			return fmt.Errorf("--progress-out must differ from input path %q", inputPath)
 		}
 	}
 	if resultPath == "" || resultPath == "-" || resultPath == "/dev/stdout" {

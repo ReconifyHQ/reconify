@@ -57,6 +57,20 @@ func TestValidateProgressOutputRejectsStdoutAndCollisions(t *testing.T) {
 	if err := validateProgressOutput(path, path); err == nil {
 		t.Fatal("expected output collision rejection")
 	}
+	inputPath := filepath.Join(t.TempDir(), "input.csv")
+	if err := os.WriteFile(inputPath, []byte("input"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProgressOutput(inputPath, "result.ndjson", inputPath); err == nil {
+		t.Fatal("expected input collision rejection")
+	}
+	linkPath := filepath.Join(t.TempDir(), "progress.ndjson")
+	if err := os.Symlink(inputPath, linkPath); err != nil {
+		t.Skipf("symlink creation not supported: %v", err)
+	}
+	if err := validateProgressOutput(linkPath, "result.ndjson", inputPath); err == nil {
+		t.Fatal("expected telemetry symlink rejection")
+	}
 }
 
 func TestReconcileProgressOutPreservesResultOutput(t *testing.T) {

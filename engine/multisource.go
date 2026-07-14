@@ -129,27 +129,24 @@ func ReconcileMultiSourceWithTelemetry(
 		defer reporter.close()
 	}
 	leftTotal := len(left)
-	rightTotal := 0
 	names := make([]string, 0, len(counterparts))
 	for _, cp := range counterparts {
-		rightTotal += len(cp.Transactions)
 		names = append(names, cp.SourceName)
 	}
 	rightLabel := strings.Join(names, ",")
-	reporter.start("right_index", rightLabel, rightLabel, &rightTotal)
-	reporter.complete(rightTotal)
 	stage := "left_match"
 	if len(pair.Passes) > 0 {
 		stage = "grouped_pass"
 	}
 	reporter.start(stage, leftSource, rightLabel, &leftTotal)
 	result, err := ReconcileMultiSource(pairName, leftSource, left, counterparts, pair, opts...)
-	reporter.complete(leftTotal)
 	if err != nil {
+		reporter.fail(leftTotal)
 		return nil, err
 	}
+	reporter.complete(leftTotal)
 	reporter.start("finalization", leftSource, rightLabel, nil)
-	reporter.complete(leftTotal + rightTotal)
+	reporter.complete(0)
 	return result, nil
 }
 
@@ -449,7 +446,6 @@ func runStreamingPass(
 	}); perr != nil {
 		return nil, Summary{}, nil, fmt.Errorf("parse right source %q: %w", rightSource, perr)
 	}
-	reporter.complete(totalRight)
 	if rightPolicy == config.DuplicatePolicyLatest {
 		for _, tx := range rightLatestBuf {
 			if aerr := idx.Add(tx); aerr != nil {
@@ -457,6 +453,7 @@ func runStreamingPass(
 			}
 		}
 	}
+	reporter.complete(totalRight)
 
 	dupTxnCount := 0
 	if rightPolicy == config.DuplicatePolicyFlag && len(rightDupKeys) > 0 {
@@ -582,8 +579,6 @@ func runStreamingPass(
 			}
 		}
 	}
-	reporter.complete(totalLeft)
-
 	// For "latest" (first pass only): process buffered left rows now that the scan
 	// is complete and we know which row is last for each GroupKey.
 	if fromFile && leftPolicy == config.DuplicatePolicyLatest {
@@ -596,6 +591,7 @@ func runStreamingPass(
 			}
 		}
 	}
+	reporter.complete(totalLeft)
 
 	if fromFile && leftPolicy == config.DuplicatePolicyFlag && len(leftDupKeys) > 0 {
 		reporter.start("left_duplicate_scan", leftSource, rightSource, nil)

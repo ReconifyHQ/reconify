@@ -122,22 +122,46 @@ func ReconcileWithTelemetry(pairName, leftSource, rightSource string, left, righ
 	if reporter != nil {
 		defer reporter.close()
 	}
-	rightTotal, leftTotal := len(right), len(left)
-	reporter.start("right_index", rightSource, rightSource, &rightTotal)
-	reporter.complete(rightTotal)
+	leftTotal := len(left)
 	stage := "left_match"
 	if len(pair.Passes) > 0 {
 		stage = "grouped_pass"
 	}
 	reporter.start(stage, leftSource, rightSource, &leftTotal)
 	result, err := Reconcile(pairName, leftSource, rightSource, left, right, pair, opts...)
-	reporter.complete(leftTotal)
 	if err != nil {
+		reporter.fail(leftTotal)
 		return nil, err
 	}
+	reporter.complete(leftTotal)
 	reporter.start("finalization", leftSource, rightSource, nil)
-	reporter.complete(leftTotal + rightTotal)
+	reporter.complete(0)
 	return result, nil
+}
+
+// ParseWithTelemetry parses a complete source while emitting a live parsing
+// stage. It is intended for batch callers that must read both inputs before
+// reconciliation can begin.
+func ParseWithTelemetry(ctx context.Context, sourceName, filePath string, cfg config.ParserCfg, counterpart string, telemetry TelemetryOptions) ([]Transaction, error) {
+	reporter := newTelemetryReporter(telemetry)
+	if reporter != nil {
+		defer reporter.close()
+	}
+	var transactions []Transaction
+	rows := 0
+	reporter.start("parse", sourceName, counterpart, nil)
+	err := ParseEach(ctx, sourceName, filePath, cfg, func(tx Transaction, _ int) error {
+		rows++
+		reporter.progress(rows)
+		transactions = append(transactions, tx)
+		return nil
+	})
+	if err != nil {
+		reporter.fail(rows)
+		return nil, err
+	}
+	reporter.complete(rows)
+	return transactions, nil
 }
 
 // buildSummary computes aggregate counts, rates, and monetary totals from a fully
