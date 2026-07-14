@@ -12,28 +12,55 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/reconifyhq/reconify/config"
 )
+
+// PartitionedOptions controls temporary storage and partition sizing.
+type PartitionedOptions struct {
+	MaxTokenBuffer int
+	Partitions     int
+	SpillDir       string
+}
 
 // ReconcilePartitioned reconciles exact/reference passes using bounded memory.
 // Grouped and token passes are intentionally rejected because their semantics
 // require cross-partition state.
 func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int) error {
-	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, maxTokenBuffer, partitions, nil)
+	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, PartitionedOptions{
+		MaxTokenBuffer: maxTokenBuffer,
+		Partitions:     partitions,
+	}, nil)
+}
+
+// ReconcilePartitionedWithOptions runs the bounded-memory backend using the
+// configured spill location when provided.
+func ReconcilePartitionedWithOptions(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, options PartitionedOptions) error {
+	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, options, nil)
 }
 
 // ReconcilePartitionedWithTelemetry emits partitioning and per-partition
 // lifecycle records without changing bounded-memory reconciliation behavior.
 func ReconcilePartitionedWithTelemetry(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int, telemetry TelemetryOptions) error {
+	return ReconcilePartitionedWithOptionsAndTelemetry(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, PartitionedOptions{
+		MaxTokenBuffer: maxTokenBuffer,
+		Partitions:     partitions,
+	}, telemetry)
+}
+
+// ReconcilePartitionedWithOptionsAndTelemetry combines configured spill storage
+// with the lifecycle telemetry API.
+func ReconcilePartitionedWithOptionsAndTelemetry(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, options PartitionedOptions, telemetry TelemetryOptions) error {
 	reporter := newTelemetryReporter(telemetry)
 	if reporter != nil {
 		defer reporter.close()
 	}
-	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, maxTokenBuffer, partitions, reporter)
+	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, options, reporter)
 }
 
-func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int, reporter *telemetryReporter) error {
+func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, options PartitionedOptions, reporter *telemetryReporter) error {
+	partitions := options.Partitions
 	if partitions < 2 {
 		partitions = 32
 	}
@@ -45,10 +72,20 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			}
 		}
 	}
+	if pair.NameMode == "tokens" {
+		return fmt.Errorf("partitioned backend supports reference matching only")
+	}
 	if leftCfg.RefCol == "" || rightCfg.RefCol == "" {
 		return fmt.Errorf("partitioned backend requires ref_col on both sources")
 	}
-	dir, err := os.MkdirTemp("", "reconify-partitions-*")
+	baseDir := options.SpillDir
+	if baseDir == "" {
+		baseDir = os.TempDir()
+	}
+	if err := os.MkdirAll(baseDir, 0o750); err != nil {
+		return fmt.Errorf("create partition spill base directory: %w", err)
+	}
+	dir, err := os.MkdirTemp(baseDir, "reconify-partitions-*")
 	if err != nil {
 		return fmt.Errorf("create partition directory: %w", err)
 	}
@@ -70,7 +107,7 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			return err
 		}
 		idx := NewMemoryIndex()
-		err := reconcileStreaming(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, maxTokenBuffer, reporter)
+		err := reconcileStreaming(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, options.MaxTokenBuffer, reporter)
 		closeErr := idx.Close()
 		if err != nil {
 			return err
@@ -162,7 +199,7 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, prog
 	}
 	refIdx := -1
 	for i, col := range header {
-		if col == refCol {
+		if strings.EqualFold(strings.TrimSpace(col), strings.TrimSpace(refCol)) {
 			refIdx = i
 			break
 		}

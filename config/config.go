@@ -167,6 +167,13 @@ type IndexCfg struct {
 	// If right file size exceeds this value, disk backend is selected.
 	// Default (0) is 2048 MB.
 	AutoMaxRightFileMB int64 `yaml:"auto_max_right_file_mb,omitempty"`
+	// MaxMemoryMB is the maximum estimated resident memory for index selection.
+	// Zero leaves memory uncapped for backwards compatibility.
+	MaxMemoryMB int64 `yaml:"max_memory_mb,omitempty"`
+	// MaxTempDiskMB is the maximum estimated temporary storage for disk or
+	// partitioned indexing. Zero leaves the configured budget uncapped, but the
+	// selector still checks actual free space.
+	MaxTempDiskMB int64 `yaml:"max_temp_disk_mb,omitempty"`
 	// PartitionCount controls the number of hash partitions for the bounded-memory
 	// backend. Zero uses the default (32); positive values must be at least 2.
 	PartitionCount int `yaml:"partition_count,omitempty"`
@@ -407,6 +414,12 @@ func validateIndex(index IndexCfg) []error {
 	}
 	if index.AutoMaxRightFileMB < 0 {
 		errs = append(errs, fmt.Errorf("index.auto_max_right_file_mb: must be >= 0 (got %d)", index.AutoMaxRightFileMB))
+	}
+	if index.MaxMemoryMB < 0 {
+		errs = append(errs, fmt.Errorf("index.max_memory_mb: must be >= 0 (got %d)", index.MaxMemoryMB))
+	}
+	if index.MaxTempDiskMB < 0 {
+		errs = append(errs, fmt.Errorf("index.max_temp_disk_mb: must be >= 0 (got %d)", index.MaxTempDiskMB))
 	}
 	if index.SpillDir != "" && strings.Contains(index.SpillDir, "..") {
 		errs = append(errs, fmt.Errorf("index.spill_dir: must not contain '..' (got %q)", index.SpillDir))

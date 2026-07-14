@@ -187,8 +187,8 @@ Agents can call this once to self-bootstrap context without reading the source c
 						"type": "object", "required": false,
 						"fields": map[string]interface{}{
 							"backend": map[string]interface{}{
-								"type": "string", "enum": []string{"memory", "disk", "auto"}, "default": "memory",
-								"description": "memory (fastest), disk (lower RAM via SQLite), auto (switches to disk when right file exceeds auto_max_right_file_mb).",
+								"type": "string", "enum": []string{"memory", "disk", "auto", "partitioned"}, "default": "memory",
+								"description": "memory (fastest), disk (lower RAM via SQLite), auto (resource-aware selection), partitioned (bounded memory for CSV one-to-one runs).",
 							},
 							"spill_dir": map[string]interface{}{
 								"type": "string", "required": false,
@@ -197,6 +197,14 @@ Agents can call this once to self-bootstrap context without reading the source c
 							"auto_max_right_file_mb": map[string]interface{}{
 								"type": "integer", "default": 2048,
 								"description": "Right-file size threshold in MB at which the auto backend switches to disk.",
+							},
+							"max_memory_mb": map[string]interface{}{
+								"type": "integer", "required": false,
+								"description": "Maximum estimated memory budget for index selection; zero leaves it uncapped.",
+							},
+							"max_temp_disk_mb": map[string]interface{}{
+								"type": "integer", "required": false,
+								"description": "Maximum estimated temporary-disk budget for disk or partitioned indexing; zero leaves it uncapped.",
 							},
 						},
 					},

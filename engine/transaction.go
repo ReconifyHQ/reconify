@@ -153,6 +153,7 @@ type Summary struct {
 // Result is the full output of a reconciliation run.
 type Result struct {
 	RunInfo        *RunInfo         `json:"run_info,omitempty"` // nil unless --audit mode
+	IndexSelection *IndexSelection  `json:"index_selection,omitempty"`
 	PairName       string           `json:"pair"`
 	LeftSource     string           `json:"left_source"`
 	RightSource    string           `json:"right_source"`

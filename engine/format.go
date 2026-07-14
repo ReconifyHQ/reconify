@@ -38,6 +38,12 @@ type RunInfoSetter interface {
 	SetRunInfo(info RunInfo) error
 }
 
+// IndexSelectionSetter is implemented by structured writers that can expose
+// the resource-aware backend decision in their output.
+type IndexSelectionSetter interface {
+	SetIndexSelection(selection IndexSelection) error
+}
+
 // SourceBreakdownWriter is an optional interface implemented by writers that can
 // surface a per-counterpart summary for 1-N source runs (see
 // ReconcileMultiSource / ReconcileStreamingMultiSource). It is called once per
@@ -206,6 +212,11 @@ func (j *jsonWriter) SetRunInfo(info RunInfo) error {
 	return nil
 }
 
+func (j *jsonWriter) SetIndexSelection(selection IndexSelection) error {
+	j.result.IndexSelection = &selection
+	return nil
+}
+
 // SetDeterministic enables stable output ordering. When true, Flush() sorts all
 // result sections by a stable key before encoding. This adds O(n log n) sort time
 // on the result set — typically 4-8 seconds at 17M matched rows.
@@ -287,13 +298,14 @@ type jsonStreamSection struct {
 }
 
 type jsonStreamWriter struct {
-	w        io.Writer
-	meta     struct{ PairName, LeftSource, RightSource string }
-	runInfo  *RunInfo
-	sections []jsonStreamSection // ordered; keyed by JSON field name
-	byKey    map[string]*jsonStreamSection
-	summary  *Summary
-	bySource map[string]Summary
+	w              io.Writer
+	meta           struct{ PairName, LeftSource, RightSource string }
+	runInfo        *RunInfo
+	indexSelection *IndexSelection
+	sections       []jsonStreamSection // ordered; keyed by JSON field name
+	byKey          map[string]*jsonStreamSection
+	summary        *Summary
+	bySource       map[string]Summary
 	// grouped/ambiguous events from one_to_many pass — only emitted when non-empty
 	groupedMatched       []json.RawMessage
 	groupedAmountDiff    []json.RawMessage
@@ -437,6 +449,9 @@ func (j *jsonStreamWriter) Flush() error {
 	if j.runInfo != nil {
 		result["run_info"] = j.runInfo
 	}
+	if j.indexSelection != nil {
+		result["index_selection"] = j.indexSelection
+	}
 	if j.summary != nil {
 		result["summary"] = j.summary
 	} else {
@@ -494,6 +509,11 @@ func (j *jsonStreamWriter) SetRunInfo(info RunInfo) error {
 	return nil
 }
 
+func (j *jsonStreamWriter) SetIndexSelection(selection IndexSelection) error {
+	j.indexSelection = &selection
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // NDJSONWriter — one tagged JSON envelope per event, immediately written.
 // O(1) memory. Crash-safe: each line is independently valid JSON.
@@ -522,6 +542,12 @@ func (n *ndjsonWriter) emit(typ string, data any) error {
 // Implements RunInfoSetter. Must be called before ReconcileStreaming begins parsing.
 func (n *ndjsonWriter) SetRunInfo(info RunInfo) error {
 	return n.emit("run_info", info)
+}
+
+// SetIndexSelection emits the selection after run_info when audit mode is
+// enabled, and as the first metadata event otherwise.
+func (n *ndjsonWriter) SetIndexSelection(selection IndexSelection) error {
+	return n.emit("index_selection", selection)
 }
 
 func (n *ndjsonWriter) WriteMatch(pair MatchedPair) error         { return n.emit("match", pair) }

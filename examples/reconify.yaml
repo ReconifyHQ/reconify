@@ -1,6 +1,16 @@
 version: 1
 timezone: "UTC"
 
+# Resource-aware streaming index selection. With no budgets, auto preserves its
+# existing file-size threshold behavior. With budgets, it prefers memory, disk,
+# then partitioned indexing and records the decision in structured output.
+index:
+  backend: auto
+  spill_dir: "/tmp/reconify"
+  auto_max_right_file_mb: 2048
+  max_memory_mb: 8192
+  max_temp_disk_mb: 16384
+
 sources:
   bank:
     file_pattern: "data/bank/*.csv"

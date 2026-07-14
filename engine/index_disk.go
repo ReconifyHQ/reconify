@@ -38,6 +38,9 @@ func NewDiskIndex(spillDir string) (RightIndex, error) {
 	if baseDir == "" {
 		baseDir = os.TempDir()
 	}
+	if err := os.MkdirAll(baseDir, 0o750); err != nil {
+		return nil, fmt.Errorf("create spill base directory: %w", err)
+	}
 	tmpDir, err := os.MkdirTemp(baseDir, "reconify-index-*")
 	if err != nil {
 		return nil, fmt.Errorf("create spill dir: %w", err)
