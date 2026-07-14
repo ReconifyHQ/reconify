@@ -193,6 +193,7 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, prog
 	}
 	defer func() { _ = in.Close() }()
 	r := csv.NewReader(in)
+	r.TrimLeadingSpace = true
 	header, err := r.Read()
 	if err != nil {
 		return nil, 0, err
@@ -247,7 +248,9 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, prog
 		}
 		key := ""
 		if refIdx < len(record) {
-			key = record[refIdx]
+			// Keep partition routing identical to parser normalization: the
+			// reference value is trimmed before it becomes an index key.
+			key = strings.TrimSpace(record[refIdx])
 		}
 		h := fnv.New32a()
 		_, _ = h.Write([]byte(key))

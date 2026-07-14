@@ -109,3 +109,56 @@ func TestChooseIndexBackend_AutoAggregatesResourceFailures(t *testing.T) {
 		t.Fatalf("error=%v, want aggregated backend failures", err)
 	}
 }
+
+func TestChooseIndexBackend_MemorySelectionOmitsTempDiskEstimate(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	writeSelectionCSV(t, left)
+	writeSelectionCSV(t, right)
+
+	decision, err := chooseIndexBackend(config.IndexCfg{Backend: "memory"}, left, right, selectionParser(), selectionParser(), config.Pair{}, 1)
+	if err != nil {
+		t.Fatalf("chooseIndexBackend: %v", err)
+	}
+	if decision.Selection.EstimatedTempDiskBytes != 0 {
+		t.Fatalf("memory temp disk estimate=%d, want zero", decision.Selection.EstimatedTempDiskBytes)
+	}
+}
+
+func TestChooseIndexBackend_StatOnlyWithoutResourceBudgets(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	malformed := "date,amount,reference\n2026-01-01,100,REF-1\n\"unterminated\n"
+	if err := os.WriteFile(left, []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, cfg := range []config.IndexCfg{{Backend: "memory"}, {Backend: "auto", AutoMaxRightFileMB: 1}} {
+		if _, err := chooseIndexBackend(cfg, left, right, selectionParser(), selectionParser(), config.Pair{}, 1); err != nil {
+			t.Fatalf("chooseIndexBackend(%+v): %v; stat-only selection should not parse rows", cfg, err)
+		}
+	}
+	if _, err := chooseIndexBackend(config.IndexCfg{Backend: "memory", MaxMemoryMB: 1024}, left, right, selectionParser(), selectionParser(), config.Pair{}, 1); err == nil {
+		t.Fatal("budgeted selection should inspect CSV rows and reject malformed input")
+	}
+}
+
+func TestEstimateIndexResourcesIncludesStreamTracking(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	writeSelectionCSV(t, left)
+	writeSelectionCSV(t, right)
+
+	estimate, err := estimateIndexResources(left, right, selectionParser(), selectionParser(), config.Pair{}, 2, 1, true)
+	if err != nil {
+		t.Fatalf("estimateIndexResources: %v", err)
+	}
+	if estimate.LeftRows == 0 || estimate.SharedMemoryBytes == 0 || estimate.MemoryIndexBytes <= estimate.PerIndexMemoryBytes {
+		t.Fatalf("estimate=%+v, want left rows and shared tracking included", estimate)
+	}
+}
