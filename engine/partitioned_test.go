@@ -65,6 +65,27 @@ func TestReconcilePartitionedMatchesStreamingResults(t *testing.T) {
 	if strings.Join(baseEvents, "\n") != strings.Join(partitionedEvents, "\n") {
 		t.Fatalf("event output mismatch\nbaseline: %s\npartitioned: %s", strings.Join(baseEvents, "\n"), strings.Join(partitionedEvents, "\n"))
 	}
+
+	var telemetry []TelemetryEvent
+	telemetryWriter, err := NewResultWriter("ndjson", &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcilePartitionedWithTelemetry(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, telemetryWriter, 0, 4, TelemetryOptions{
+		ProgressEvery: 1,
+		Sink: func(event TelemetryEvent) error {
+			telemetry = append(telemetry, event)
+			return nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range telemetry {
+		if event.Stage == "partitioning" && event.Status == "completed" && event.Rows == 190 {
+			return
+		}
+	}
+	t.Fatalf("partition telemetry did not report input rows: %#v", telemetry)
 }
 
 func TestReconcilePartitionedWithOptionsCleansConfiguredSpillDir(t *testing.T) {

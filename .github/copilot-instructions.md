@@ -1,6 +1,7 @@
 # Copilot Instructions
 
 Follow `AGENTS.md` for Reconify project context, commands, and safety rules.
+After any code change and before opening a PR, run `make check`.
 
 Use `.agents/skills/` as the canonical workflow source:
 

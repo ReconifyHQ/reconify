@@ -191,7 +191,8 @@ The Go result field is named `BySource`; JSON object output uses `by_source`. `n
 Caveats:
 
 - `right` and `rights` are mutually exclusive.
-- `--audit` and `--progress` are not yet supported for multi-counterpart runs.
+- `--audit` is not yet supported for multi-counterpart runs. `--progress` and
+  `--progress-out` emit lifecycle telemetry for each counterpart pass.
 - `name_mode: tokens` is not yet supported in streaming multi-counterpart mode. CLI reconciliation uses the streaming path for multi-counterpart pairs, so omit `name_mode: tokens` for `rights` pairs in CLI runs.
 
 ### `one_to_many` pass (installment payments)

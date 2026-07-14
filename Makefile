@@ -1,4 +1,4 @@
-.PHONY: help build build-all test lint fmt-check mod-check security preflight clean install bench-smoke bench-deterministic bench-realistic bench-full
+.PHONY: help build build-all test lint fmt-check mod-check security check preflight clean install bench-smoke bench-deterministic bench-realistic bench-full
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
@@ -18,7 +18,8 @@ help: ## Show this help message
 	@echo '  make mod-check  - Verify modules and fail on go.mod/go.sum drift'
 	@echo '  make lint       - Run linters'
 	@echo '  make security   - Run govulncheck and gosec'
-	@echo '  make preflight  - Run the full pre-PR quality and security gate'
+	@echo '  make check      - Run the local equivalent of GitHub Actions checks'
+	@echo '  make preflight  - Alias for make check'
 	@echo '  make bench-smoke         - Run small correctness benchmarks'
 	@echo '  make bench-deterministic - Run deterministic 1-N benchmarks'
 	@echo '  make bench-realistic     - Run realistic synthetic benchmarks'
@@ -54,7 +55,7 @@ mod-check: ## Verify modules and fail on go.mod/go.sum drift
 # Linting
 lint: ## Run linters
 	@if command -v golangci-lint > /dev/null; then \
-		golangci-lint run ./...; \
+		GOOS=linux GOARCH=amd64 golangci-lint run ./...; \
 	else \
 		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
 		exit 1; \
@@ -62,21 +63,23 @@ lint: ## Run linters
 
 security: ## Run vulnerability and security checks
 	@if command -v govulncheck > /dev/null; then \
-		govulncheck ./...; \
+		GOOS=linux GOARCH=amd64 govulncheck ./...; \
 	elif test -x "$$(go env GOPATH)/bin/govulncheck"; then \
-		"$$(go env GOPATH)/bin/govulncheck" ./...; \
+		GOOS=linux GOARCH=amd64 "$$(go env GOPATH)/bin/govulncheck" ./...; \
 	else \
 		echo "govulncheck not installed. Install with: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
 		exit 1; \
 	fi
 	@if command -v golangci-lint > /dev/null; then \
-		golangci-lint run --enable-only=gosec ./...; \
+		GOOS=linux GOARCH=amd64 golangci-lint run --enable-only=gosec ./...; \
 	else \
 		echo "golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
 		exit 1; \
 	fi
 
-preflight: mod-check fmt-check lint security test build bench-smoke ## Run full pre-PR gate
+check: mod-check fmt-check lint security test build bench-smoke ## Run the local equivalent of GitHub Actions checks
+
+preflight: check ## Alias for make check
 
 # Benchmarks
 bench-smoke: ## Run small correctness benchmarks

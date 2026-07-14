@@ -283,7 +283,10 @@ func availableDiskBytes(path string) (int64, error) {
 				return 0, err
 			}
 			available := stat.Bavail
-			blockSize := uint64(stat.Bsize)
+			if stat.Bsize <= 0 {
+				return 0, fmt.Errorf("temporary disk reported invalid block size %d", stat.Bsize)
+			}
+			blockSize := uint64(stat.Bsize) // #nosec G115 -- block size is checked positive above.
 			const maxInt64Uint = uint64(1<<63 - 1)
 			if blockSize != 0 && available > maxInt64Uint/blockSize {
 				return int64(maxInt64Uint), nil

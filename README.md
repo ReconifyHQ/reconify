@@ -143,6 +143,26 @@ rejected fallback reasons in JSON-style output and on stderr for CSV/table.
 Runs fail before completion when the selected budget or available temporary
 storage cannot satisfy the estimate.
 
+## Progress telemetry
+
+Use `--progress` for concise human-readable progress on stderr. For a separate
+machine-readable event stream, add `--progress-out`; it writes live NDJSON and
+never changes reconciliation data on stdout or `--out`.
+
+```bash
+reconify reconcile --config reconify.yaml --pair bank_vs_stripe \
+  --format ndjson --out results.ndjson \
+  --progress --progress-every 1000000 \
+  --progress-out progress.ndjson --heartbeat-every 30s
+```
+
+Each telemetry line has a `type` (`progress` or `heartbeat`), `run_id`, RFC3339
+timestamp, stage/status, row counts, rate/elapsed time, and best-effort process
+metrics. Totals, percentage, and ETA are omitted when determining them would
+require another full input scan. `--progress-out` must not be stdout or the same
+path as `--out`; a telemetry write failure is reported once on stderr and does
+not stop reconciliation.
+
 ## How It Works
 
 The reconciliation engine:
@@ -203,6 +223,7 @@ make install     # Install to $GOPATH/bin
 
 ```bash
 make preflight   # Run the full pre-PR quality and security gate
+make check       # Run the local equivalent of GitHub Actions checks
 make test        # Run all tests with race detection and coverage
 make lint        # Run linters
 make security    # Run govulncheck and gosec
