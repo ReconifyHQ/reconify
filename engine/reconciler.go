@@ -402,6 +402,22 @@ func legacyProgressSink(progress ProgressFunc) TelemetrySink {
 	}
 }
 
+type streamingDuplicateOptions struct {
+	globalRightDuplicateKeys      map[string]bool
+	globalLeftDuplicateKeys       map[string]bool
+	globalRightRepresentativeRows map[string]int
+	globalLeftRepresentativeRows  map[string]int
+	rightPartitionOriginalRows    []int
+	leftPartitionOriginalRows     []int
+}
+
+func partitionOriginalRow(originalRows []int, rowNum int) int {
+	if rowNum > 0 && rowNum <= len(originalRows) {
+		return originalRows[rowNum-1]
+	}
+	return rowNum
+}
+
 func reconcileStreaming(
 	ctx context.Context,
 	pairName string,
@@ -416,6 +432,25 @@ func reconcileStreaming(
 	w ResultWriter,
 	maxTokenBuffer int,
 	reporter *telemetryReporter,
+) error {
+	return reconcileStreamingWithOptions(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, reporter, streamingDuplicateOptions{})
+}
+
+func reconcileStreamingWithOptions(
+	ctx context.Context,
+	pairName string,
+	leftSource string,
+	rightSource string,
+	leftPath string,
+	rightPath string,
+	leftCfg config.ParserCfg,
+	rightCfg config.ParserCfg,
+	pair config.Pair,
+	idx RightIndex,
+	w ResultWriter,
+	maxTokenBuffer int,
+	reporter *telemetryReporter,
+	duplicateOptions streamingDuplicateOptions,
 ) error {
 	dateWindowDays, err := parseDateWindow(pair.DateWindow)
 	if err != nil {
@@ -446,6 +481,7 @@ func reconcileStreaming(
 	// rightSeen/rightDupKeys are only used for the "flag" policy.
 	rightSeen := make(map[string]uint8)
 	rightDupKeys := make(map[string]bool)
+	globalRightDuplicates := duplicateOptions.globalRightDuplicateKeys != nil
 	// rightMergeSeen deduplicates for "merge" (first-seen wins).
 	rightMergeSeen := make(map[string]bool)
 	// rightLatestBuf accumulates last-seen rows per GroupKey for "latest".
@@ -454,22 +490,34 @@ func reconcileStreaming(
 		rightLatestBuf = make(map[string]Transaction)
 	}
 	var totalRight int
+	rightDuplicateRows := 0
 	reporter.start("right_index", rightSource, rightSource, nil)
 
-	if err := ParseEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
+	if err := ParseEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, rowNum int) error {
 		totalRight++
 		if err := cc.Observe(rightSource, tx); err != nil {
 			return err
 		}
 		reporter.progress(totalRight)
+		if (rightPolicy == config.DuplicatePolicyMerge || rightPolicy == config.DuplicatePolicyLatest) && tx.GroupKey != "" && duplicateOptions.globalRightRepresentativeRows != nil {
+			if representative, ok := duplicateOptions.globalRightRepresentativeRows[tx.GroupKey]; ok && representative != partitionOriginalRow(duplicateOptions.rightPartitionOriginalRows, rowNum) {
+				return nil
+			}
+		}
 		switch rightPolicy {
 		case config.DuplicatePolicyFlag:
 			if tx.GroupKey != "" {
-				if rightSeen[tx.GroupKey] < 2 {
-					rightSeen[tx.GroupKey]++
-				}
-				if rightSeen[tx.GroupKey] == 2 {
-					rightDupKeys[tx.GroupKey] = true
+				if globalRightDuplicates {
+					if duplicateOptions.globalRightDuplicateKeys[tx.GroupKey] {
+						rightDuplicateRows++
+					}
+				} else {
+					if rightSeen[tx.GroupKey] < 2 {
+						rightSeen[tx.GroupKey]++
+					}
+					if rightSeen[tx.GroupKey] == 2 {
+						rightDupKeys[tx.GroupKey] = true
+					}
 				}
 			}
 			return idx.Add(tx)
@@ -507,7 +555,9 @@ func reconcileStreaming(
 	// Emit right duplicate groups via targeted re-scan (flag policy only).
 	// collectDuplicates is only called when duplicates actually exist.
 	dupTxnCount := 0
-	if rightPolicy == config.DuplicatePolicyFlag && len(rightDupKeys) > 0 {
+	if rightPolicy == config.DuplicatePolicyFlag && globalRightDuplicates {
+		dupTxnCount += rightDuplicateRows
+	} else if rightPolicy == config.DuplicatePolicyFlag && len(rightDupKeys) > 0 {
 		reporter.start("right_duplicate_scan", rightSource, rightSource, nil)
 		groups, err := collectDuplicates(ctx, rightSource, rightPath, rightCfg, rightDupKeys)
 		if err != nil {
@@ -530,6 +580,7 @@ func reconcileStreaming(
 	// leftSeen/leftDupKeys are only used for the "flag" policy.
 	leftSeen := make(map[string]uint8)
 	leftDupKeys := make(map[string]bool)
+	globalLeftDuplicates := duplicateOptions.globalLeftDuplicateKeys != nil
 	// leftMergeSeen deduplicates for "merge" (first-seen wins).
 	leftMergeSeen := make(map[string]bool)
 	// leftLatestBuf accumulates last-seen rows per GroupKey for "latest".
@@ -554,6 +605,7 @@ func reconcileStreaming(
 		amountDiffTotal   int64
 	)
 	var totalLeft int
+	leftDuplicateRows := 0
 
 	// doMatchLeft executes the core match logic for one left transaction.
 	// Extracted so it can be called both from the ParseEach callback and from
@@ -617,20 +669,31 @@ func reconcileStreaming(
 		return w.WriteUnmatched(ltx, "left")
 	}
 
-	if err := ParseEach(ctx, leftSource, leftPath, leftCfg, func(ltx Transaction, _ int) error {
+	if err := ParseEach(ctx, leftSource, leftPath, leftCfg, func(ltx Transaction, rowNum int) error {
 		totalLeft++
 		if err := cc.Observe(leftSource, ltx); err != nil {
 			return err
 		}
 		reporter.progress(totalLeft)
+		if (leftPolicy == config.DuplicatePolicyMerge || leftPolicy == config.DuplicatePolicyLatest) && ltx.GroupKey != "" && duplicateOptions.globalLeftRepresentativeRows != nil {
+			if representative, ok := duplicateOptions.globalLeftRepresentativeRows[ltx.GroupKey]; ok && representative != partitionOriginalRow(duplicateOptions.leftPartitionOriginalRows, rowNum) {
+				return nil
+			}
+		}
 		switch leftPolicy {
 		case config.DuplicatePolicyFlag:
 			if ltx.GroupKey != "" {
-				if leftSeen[ltx.GroupKey] < 2 {
-					leftSeen[ltx.GroupKey]++
-				}
-				if leftSeen[ltx.GroupKey] == 2 {
-					leftDupKeys[ltx.GroupKey] = true
+				if globalLeftDuplicates {
+					if duplicateOptions.globalLeftDuplicateKeys[ltx.GroupKey] {
+						leftDuplicateRows++
+					}
+				} else {
+					if leftSeen[ltx.GroupKey] < 2 {
+						leftSeen[ltx.GroupKey]++
+					}
+					if leftSeen[ltx.GroupKey] == 2 {
+						leftDupKeys[ltx.GroupKey] = true
+					}
 				}
 			}
 			return doMatchLeft(ltx)
@@ -669,7 +732,9 @@ func reconcileStreaming(
 	reporter.complete(totalLeft)
 
 	// Emit left duplicate groups via targeted re-scan (flag policy only).
-	if leftPolicy == config.DuplicatePolicyFlag && len(leftDupKeys) > 0 {
+	if leftPolicy == config.DuplicatePolicyFlag && globalLeftDuplicates {
+		dupTxnCount += leftDuplicateRows
+	} else if leftPolicy == config.DuplicatePolicyFlag && len(leftDupKeys) > 0 {
 		reporter.start("left_duplicate_scan", leftSource, rightSource, nil)
 		groups, err := collectDuplicates(ctx, leftSource, leftPath, leftCfg, leftDupKeys)
 		if err != nil {

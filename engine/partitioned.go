@@ -78,6 +78,43 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 	if leftCfg.RefCol == "" || rightCfg.RefCol == "" {
 		return fmt.Errorf("partitioned backend requires ref_col on both sources")
 	}
+
+	// Duplicate groups are keyed independently from the reference used for
+	// partition routing. Discover flagged groups from the complete inputs before
+	// partitioning so a group whose rows span multiple reference partitions has
+	// the same semantics as the regular streaming backend.
+	var rightDuplicateKeys map[string]bool
+	var rightDuplicateGroups []DuplicateGroup
+	var rightRepresentativeRows map[string]int
+	if rightCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
+		var err error
+		rightDuplicateKeys, rightDuplicateGroups, err = collectPartitionDuplicateGroups(ctx, rightSource, rightPath, rightCfg)
+		if err != nil {
+			return fmt.Errorf("collect right duplicates: %w", err)
+		}
+	} else if policy := rightCfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
+		var err error
+		rightRepresentativeRows, err = collectPartitionDuplicateRepresentatives(ctx, rightSource, rightPath, rightCfg, policy == config.DuplicatePolicyLatest)
+		if err != nil {
+			return fmt.Errorf("collect right duplicate representatives: %w", err)
+		}
+	}
+	var leftDuplicateKeys map[string]bool
+	var leftDuplicateGroups []DuplicateGroup
+	var leftRepresentativeRows map[string]int
+	if leftCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
+		var err error
+		leftDuplicateKeys, leftDuplicateGroups, err = collectPartitionDuplicateGroups(ctx, leftSource, leftPath, leftCfg)
+		if err != nil {
+			return fmt.Errorf("collect left duplicates: %w", err)
+		}
+	} else if policy := leftCfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
+		var err error
+		leftRepresentativeRows, err = collectPartitionDuplicateRepresentatives(ctx, leftSource, leftPath, leftCfg, policy == config.DuplicatePolicyLatest)
+		if err != nil {
+			return fmt.Errorf("collect left duplicate representatives: %w", err)
+		}
+	}
 	baseDir := options.SpillDir
 	if baseDir == "" {
 		baseDir = os.TempDir()
@@ -90,24 +127,36 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		return fmt.Errorf("create partition directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	leftParts, leftRows, err := partitionCSV(ctx, leftPath, leftCfg.RefCol, filepath.Join(dir, "left"), partitions, reporter.progress)
+	leftParts, leftRows, leftOriginalRows, err := partitionCSV(ctx, leftPath, leftCfg.RefCol, filepath.Join(dir, "left"), partitions, reporter.progress)
 	if err != nil {
 		return fmt.Errorf("partition left source: %w", err)
 	}
-	rightParts, rightRows, err := partitionCSV(ctx, rightPath, rightCfg.RefCol, filepath.Join(dir, "right"), partitions, func(rows int) {
+	rightParts, rightRows, rightOriginalRows, err := partitionCSV(ctx, rightPath, rightCfg.RefCol, filepath.Join(dir, "right"), partitions, func(rows int) {
 		reporter.progress(leftRows + rows)
 	})
 	if err != nil {
 		return fmt.Errorf("partition right source: %w", err)
 	}
 	reporter.complete(leftRows + rightRows)
+	for _, group := range rightDuplicateGroups {
+		if err := w.WriteDuplicate(group); err != nil {
+			return err
+		}
+	}
 	agg := &partitionSummaryWriter{ResultWriter: w}
 	for i := 0; i < partitions; i++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		idx := NewMemoryIndex()
-		err := reconcileStreaming(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, options.MaxTokenBuffer, reporter)
+		err := reconcileStreamingWithOptions(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
+			globalRightDuplicateKeys:      rightDuplicateKeys,
+			globalLeftDuplicateKeys:       leftDuplicateKeys,
+			globalRightRepresentativeRows: rightRepresentativeRows,
+			globalLeftRepresentativeRows:  leftRepresentativeRows,
+			rightPartitionOriginalRows:    rightOriginalRows[i],
+			leftPartitionOriginalRows:     leftOriginalRows[i],
+		})
 		closeErr := idx.Close()
 		if err != nil {
 			return err
@@ -116,12 +165,56 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			return closeErr
 		}
 	}
+	for _, group := range leftDuplicateGroups {
+		if err := w.WriteDuplicate(group); err != nil {
+			return err
+		}
+	}
 	reporter.start("finalization", leftSource, rightSource, nil)
 	if err := agg.FlushSummary(); err != nil {
 		return err
 	}
 	reporter.complete(0)
 	return nil
+}
+
+func collectPartitionDuplicateGroups(ctx context.Context, sourceName, path string, cfg config.ParserCfg) (map[string]bool, []DuplicateGroup, error) {
+	counts := make(map[string]uint8)
+	if err := ParseEach(ctx, sourceName, path, cfg, func(tx Transaction, _ int) error {
+		if tx.GroupKey != "" && counts[tx.GroupKey] < 2 {
+			counts[tx.GroupKey]++
+		}
+		return nil
+	}); err != nil {
+		return nil, nil, err
+	}
+	keys := make(map[string]bool)
+	for key, count := range counts {
+		if count >= 2 {
+			keys[key] = true
+		}
+	}
+	if len(keys) == 0 {
+		return keys, nil, nil
+	}
+	groups, err := collectDuplicates(ctx, sourceName, path, cfg, keys)
+	if err != nil {
+		return nil, nil, err
+	}
+	return keys, groups, nil
+}
+
+func collectPartitionDuplicateRepresentatives(ctx context.Context, sourceName, path string, cfg config.ParserCfg, latest bool) (map[string]int, error) {
+	representatives := make(map[string]int)
+	return representatives, ParseEach(ctx, sourceName, path, cfg, func(tx Transaction, rowNum int) error {
+		if tx.GroupKey == "" {
+			return nil
+		}
+		if latest || representatives[tx.GroupKey] == 0 {
+			representatives[tx.GroupKey] = rowNum
+		}
+		return nil
+	})
 }
 
 type partitionSummaryWriter struct {
@@ -183,20 +276,20 @@ func addSummaries(a, b Summary) Summary {
 	return a
 }
 
-func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, progress func(int)) ([]string, int, error) {
+func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, progress func(int)) ([]string, int, [][]int, error) {
 	if n < 2 {
-		return nil, 0, fmt.Errorf("partition count must be at least 2 (got %d)", n)
+		return nil, 0, nil, fmt.Errorf("partition count must be at least 2 (got %d)", n)
 	}
 	in, err := os.Open(input) // #nosec G304 -- input is an explicit caller-selected reconciliation file.
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer func() { _ = in.Close() }()
 	r := csv.NewReader(in)
 	r.TrimLeadingSpace = true
 	header, err := r.Read()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	refIdx := -1
 	for i, col := range header {
@@ -206,11 +299,12 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, prog
 		}
 	}
 	if refIdx < 0 {
-		return nil, 0, fmt.Errorf("reference column %q not found", refCol)
+		return nil, 0, nil, fmt.Errorf("reference column %q not found", refCol)
 	}
 	files := make([]*os.File, n)
 	writers := make([]*csv.Writer, n)
 	paths := make([]string, n)
+	originalRows := make([][]int, n)
 	closeAll := func() {
 		for i := range files {
 			if files[i] != nil {
@@ -222,29 +316,29 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, prog
 	for i := 0; i < n; i++ {
 		paths[i] = fmt.Sprintf("%s-%03d.csv", prefix, i)
 		if err := os.MkdirAll(filepath.Dir(paths[i]), 0o750); err != nil {
-			return nil, 0, err
+			return nil, 0, nil, err
 		}
 		f, err := os.Create(paths[i])
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, nil, err
 		}
 		files[i] = f
 		writers[i] = csv.NewWriter(f)
 		if err := writers[i].Write(header); err != nil {
-			return nil, 0, err
+			return nil, 0, nil, err
 		}
 	}
 	rows := 0
 	for row := 2; ; row++ {
 		if err := ctx.Err(); err != nil {
-			return nil, 0, err
+			return nil, 0, nil, err
 		}
 		record, err := r.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, 0, fmt.Errorf("row %d: %w", row, err)
+			return nil, 0, nil, fmt.Errorf("row %d: %w", row, err)
 		}
 		key := ""
 		if refIdx < len(record) {
@@ -256,8 +350,9 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, prog
 		_, _ = h.Write([]byte(key))
 		p := int(uint64(h.Sum32()) % uint64(n)) // #nosec G115 -- result is bounded by positive partition count.
 		if err := writers[p].Write(record); err != nil {
-			return nil, 0, err
+			return nil, 0, nil, err
 		}
+		originalRows[p] = append(originalRows[p], row-1)
 		rows++
 		if progress != nil {
 			progress(rows)
@@ -266,8 +361,8 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, prog
 	for _, w := range writers {
 		w.Flush()
 		if err := w.Error(); err != nil {
-			return nil, 0, err
+			return nil, 0, nil, err
 		}
 	}
-	return paths, rows, nil
+	return paths, rows, originalRows, nil
 }

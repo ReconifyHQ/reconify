@@ -1,4 +1,4 @@
-.PHONY: help build build-all test lint fmt-check mod-check security check preflight clean install bench-smoke bench-deterministic bench-realistic bench-full
+.PHONY: help build build-all test lint fmt-check mod-check security check preflight clean install bench-smoke bench-deterministic bench-realistic bench-adversarial-smoke bench-adversarial bench-adversarial-cold bench-full
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
@@ -20,10 +20,13 @@ help: ## Show this help message
 	@echo '  make security   - Run govulncheck and gosec'
 	@echo '  make check      - Run the local equivalent of GitHub Actions checks'
 	@echo '  make preflight  - Alias for make check'
-	@echo '  make bench-smoke         - Run small correctness benchmarks'
-	@echo '  make bench-deterministic - Run deterministic 1-N benchmarks'
-	@echo '  make bench-realistic     - Run realistic synthetic benchmarks'
-	@echo '  make bench-full          - Run larger benchmark suite'
+	@echo '  make bench-smoke                - Run small correctness benchmarks (includes adversarial)'
+	@echo '  make bench-deterministic        - Run deterministic 1-N benchmarks'
+	@echo '  make bench-realistic            - Run realistic synthetic benchmarks'
+	@echo '  make bench-adversarial-smoke    - Run adversarial semantic smoke matrix'
+	@echo '  make bench-adversarial          - Run adversarial scale benchmark (100k rows)'
+	@echo '  make bench-adversarial-cold     - Run adversarial cold-cache measurement (local/manual)'
+	@echo '  make bench-full                 - Run larger benchmark suite (includes adversarial)'
 	@echo ''
 	@echo 'Clean:'
 	@echo '  make clean      - Clean build artifacts'
@@ -82,9 +85,10 @@ check: mod-check fmt-check lint security test build bench-smoke ## Run the local
 preflight: check ## Alias for make check
 
 # Benchmarks
-bench-smoke: ## Run small correctness benchmarks
+bench-smoke: ## Run small correctness benchmarks (deterministic + realistic + adversarial)
 	./benchmarks/deterministic/run.sh --rows 1000
 	./benchmarks/realistic/run.sh --rows 1000
+	./benchmarks/adversarial/run.sh --smoke
 
 bench-deterministic: ## Run deterministic 1-N benchmarks
 	./benchmarks/deterministic/run.sh --rows 100000
@@ -92,9 +96,19 @@ bench-deterministic: ## Run deterministic 1-N benchmarks
 bench-realistic: ## Run realistic synthetic benchmarks
 	./benchmarks/realistic/run.sh --rows 100000
 
-bench-full: ## Run larger benchmark suite
+bench-adversarial-smoke: ## Run adversarial semantic smoke matrix (500 rows)
+	./benchmarks/adversarial/run.sh --smoke
+
+bench-adversarial: ## Run adversarial scale benchmark (100k rows, warm cache)
+	./benchmarks/adversarial/run.sh --rows 100000
+
+bench-adversarial-cold: ## Run adversarial cold-cache measurement (local/manual only)
+	./benchmarks/adversarial/run.sh --rows 100000 --cache-mode cold
+
+bench-full: ## Run larger benchmark suite (1M rows deterministic + realistic + 100k adversarial)
 	./benchmarks/deterministic/run.sh --rows 1000000
 	./benchmarks/realistic/run.sh --rows 1000000
+	./benchmarks/adversarial/run.sh --rows 100000
 
 # Installation
 install: ## Install CLI to GOPATH/bin
