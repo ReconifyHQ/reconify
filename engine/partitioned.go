@@ -37,7 +37,7 @@ func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 	if err != nil {
 		return fmt.Errorf("create partition directory: %w", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	leftParts, err := partitionCSV(ctx, leftPath, leftCfg.RefCol, filepath.Join(dir, "left"), partitions)
 	if err != nil {
 		return fmt.Errorf("partition left source: %w", err)
@@ -124,11 +124,11 @@ func addSummaries(a, b Summary) Summary {
 }
 
 func partitionCSV(ctx context.Context, input, refCol, prefix string, n int) ([]string, error) {
-	in, err := os.Open(input)
+	in, err := os.Open(input) // #nosec G304 -- input is an explicit caller-selected reconciliation file.
 	if err != nil {
 		return nil, err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	r := csv.NewReader(in)
 	header, err := r.Read()
 	if err != nil {
@@ -157,7 +157,7 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int) ([]s
 	defer closeAll()
 	for i := 0; i < n; i++ {
 		paths[i] = fmt.Sprintf("%s-%03d.csv", prefix, i)
-		if err := os.MkdirAll(filepath.Dir(paths[i]), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(paths[i]), 0o750); err != nil {
 			return nil, err
 		}
 		f, err := os.Create(paths[i])
@@ -187,7 +187,7 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int) ([]s
 		}
 		h := fnv.New32a()
 		_, _ = h.Write([]byte(key))
-		p := int(h.Sum32() % uint32(n))
+		p := int(uint64(h.Sum32()) % uint64(n)) // #nosec G115 -- result is bounded by positive partition count.
 		if err := writers[p].Write(record); err != nil {
 			return nil, err
 		}

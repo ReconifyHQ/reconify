@@ -17,7 +17,7 @@ func TestReconcilePartitionedMatchesStreamingResults(t *testing.T) {
 	left := filepath.Join(dir, "left.csv")
 	right := filepath.Join(dir, "right.csv")
 	write := func(path string, n int) {
-		f, err := os.Create(path)
+		f, err := os.Create(path) // #nosec G304 -- test path is created under t.TempDir().
 		if err != nil {
 			t.Fatal(err)
 		}
