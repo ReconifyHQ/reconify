@@ -105,6 +105,15 @@ type DuplicateGroup struct {
 
 // Summary holds aggregate counts, match rate, and monetary totals for a reconciliation run.
 type Summary struct {
+	// ResultMode is the emission mode applied to this run: "all", "exceptions_only",
+	// or "summary_only". Empty means "all" (the default, backward-compatible behavior).
+	ResultMode string `json:"result_mode,omitempty"`
+	// Currency is the base currency for all monetary totals in this summary.
+	// Empty when all transactions had an empty currency field.
+	Currency string `json:"currency,omitempty"`
+	// RunID is the telemetry run identifier. Empty when telemetry was not active.
+	RunID string `json:"run_id,omitempty"`
+
 	// Row counts
 	TotalLeft       int     `json:"total_left"`
 	TotalRight      int     `json:"total_right"`

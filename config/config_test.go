@@ -594,3 +594,69 @@ pairs:
 		t.Errorf("right ResolvedDuplicatePolicy() = %q, want %q (default)", got, DuplicatePolicyFlag)
 	}
 }
+
+func TestConfigValidate_ResultMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    ResultMode
+		wantErr bool
+	}{
+		{name: "unset is valid", mode: "", wantErr: false},
+		{name: "all is valid", mode: ResultModeAll, wantErr: false},
+		{name: "exceptions_only is valid", mode: ResultModeExceptionsOnly, wantErr: false},
+		{name: "summary_only is valid", mode: ResultModeSummaryOnly, wantErr: false},
+		{name: "unknown value", mode: "unknown", wantErr: true},
+		{name: "typo", mode: "exception_only", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := baseValidConfig()
+			p := cfg.Pairs["p"]
+			p.ResultMode = tc.mode
+			cfg.Pairs["p"] = p
+
+			errs := cfg.Validate()
+			if tc.wantErr && len(errs) == 0 {
+				t.Fatal("expected validation error, got none")
+			}
+			if !tc.wantErr && len(errs) > 0 {
+				t.Fatalf("expected no errors, got: %v", errs)
+			}
+		})
+	}
+}
+
+func TestConfigYAML_ResultMode(t *testing.T) {
+	src := `version: 1
+sources:
+  left:
+    file_pattern: left.csv
+    parser:
+      type: csv
+      date_col: date
+      date_layout: "2006-01-02"
+      amount_col: amount
+      multiplier: 100
+  right:
+    file_pattern: right.csv
+    parser:
+      type: csv
+      date_col: date
+      date_layout: "2006-01-02"
+      amount_col: amount
+      multiplier: 100
+pairs:
+  p:
+    left: left
+    right: right
+    date_window: 0d
+    result_mode: exceptions_only
+`
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(src), &cfg); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	if got := cfg.Pairs["p"].ResultMode; got != ResultModeExceptionsOnly {
+		t.Errorf("ResultMode = %q, want %q", got, ResultModeExceptionsOnly)
+	}
+}

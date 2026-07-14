@@ -42,6 +42,7 @@ Use `go test ./...` for quick verification. Use `make test` when race detection 
 - `parse` formats: `ndjson`, `csv`, `table`, `json`.
 - `reconcile` formats: `json`, `json-stream`, `ndjson`, `csv`, `table`.
 - Prefer `ndjson` or `csv` for large reconciliation jobs.
+- `--result-mode` controls event emission: `all` (default), `exceptions_only` (suppress clean matches), `summary_only` (suppress all item events). Can also be set per-pair as `result_mode` in YAML. CLI flag overrides pair config.
 
 ## Agent Skills
 

@@ -89,6 +89,12 @@ pairs:
     # to 0.5. 1.0 is rejected — the comparison is strict and a score never
     # exceeds 1.0, so that value would never match anything.
     name_match_threshold: 0.5
+    # result_mode controls which events are emitted. Valid values:
+    #   all             — emit every event (default)
+    #   exceptions_only — suppress clean matches; emit diffs, unmatched, duplicates
+    #   summary_only    — suppress all item events; emit only the summary
+    # The CLI flag --result-mode overrides this when explicitly set.
+    # result_mode: exceptions_only
 
   # 1-N source example: reconcile bank against several counterparts in order.
   # Unmatched left transactions from one pass feed into the next — bank rows

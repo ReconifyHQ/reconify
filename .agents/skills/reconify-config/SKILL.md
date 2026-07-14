@@ -24,7 +24,7 @@ Every valid config needs:
 - `sources` with at least one source
 - each source: `file_pattern` and a CSV `parser`
 - each parser: `type: csv`, `date_col`, `date_layout`, `amount_col`, and positive `multiplier`
-- each pair: `left`, `right`, optional `date_window`, non-negative `amount_tolerance_minor`, and `name_mode` of `none` or `tokens`
+- each pair: `left`, `right`, optional `date_window`, non-negative `amount_tolerance_minor`, `name_mode` of `none` or `tokens`, and optional `result_mode` of `all`, `exceptions_only`, or `summary_only`
 
 Optional performance-related fields:
 
