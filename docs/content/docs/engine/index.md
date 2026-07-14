@@ -118,9 +118,11 @@ timezone: Africa/Lagos
 
 index:
   backend: auto                # memory | disk | auto | partitioned
-  spill_dir: /tmp/reconify     # optional for disk/auto
+  spill_dir: /tmp/reconify     # optional for disk/auto/partitioned
   auto_max_right_file_mb: 2048 # optional threshold for auto
   partition_count: 32          # partitioned only; 0 uses the default
+  max_memory_mb: 8192           # optional resource safeguard; 0 is uncapped
+  max_temp_disk_mb: 16384       # optional resource safeguard; 0 is uncapped
 
 sources:
   bank:
@@ -161,6 +163,12 @@ pairs:
 - `memory` (default): highest throughput, right-side index must fit in RAM.
 - `disk`: stores right-side index in a temporary SQLite file; lower RAM, slower point lookups.
 - `auto`: picks `disk` when right file size is above `auto_max_right_file_mb`.
+
+When `max_memory_mb` or `max_temp_disk_mb` is configured, `auto` evaluates
+resource estimates in memory, disk, partitioned order and records the selected
+backend, reason, estimates, and fallback reasons in structured output. Actual
+free space is checked for temporary storage. These are resource safeguards, not
+throughput guarantees; an unmet estimate fails the run explicitly.
 
 ## 1-N source reconciliation
 

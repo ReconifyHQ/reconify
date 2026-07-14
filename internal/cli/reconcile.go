@@ -241,17 +241,13 @@ Formats:
 				if err != nil {
 					return configErrf("right source: %v", err)
 				}
-				if cfg.Index.Backend == "partitioned" {
-					if auditMode {
-						return configErr("--audit is not supported with the partitioned backend")
-					}
-					if err := engine.ReconcilePartitioned(context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, maxTokenBuffer, cfg.Index.PartitionCount); err != nil {
-						return err
-					}
-					if sc != nil && (sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 && failIfUnmatched {
-						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
-					}
-					return nil
+
+				decision, err := chooseIndexBackend(cfg.Index, leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, 1)
+				if err != nil {
+					return fmt.Errorf("select index backend: %w", err)
+				}
+				if decision.Partitioned && auditMode {
+					return configErr("--audit is not supported with the partitioned backend")
 				}
 
 				if auditMode {
@@ -282,8 +278,31 @@ Formats:
 						return fmt.Errorf("audit: set run info: %w", err)
 					}
 				}
+				if err := reportIndexSelection(w, decision.Selection); err != nil {
+					return err
+				}
 
-				idx, backendLabel, err := newRightIndex(cfg.Index, rightPath)
+				if decision.Partitioned {
+					if err := engine.ReconcilePartitionedWithOptions(context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, engine.PartitionedOptions{
+						MaxTokenBuffer: maxTokenBuffer,
+						Partitions:     cfg.Index.PartitionCount,
+						SpillDir:       cfg.Index.SpillDir,
+					}); err != nil {
+						return fmt.Errorf("reconciliation failed: %w", err)
+					}
+					if err := output.Commit(); err != nil {
+						return err
+					}
+					if progress {
+						fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
+					}
+					if sc != nil && (sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 && failIfUnmatched {
+						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+					}
+					return nil
+				}
+
+				idx, err := openSelectedIndex(cfg.Index, decision)
 				if err != nil {
 					return fmt.Errorf("init right index: %w", err)
 				}
@@ -292,10 +311,6 @@ Formats:
 						fmt.Fprintf(os.Stderr, "warning: close index backend: %v\n", closeErr)
 					}
 				}()
-				if progress {
-					fmt.Fprintf(os.Stderr, "progress: index backend=%s\n", backendLabel)
-				}
-
 				progressFn := func(e engine.ProgressEvent) {
 					elapsed := e.Elapsed.Round(time.Second)
 					rate := 0.0
@@ -377,10 +392,11 @@ Formats:
 					if err != nil {
 						return configErrf("counterpart %q: %v", name, err)
 					}
-					idx, _, err := newRightIndex(cfg.Index, path)
+					idx, backendLabel, err := newRightIndex(cfg.Index, path)
 					if err != nil {
 						return fmt.Errorf("init index for counterpart %q: %w", name, err)
 					}
+					fmt.Fprintf(os.Stderr, "index: counterpart=%s %s\n", name, backendLabel)
 					indexes = append(indexes, idx)
 					cps = append(cps, engine.CounterpartStream{
 						SourceName: name,
@@ -481,6 +497,14 @@ func (s *summaryCapture) WriteSummary(sum engine.Summary) error {
 	return s.inner.WriteSummary(sum)
 }
 func (s *summaryCapture) Flush() error { return s.inner.Flush() }
+
+// SetIndexSelection forwards execution metadata to structured writers.
+func (s *summaryCapture) SetIndexSelection(selection engine.IndexSelection) error {
+	if setter, ok := s.inner.(engine.IndexSelectionSetter); ok {
+		return setter.SetIndexSelection(selection)
+	}
+	return nil
+}
 
 // WriteSourceSummary forwards to the inner writer when it implements SourceBreakdownWriter.
 func (s *summaryCapture) WriteSourceSummary(sourceName string, sum engine.Summary) error {
@@ -876,46 +900,32 @@ func startsWithParent(path string) bool {
 	return path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator))
 }
 
-const defaultAutoMaxRightFileMB int64 = 2048
-
 func newRightIndex(indexCfg config.IndexCfg, rightPath string) (engine.RightIndex, string, error) {
-	backend := indexCfg.Backend
-	if backend == "" {
-		backend = "memory"
+	decision, err := chooseIndexBackend(indexCfg, "", rightPath, config.ParserCfg{}, config.ParserCfg{}, config.Pair{}, 1)
+	if err != nil {
+		return nil, "", err
 	}
+	if decision.Partitioned {
+		return nil, "", fmt.Errorf("partitioned backend is not supported for multi-counterpart streaming indexes")
+	}
+	idx, err := openSelectedIndex(indexCfg, decision)
+	if err != nil {
+		return nil, "", err
+	}
+	return idx, decision.Selection.String(), nil
+}
 
-	switch backend {
-	case "memory":
-		return engine.NewMemoryIndex(), "memory", nil
-	case "disk":
-		idx, err := engine.NewDiskIndex(indexCfg.SpillDir)
-		if err != nil {
-			return nil, "", err
-		}
-		if indexCfg.SpillDir == "" {
-			return idx, "disk(tempdir)", nil
-		}
-		return idx, fmt.Sprintf("disk(spill_dir=%s)", indexCfg.SpillDir), nil
-	case "auto":
-		thresholdMB := indexCfg.AutoMaxRightFileMB
-		if thresholdMB <= 0 {
-			thresholdMB = defaultAutoMaxRightFileMB
-		}
-		st, err := os.Stat(rightPath)
-		if err != nil {
-			return nil, "", fmt.Errorf("stat right file for auto backend: %w", err)
-		}
-		rightMB := st.Size() / (1024 * 1024)
-		if rightMB > thresholdMB {
-			idx, err := engine.NewDiskIndex(indexCfg.SpillDir)
-			if err != nil {
-				return nil, "", err
-			}
-			return idx, fmt.Sprintf("disk(auto right_file_mb=%d threshold_mb=%d)", rightMB, thresholdMB), nil
-		}
-		return engine.NewMemoryIndex(), fmt.Sprintf("memory(auto right_file_mb=%d threshold_mb=%d)", rightMB, thresholdMB), nil
-	default:
-		// Guarded by config validation, but keep a safe runtime fallback.
-		return nil, "", fmt.Errorf("unsupported index backend %q", backend)
+func reportIndexSelection(w engine.ResultWriter, selection engine.IndexSelection) error {
+	target := w
+	if capture, ok := w.(*summaryCapture); ok {
+		target = capture.inner
 	}
+	if setter, ok := target.(engine.IndexSelectionSetter); ok {
+		return setter.SetIndexSelection(selection)
+	}
+	fmt.Fprintf(os.Stderr, "index: %s\n", selection.String())
+	for _, fallback := range selection.Fallbacks {
+		fmt.Fprintf(os.Stderr, "index: fallback backend=%s reason=%s\n", fallback.Backend, fallback.Reason)
+	}
+	return nil
 }

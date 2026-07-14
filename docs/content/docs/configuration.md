@@ -245,7 +245,7 @@ Reconify supports multiple right-side index backends:
 |---|---|
 | `memory` | You want the fastest lookups and the right-side file fits comfortably in RAM. |
 | `disk` | You need lower RAM usage and can accept slower lookups. |
-| `auto` | You want Reconify to choose disk indexing above a file-size threshold. |
+| `auto` | You want threshold-compatible selection without budgets, or resource-aware memory/disk/partitioned fallback with budgets. |
 | `partitioned` | You need bounded memory for a large CSV one-to-one reconciliation and can accept extra sequential disk passes. |
 
 ```yaml
@@ -253,7 +253,17 @@ index:
   backend: auto
   spill_dir: "/tmp/reconify"
   auto_max_right_file_mb: 2048
+  max_memory_mb: 8192
+  max_temp_disk_mb: 16384
 ```
+
+`max_memory_mb` and `max_temp_disk_mb` are optional safety budgets. A value of
+zero leaves that configured budget uncapped, while the selector still checks
+actual free temporary-disk space. With no budgets, `auto` keeps its existing
+file-size threshold behavior. With either budget configured, `auto` prefers
+memory, then disk, then partitioned indexing and records why candidates were
+accepted or rejected. These limits protect resources; they are not throughput
+guarantees.
 
 ### Partitioned backend
 

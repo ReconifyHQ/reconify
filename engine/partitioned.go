@@ -12,14 +12,34 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/reconifyhq/reconify/config"
 )
 
+// PartitionedOptions controls temporary storage and partition sizing.
+type PartitionedOptions struct {
+	MaxTokenBuffer int
+	Partitions     int
+	SpillDir       string
+}
+
 // ReconcilePartitioned reconciles exact/reference passes using bounded memory.
 // Grouped and token passes are intentionally rejected because their semantics
 // require cross-partition state.
+// ReconcilePartitioned preserves the original public API and uses the OS
+// temporary directory for partition files.
 func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int) error {
+	return ReconcilePartitionedWithOptions(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, PartitionedOptions{
+		MaxTokenBuffer: maxTokenBuffer,
+		Partitions:     partitions,
+	})
+}
+
+// ReconcilePartitionedWithOptions runs the bounded-memory backend using the
+// configured spill location when provided.
+func ReconcilePartitionedWithOptions(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, options PartitionedOptions) error {
+	partitions := options.Partitions
 	if partitions < 2 {
 		partitions = 32
 	}
@@ -30,10 +50,20 @@ func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			}
 		}
 	}
+	if pair.NameMode == "tokens" {
+		return fmt.Errorf("partitioned backend supports reference matching only")
+	}
 	if leftCfg.RefCol == "" || rightCfg.RefCol == "" {
 		return fmt.Errorf("partitioned backend requires ref_col on both sources")
 	}
-	dir, err := os.MkdirTemp("", "reconify-partitions-*")
+	baseDir := options.SpillDir
+	if baseDir == "" {
+		baseDir = os.TempDir()
+	}
+	if err := os.MkdirAll(baseDir, 0o750); err != nil {
+		return fmt.Errorf("create partition spill base directory: %w", err)
+	}
+	dir, err := os.MkdirTemp(baseDir, "reconify-partitions-*")
 	if err != nil {
 		return fmt.Errorf("create partition directory: %w", err)
 	}
@@ -52,7 +82,7 @@ func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			return err
 		}
 		idx := NewMemoryIndex()
-		err := ReconcileStreaming(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, maxTokenBuffer)
+		err := ReconcileStreaming(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, options.MaxTokenBuffer)
 		closeErr := idx.Close()
 		if err != nil {
 			return err
@@ -139,7 +169,7 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int) ([]s
 	}
 	refIdx := -1
 	for i, col := range header {
-		if col == refCol {
+		if strings.EqualFold(strings.TrimSpace(col), strings.TrimSpace(refCol)) {
 			refIdx = i
 			break
 		}

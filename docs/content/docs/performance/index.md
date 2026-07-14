@@ -102,6 +102,26 @@ one-to-one pairs with one counterpart. Grouped `one_to_many` and `many_to_many`
 passes continue through the existing batch implementation, and multi-source
 pairs should use the `memory` or `disk` backend.
 
+### Resource-aware selection
+
+Use resource budgets when file size alone is not a safe proxy for host capacity:
+
+```yaml
+index:
+  backend: auto
+  spill_dir: /var/tmp/reconify
+  max_memory_mb: 8192
+  max_temp_disk_mb: 16384
+```
+
+The selector estimates parsed index memory, SQLite storage, and partition
+staging from streamed CSV row shape and file statistics. With a budget set,
+`auto` tries memory, then disk, then partitioned indexing. It also checks actual
+free space in `spill_dir`. The selected backend and rejected fallback reasons
+are included in JSON-style metadata and reported on stderr for CSV/table runs.
+Budgets are resource safeguards, not throughput guarantees. If no candidate can
+meet its estimate, the run fails explicitly and does not publish final output.
+
 ### Grouped settlement passes
 
 The `one_to_many` and `many_to_many` passes are batch-only. They need complete

@@ -43,9 +43,11 @@ version: 1
 timezone: "UTC"
 
 index:
-  backend: auto                  # memory | disk | auto
-  spill_dir: "/tmp/reconify"     # optional, used by disk/auto
-  auto_max_right_file_mb: 2048   # optional, default 2048
+  backend: auto                  # memory | disk | auto | partitioned
+  spill_dir: "/tmp/reconify"     # optional, used by disk/auto/partitioned
+  auto_max_right_file_mb: 2048   # optional legacy auto threshold
+  max_memory_mb: 8192            # optional resource safeguard; 0 is uncapped
+  max_temp_disk_mb: 16384        # optional resource safeguard; 0 is uncapped
 
 sources:
   bank:
@@ -129,9 +131,17 @@ Reconify supports multiple right-side index backends for `reconcile`:
 
 - `memory` (default): fastest, highest RAM usage
 - `disk`: lower RAM usage, slower lookups, uses SQLite temp files
-- `auto`: picks `disk` when right file size is above `index.auto_max_right_file_mb`
+- `auto`: preserves the file-size threshold without resource budgets, and uses
+  memory, disk, then partitioned fallbacks when budgets are configured
+- `partitioned`: bounded-memory CSV one-to-one reconciliation with extra disk passes
 
 Use this for large files where in-memory indexing causes GC pressure or OOM risk.
+
+`max_memory_mb` and `max_temp_disk_mb` are safety budgets, not throughput
+guarantees. Auto selection reports the chosen backend, reason, estimates, and
+rejected fallback reasons in JSON-style output and on stderr for CSV/table.
+Runs fail before completion when the selected budget or available temporary
+storage cannot satisfy the estimate.
 
 ## How It Works
 

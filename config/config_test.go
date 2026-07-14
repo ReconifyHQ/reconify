@@ -74,6 +74,29 @@ func TestConfigValidate_IndexAutoMaxRightFileMBNegative(t *testing.T) {
 	}
 }
 
+func TestConfigValidate_IndexResourceBudgets(t *testing.T) {
+	cfg := baseValidConfig()
+	cfg.Index = IndexCfg{Backend: "auto", MaxMemoryMB: 4096, MaxTempDiskMB: 8192}
+	if errs := cfg.Validate(); len(errs) > 0 {
+		t.Fatalf("expected valid resource budgets, got errors: %v", errs)
+	}
+}
+
+func TestConfigValidate_IndexResourceBudgetsNegative(t *testing.T) {
+	for name, index := range map[string]IndexCfg{
+		"memory": {Backend: "memory", MaxMemoryMB: -1},
+		"disk":   {Backend: "disk", MaxTempDiskMB: -1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := baseValidConfig()
+			cfg.Index = index
+			if errs := cfg.Validate(); len(errs) == 0 {
+				t.Fatal("expected validation error for negative resource budget")
+			}
+		})
+	}
+}
+
 func TestCSVParserCfg_GroupColPassthrough(t *testing.T) {
 	yamlSrc := `
 type: csv

@@ -67,6 +67,40 @@ func TestReconcilePartitionedMatchesStreamingResults(t *testing.T) {
 	}
 }
 
+func TestReconcilePartitionedWithOptionsCleansConfiguredSpillDir(t *testing.T) {
+	dir := t.TempDir()
+	spill := filepath.Join(dir, "spill")
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	write := func(path string) {
+		f, err := os.Create(path) // #nosec G304 -- test path is created under t.TempDir().
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		fmt.Fprintln(f, "date,amount,reference")
+		fmt.Fprintln(f, "2026-01-01,100,REF-1")
+	}
+	write(left)
+	write(right)
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "Reference"}
+	var output bytes.Buffer
+	w, err := NewResultWriter("ndjson", &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcilePartitionedWithOptions(context.Background(), "p", "left", "right", left, right, cfg, cfg, config.Pair{}, w, PartitionedOptions{Partitions: 2, SpillDir: spill}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(spill)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("spill entries=%d, want cleanup", len(entries))
+	}
+}
+
 func lastSummaryLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
