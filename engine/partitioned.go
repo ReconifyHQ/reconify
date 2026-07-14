@@ -20,9 +20,24 @@ import (
 // Grouped and token passes are intentionally rejected because their semantics
 // require cross-partition state.
 func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int) error {
+	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, maxTokenBuffer, partitions, nil)
+}
+
+// ReconcilePartitionedWithTelemetry emits partitioning and per-partition
+// lifecycle records without changing bounded-memory reconciliation behavior.
+func ReconcilePartitionedWithTelemetry(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int, telemetry TelemetryOptions) error {
+	reporter := newTelemetryReporter(telemetry)
+	if reporter != nil {
+		defer reporter.close()
+	}
+	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, maxTokenBuffer, partitions, reporter)
+}
+
+func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int, reporter *telemetryReporter) error {
 	if partitions < 2 {
 		partitions = 32
 	}
+	reporter.start("partitioning", leftSource, rightSource, nil)
 	if len(pair.Passes) > 0 {
 		for _, pass := range pair.Passes {
 			if pass.Type != config.PassTypeReferenceOneToOne {
@@ -38,21 +53,24 @@ func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		return fmt.Errorf("create partition directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	leftParts, err := partitionCSV(ctx, leftPath, leftCfg.RefCol, filepath.Join(dir, "left"), partitions)
+	leftParts, leftRows, err := partitionCSV(ctx, leftPath, leftCfg.RefCol, filepath.Join(dir, "left"), partitions, reporter.progress)
 	if err != nil {
 		return fmt.Errorf("partition left source: %w", err)
 	}
-	rightParts, err := partitionCSV(ctx, rightPath, rightCfg.RefCol, filepath.Join(dir, "right"), partitions)
+	rightParts, rightRows, err := partitionCSV(ctx, rightPath, rightCfg.RefCol, filepath.Join(dir, "right"), partitions, func(rows int) {
+		reporter.progress(leftRows + rows)
+	})
 	if err != nil {
 		return fmt.Errorf("partition right source: %w", err)
 	}
+	reporter.complete(leftRows + rightRows)
 	agg := &partitionSummaryWriter{ResultWriter: w}
 	for i := 0; i < partitions; i++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		idx := NewMemoryIndex()
-		err := ReconcileStreaming(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, maxTokenBuffer)
+		err := reconcileStreaming(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, maxTokenBuffer, reporter)
 		closeErr := idx.Close()
 		if err != nil {
 			return err
@@ -61,7 +79,12 @@ func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			return closeErr
 		}
 	}
-	return agg.FlushSummary()
+	reporter.start("finalization", leftSource, rightSource, nil)
+	if err := agg.FlushSummary(); err != nil {
+		return err
+	}
+	reporter.complete(0)
+	return nil
 }
 
 type partitionSummaryWriter struct {
@@ -123,19 +146,19 @@ func addSummaries(a, b Summary) Summary {
 	return a
 }
 
-func partitionCSV(ctx context.Context, input, refCol, prefix string, n int) ([]string, error) {
+func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, progress func(int)) ([]string, int, error) {
 	if n < 2 {
-		return nil, fmt.Errorf("partition count must be at least 2 (got %d)", n)
+		return nil, 0, fmt.Errorf("partition count must be at least 2 (got %d)", n)
 	}
 	in, err := os.Open(input) // #nosec G304 -- input is an explicit caller-selected reconciliation file.
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer func() { _ = in.Close() }()
 	r := csv.NewReader(in)
 	header, err := r.Read()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	refIdx := -1
 	for i, col := range header {
@@ -145,7 +168,7 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int) ([]s
 		}
 	}
 	if refIdx < 0 {
-		return nil, fmt.Errorf("reference column %q not found", refCol)
+		return nil, 0, fmt.Errorf("reference column %q not found", refCol)
 	}
 	files := make([]*os.File, n)
 	writers := make([]*csv.Writer, n)
@@ -161,28 +184,29 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int) ([]s
 	for i := 0; i < n; i++ {
 		paths[i] = fmt.Sprintf("%s-%03d.csv", prefix, i)
 		if err := os.MkdirAll(filepath.Dir(paths[i]), 0o750); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		f, err := os.Create(paths[i])
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		files[i] = f
 		writers[i] = csv.NewWriter(f)
 		if err := writers[i].Write(header); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
+	rows := 0
 	for row := 2; ; row++ {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		record, err := r.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("row %d: %w", row, err)
+			return nil, 0, fmt.Errorf("row %d: %w", row, err)
 		}
 		key := ""
 		if refIdx < len(record) {
@@ -192,14 +216,18 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int) ([]s
 		_, _ = h.Write([]byte(key))
 		p := int(uint64(h.Sum32()) % uint64(n)) // #nosec G115 -- result is bounded by positive partition count.
 		if err := writers[p].Write(record); err != nil {
-			return nil, err
+			return nil, 0, err
+		}
+		rows++
+		if progress != nil {
+			progress(rows)
 		}
 	}
 	for _, w := range writers {
 		w.Flush()
 		if err := w.Error(); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
-	return paths, nil
+	return paths, rows, nil
 }

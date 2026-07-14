@@ -15,3 +15,6 @@ Tool-specific integrations should point back here:
 - `.claude/skills/` and `.codex/skills/` contain thin skill adapters.
 
 Update canonical skills first. Only update adapters when a tool needs a different discovery path.
+
+For any code change and before opening a pull request, agents must run `make check`.
+`AGENTS.md` defines the command and its GitHub Actions-equivalent scope.

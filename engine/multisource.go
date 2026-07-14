@@ -114,6 +114,42 @@ func ReconcileMultiSource(
 	return result, nil
 }
 
+// ReconcileMultiSourceWithTelemetry emits lifecycle events for every counterpart
+// while retaining ReconcileMultiSource's ordered carry-forward semantics.
+func ReconcileMultiSourceWithTelemetry(
+	pairName, leftSource string,
+	left []Transaction,
+	counterparts []CounterpartInput,
+	pair config.Pair,
+	telemetry TelemetryOptions,
+	opts ...ReconcileOptions,
+) (*Result, error) {
+	reporter := newTelemetryReporter(telemetry)
+	if reporter != nil {
+		defer reporter.close()
+	}
+	leftTotal := len(left)
+	names := make([]string, 0, len(counterparts))
+	for _, cp := range counterparts {
+		names = append(names, cp.SourceName)
+	}
+	rightLabel := strings.Join(names, ",")
+	stage := "left_match"
+	if len(pair.Passes) > 0 {
+		stage = "grouped_pass"
+	}
+	reporter.start(stage, leftSource, rightLabel, &leftTotal)
+	result, err := ReconcileMultiSource(pairName, leftSource, left, counterparts, pair, opts...)
+	if err != nil {
+		reporter.fail(leftTotal)
+		return nil, err
+	}
+	reporter.complete(leftTotal)
+	reporter.start("finalization", leftSource, rightLabel, nil)
+	reporter.complete(0)
+	return result, nil
+}
+
 // CounterpartStream describes one streaming counterpart pass: its source name,
 // right-side CSV file path + parser config, and a pre-built (empty) RightIndex
 // that this pass populates. The caller owns the Index (e.g. for Close()), the
@@ -151,6 +187,42 @@ func ReconcileStreamingMultiSource(
 	w ResultWriter,
 	maxLeftBuffer int,
 ) error {
+	return reconcileStreamingMultiSource(ctx, pairName, leftSource, leftPath, leftCfg, counterparts, pair, w, maxLeftBuffer, nil)
+}
+
+// ReconcileStreamingMultiSourceWithTelemetry is the streaming multi-source
+// entry point with typed, best-effort telemetry.
+func ReconcileStreamingMultiSourceWithTelemetry(
+	ctx context.Context,
+	pairName string,
+	leftSource string,
+	leftPath string,
+	leftCfg config.CSVParserCfg,
+	counterparts []CounterpartStream,
+	pair config.Pair,
+	w ResultWriter,
+	maxLeftBuffer int,
+	telemetry TelemetryOptions,
+) error {
+	reporter := newTelemetryReporter(telemetry)
+	if reporter != nil {
+		defer reporter.close()
+	}
+	return reconcileStreamingMultiSource(ctx, pairName, leftSource, leftPath, leftCfg, counterparts, pair, w, maxLeftBuffer, reporter)
+}
+
+func reconcileStreamingMultiSource(
+	ctx context.Context,
+	pairName string,
+	leftSource string,
+	leftPath string,
+	leftCfg config.CSVParserCfg,
+	counterparts []CounterpartStream,
+	pair config.Pair,
+	w ResultWriter,
+	maxLeftBuffer int,
+	reporter *telemetryReporter,
+) error {
 	if len(counterparts) == 0 {
 		return fmt.Errorf("at least one counterpart source is required")
 	}
@@ -185,6 +257,7 @@ func ReconcileStreamingMultiSource(
 		passLeftover, passSummary, leftDups, err := runStreamingPass(
 			ctx, leftSource, cp.SourceName, fromFile, leftPath, leftCfg, rows,
 			cp.RightPath, cp.RightCfg, cp.Index, pair, cc, w,
+			reporter,
 		)
 		if err != nil {
 			return fmt.Errorf("counterpart %q: %w", cp.SourceName, err)
@@ -275,10 +348,15 @@ func ReconcileStreamingMultiSource(
 		}
 	}
 
+	reporter.start("finalization", leftSource, strings.Join(names, ","), nil)
 	if err := w.WriteSummary(aggregate); err != nil {
 		return err
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	reporter.complete(totalLeft + totalRight)
+	return nil
 }
 
 // runStreamingPass executes one counterpart pass: indexes the counterpart's right
@@ -308,6 +386,7 @@ func runStreamingPass(
 	pair config.Pair,
 	cc *currencyTracker,
 	w ResultWriter,
+	reporter *telemetryReporter,
 ) (leftover []Transaction, summary Summary, leftDups []DuplicateGroup, err error) {
 	dateWindowDays, err := parseDateWindow(pair.DateWindow)
 	if err != nil {
@@ -327,9 +406,11 @@ func runStreamingPass(
 		rightLatestBuf = make(map[string]Transaction)
 	}
 	var totalRight int
+	reporter.start("right_index", rightSource, rightSource, nil)
 
 	if perr := ParseCSVEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
 		totalRight++
+		reporter.progress(totalRight)
 		if oerr := cc.Observe(rightSource, tx); oerr != nil {
 			return oerr
 		}
@@ -372,9 +453,11 @@ func runStreamingPass(
 			}
 		}
 	}
+	reporter.complete(totalRight)
 
 	dupTxnCount := 0
 	if rightPolicy == config.DuplicatePolicyFlag && len(rightDupKeys) > 0 {
+		reporter.start("right_duplicate_scan", rightSource, rightSource, nil)
 		groups, derr := collectDuplicates(ctx, rightSource, rightPath, rightCfg, rightDupKeys)
 		if derr != nil {
 			return nil, Summary{}, nil, fmt.Errorf("collect right duplicates: %w", derr)
@@ -385,6 +468,7 @@ func runStreamingPass(
 				return nil, Summary{}, nil, werr
 			}
 		}
+		reporter.complete(dupTxnCount)
 	}
 
 	leftPolicy := leftCfg.ResolvedDuplicatePolicy()
@@ -405,6 +489,7 @@ func runStreamingPass(
 
 	processLeft := func(ltx Transaction) error {
 		totalLeft++
+		reporter.progress(totalLeft)
 		if fromFile {
 			if oerr := cc.Observe(leftSource, ltx); oerr != nil {
 				return oerr
@@ -477,6 +562,7 @@ func runStreamingPass(
 		}
 	}
 
+	reporter.start("left_match", leftSource, rightSource, nil)
 	if fromFile {
 		if perr := ParseCSVEach(ctx, leftSource, leftPath, leftCfg, func(tx Transaction, _ int) error {
 			return processLeft(tx)
@@ -493,7 +579,6 @@ func runStreamingPass(
 			}
 		}
 	}
-
 	// For "latest" (first pass only): process buffered left rows now that the scan
 	// is complete and we know which row is last for each GroupKey.
 	if fromFile && leftPolicy == config.DuplicatePolicyLatest {
@@ -506,13 +591,16 @@ func runStreamingPass(
 			}
 		}
 	}
+	reporter.complete(totalLeft)
 
 	if fromFile && leftPolicy == config.DuplicatePolicyFlag && len(leftDupKeys) > 0 {
+		reporter.start("left_duplicate_scan", leftSource, rightSource, nil)
 		groups, derr := collectDuplicates(ctx, leftSource, leftPath, leftCfg, leftDupKeys)
 		if derr != nil {
 			return nil, Summary{}, nil, fmt.Errorf("collect left duplicates: %w", derr)
 		}
 		leftDups = groups
+		reporter.complete(len(groups))
 	}
 
 	if ierr := idx.IterateUnused(func(tx Transaction) error {
