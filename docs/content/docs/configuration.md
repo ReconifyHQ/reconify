@@ -269,11 +269,12 @@ guarantees.
 
 ### Partitioned backend
 
-`partitioned` hashes the configured reference column in both CSV inputs and
-writes rows into temporary partition files. Reconify then loads one right-side
-partition into memory, streams the matching left-side partition, emits results,
-and releases the partition before continuing. This bounds memory by the largest
-partition rather than by the complete right-side file.
+`partitioned` hashes the configured matching column in both CSV inputs and
+writes rows into temporary partition files. Reconify then externally sorts and
+merge-reads one partition at a time. Grouped passes materialize only the
+current left/right key groups; reference passes use the normal per-partition
+streaming index. This bounds grouped working memory by the largest active
+group plus fixed sort/merge buffers rather than by the complete input.
 
 ```yaml
 index:
@@ -293,7 +294,8 @@ reconify reconcile \
 
 The partitioned backend supports single-counterpart CSV pairs with a consistent
 reference, name, or group-key selector across all passes. `one_to_many` and
-`many_to_many` passes run as bounded batch operations one partition at a time.
+`many_to_many` passes run as bounded grouped streams one key at a time. External
+sort runs use the configured `spill_dir` and are removed when the run finishes.
 Duplicate groups must use the same effective key as partition routing; otherwise
 the CLI rejects partitioning and recommends `memory` or `disk`. Multi-source
 (`rights`) pairs should use `memory` or `disk` until a partition coordinator is

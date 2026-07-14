@@ -13,12 +13,13 @@ import (
 )
 
 const (
-	defaultAutoMaxRightFileMB  int64 = 2048
-	defaultPartitionCount            = 32
-	resourceHeadroomBytes      int64 = 64 << 20
-	resourceRowBytes           int64 = 128
-	resourceMapEntryBytes      int64 = 32
-	resourceGroupedResultBytes int64 = 64
+	defaultAutoMaxRightFileMB      int64 = 2048
+	defaultPartitionCount                = 32
+	resourceHeadroomBytes          int64 = 64 << 20
+	resourceRowBytes               int64 = 128
+	resourceMapEntryBytes          int64 = 32
+	resourceGroupedResultBytes     int64 = 64
+	resourceGroupedSortBufferBytes int64 = 4 << 20
 )
 
 type indexResourceEstimate struct {
@@ -223,10 +224,10 @@ func estimateIndexResourcesFromShapes(left, right inputShape, leftCfg, rightCfg 
 		leftBufferBytes = leftPayloadBytes
 	}
 	if containsBatchOnlyGroupedPass(pair.Passes) {
-		// Grouped reconciliation parses both complete inputs and retains grouped
-		// result references until each batch is emitted.
+		// Grouped reconciliation externally sorts partition rows and retains only
+		// bounded sort buffers plus the current grouped result.
 		leftBufferBytes += leftPayloadBytes + estimateRowPayload(right.rows, right.bytes) +
-			(left.rows+right.rows)*resourceGroupedResultBytes
+			(left.rows+right.rows)*resourceGroupedResultBytes + resourceGroupedSortBufferBytes
 	}
 	estimate.SharedMemoryBytes = leftTrackingBytes + leftBufferBytes
 	estimate.PerIndexMemoryBytes = rightIndexBytes + rightTrackingBytes
@@ -253,9 +254,15 @@ func estimateIndexResourcesFromShapes(left, right inputShape, leftCfg, rightCfg 
 		partitionRightPayload := estimateRowPayload(partitionRows, partitionFieldBytes)
 		partitionResultBytes := (partitionLeftRows + partitionRows) * resourceGroupedResultBytes
 		estimate.PartitionMemoryBytes = resourceHeadroomBytes + partitionIndexBytes + partitionTrackingBytes +
-			partitionLeftTracking + partitionLeftPayload + partitionRightPayload + partitionResultBytes
+			partitionLeftTracking + partitionLeftPayload + partitionRightPayload + partitionResultBytes + resourceGroupedSortBufferBytes
 	}
 	estimate.PartitionTempDiskBytes = estimate.LeftBytes + estimate.RightBytes + resourceHeadroomBytes
+	if containsBatchOnlyGroupedPass(pair.Passes) {
+		// Staging retains the original partitions while external sort runs and
+		// sorted outputs are created. Reserve two additional input-sized copies for
+		// this transient scratch space.
+		estimate.PartitionTempDiskBytes += 2 * (estimate.LeftBytes + estimate.RightBytes)
+	}
 	return estimate
 }
 
