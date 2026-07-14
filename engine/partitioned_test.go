@@ -123,6 +123,50 @@ func TestReconcilePartitionedWithOptionsCleansConfiguredSpillDir(t *testing.T) {
 	}
 }
 
+func TestReconcilePartitionedRejectsMixedCurrenciesAcrossPartitions(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	if err := os.WriteFile(left, []byte("date,amount,currency,reference\n2026-01-01,100,USD,A\n2026-01-01,200,EUR,B\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte("date,amount,currency,reference\n2026-01-01,100,USD,A\n2026-01-01,200,EUR,B\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", CurrencyCol: "currency", RefCol: "reference", SkipRaw: true}
+	w, err := NewResultWriter("ndjson", &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ReconcilePartitioned(context.Background(), "p", "left", "right", left, right, cfg, cfg, config.Pair{}, w, 0, 2)
+	if err == nil || !strings.Contains(err.Error(), "mixed currencies") {
+		t.Fatalf("error=%v, want mixed-currency error", err)
+	}
+}
+
+func TestReconcilePartitionedRejectsUngroupedDuplicateKeyMismatch(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	content := "date,amount,reference,group\n2026-01-01,100,A,G\n"
+	if err := os.WriteFile(left, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference", GroupCol: "group", SkipRaw: true}
+	pair := config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany, GroupBy: config.GroupByReference}}}
+	w, err := NewResultWriter("ndjson", &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ReconcilePartitioned(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, w, 0, 2)
+	if err == nil || !strings.Contains(err.Error(), "duplicate groups use") {
+		t.Fatalf("error=%v, want duplicate co-location error", err)
+	}
+}
+
 func TestReconcilePartitionedTrimsReferenceBeforeHashing(t *testing.T) {
 	dir := t.TempDir()
 	left := filepath.Join(dir, "left.csv")
@@ -269,6 +313,345 @@ func TestReconcilePartitionedPreservesDuplicatePolicyAcrossPartitions(t *testing
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Grouped parity tests
+// ---------------------------------------------------------------------------
+
+func TestReconcilePartitionedMatchesBatchOneToMany(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+
+	// Build data: each group has one left row and two right rows that sum to it.
+	// Use several groups so they spread across partitions with n=4.
+	type group struct{ ref string }
+	groups := []group{{"G1"}, {"G2"}, {"G3"}, {"G4"}, {"G5"}, {"G6"}, {"G7"}, {"G8"}}
+
+	lf, err := os.Create(left) // #nosec G304
+	if err != nil {
+		t.Fatal(err)
+	}
+	rf, err := os.Create(right) // #nosec G304
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintln(lf, "date,amount,reference")
+	fmt.Fprintln(rf, "date,amount,reference")
+	for i, g := range groups {
+		// Left: one row, amount = 300.
+		fmt.Fprintf(lf, "2026-01-01,300,%s\n", g.ref)
+		// Right: two rows that sum to 300.
+		fmt.Fprintf(rf, "2026-01-01,%d,%s\n", 100+i, g.ref)
+		fmt.Fprintf(rf, "2026-01-01,%d,%s\n", 200-i, g.ref)
+	}
+	// Extra right row with no left → unmatched_right.
+	fmt.Fprintln(rf, "2026-01-01,50,UNMATCHED")
+	if err := lf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rf.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference", SkipRaw: true}
+	pair := config.Pair{
+		Left:  "left",
+		Right: "right",
+		Passes: []config.PassConfig{
+			{Type: config.PassTypeOneToMany},
+		},
+	}
+
+	var baseline bytes.Buffer
+	bw, err := NewResultWriter("ndjson", &baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseResult, err := Reconcile("p", "left", "right", mustParse(t, "left", left, cfg), mustParse(t, "right", right, cfg), pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteResult(bw, baseResult); err != nil {
+		t.Fatal(err)
+	}
+
+	// ndjson: line-by-line comparison of sorted events and summary.
+	t.Run("ndjson", func(t *testing.T) {
+		var partBuf bytes.Buffer
+		pw, err := NewResultWriter("ndjson", &partBuf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ReconcilePartitionedWithOptions(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, pw, PartitionedOptions{Partitions: 4}); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := lastSummaryLine(partBuf.String()), lastSummaryLine(baseline.String()); got != want {
+			t.Fatalf("summary mismatch\npartitioned: %s\nbaseline: %s", got, want)
+		}
+		if got, want := sortedEventLines(partBuf.String()), sortedEventLines(baseline.String()); strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("event mismatch: partitioned=%d baseline=%d", len(got), len(want))
+		}
+	})
+
+	// json: compare full marshaled Result objects (json writer sorts deterministically).
+	t.Run("json", func(t *testing.T) {
+		var partBuf bytes.Buffer
+		pw, err := NewResultWriter("json", &partBuf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ReconcilePartitionedWithOptions(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, pw, PartitionedOptions{Partitions: 4}); err != nil {
+			t.Fatal(err)
+		}
+		var baseBuf bytes.Buffer
+		bw2, err := NewResultWriter("json", &baseBuf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteResult(bw2, baseResult); err != nil {
+			t.Fatal(err)
+		}
+		assertJSONResultsMatch(t, baseBuf.Bytes(), partBuf.Bytes())
+	})
+}
+
+func TestReconcilePartitionedMatchesBatchManyToMany(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+
+	lf, err := os.Create(left) // #nosec G304
+	if err != nil {
+		t.Fatal(err)
+	}
+	rf, err := os.Create(right) // #nosec G304
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintln(lf, "date,amount,reference")
+	fmt.Fprintln(rf, "date,amount,reference")
+	// Matched group: two lefts sum = two rights sum (both 300).
+	for _, ref := range []string{"M1", "M2", "M3"} {
+		fmt.Fprintf(lf, "2026-01-01,150,%s\n", ref)
+		fmt.Fprintf(lf, "2026-01-01,150,%s\n", ref)
+		fmt.Fprintf(rf, "2026-01-01,200,%s\n", ref)
+		fmt.Fprintf(rf, "2026-01-01,100,%s\n", ref)
+	}
+	// Amount-diff group.
+	fmt.Fprintln(lf, "2026-01-01,200,AD1")
+	fmt.Fprintln(lf, "2026-01-01,100,AD1")
+	fmt.Fprintln(rf, "2026-01-01,200,AD1")
+	fmt.Fprintln(rf, "2026-01-01,50,AD1")
+	if err := lf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rf.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference", SkipRaw: true}
+	pair := config.Pair{
+		Left:  "left",
+		Right: "right",
+		Passes: []config.PassConfig{
+			{Type: config.PassTypeManyToMany},
+		},
+	}
+
+	var baseline bytes.Buffer
+	bw, err := NewResultWriter("ndjson", &baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseResult, err := Reconcile("p", "left", "right", mustParse(t, "left", left, cfg), mustParse(t, "right", right, cfg), pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteResult(bw, baseResult); err != nil {
+		t.Fatal(err)
+	}
+
+	var partBuf bytes.Buffer
+	pw, err := NewResultWriter("ndjson", &partBuf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcilePartitionedWithOptions(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, pw, PartitionedOptions{Partitions: 4}); err != nil {
+		t.Fatal(err)
+	}
+
+	baseSummary := lastSummaryLine(baseline.String())
+	partSummary := lastSummaryLine(partBuf.String())
+	if baseSummary != partSummary {
+		t.Fatalf("summary mismatch\nbaseline: %s\npartitioned: %s", baseSummary, partSummary)
+	}
+	baseEvents := sortedEventLines(baseline.String())
+	partEvents := sortedEventLines(partBuf.String())
+	if strings.Join(baseEvents, "\n") != strings.Join(partEvents, "\n") {
+		t.Fatalf("event mismatch: baseline=%d partitioned=%d", len(baseEvents), len(partEvents))
+	}
+}
+
+// TestPartitionKeyColumnsGating verifies gating logic for PartitionKeyColumns.
+func TestPartitionKeyColumnsGating(t *testing.T) {
+	refCfg := config.ParserCfg{RefCol: "ref", NameCol: "name", GroupCol: "grp"}
+	noRefCfg := config.ParserCfg{NameCol: "name", GroupCol: "grp"}
+	noNameCfg := config.ParserCfg{RefCol: "ref", GroupCol: "grp"}
+	noGroupCfg := config.ParserCfg{RefCol: "ref", NameCol: "name"}
+
+	tests := []struct {
+		name    string
+		pair    config.Pair
+		left    config.ParserCfg
+		right   config.ParserCfg
+		wantOK  bool
+		wantKey string // expected leftCol when ok
+	}{
+		{
+			name: "no passes uses ref_col",
+			pair: config.Pair{},
+			left: refCfg, right: refCfg,
+			wantOK: true, wantKey: "ref",
+		},
+		{
+			name: "no passes missing ref_col rejected",
+			pair: config.Pair{},
+			left: noRefCfg, right: noRefCfg,
+			wantOK: false,
+		},
+		{
+			name: "reference_one_to_one uses ref_col",
+			pair: config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeReferenceOneToOne}}},
+			left: refCfg, right: refCfg,
+			wantOK: true, wantKey: "ref",
+		},
+		{
+			name: "one_to_many default group_by reference uses ref_col",
+			pair: config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany}}},
+			left: refCfg, right: refCfg,
+			wantOK: true, wantKey: "ref",
+		},
+		{
+			name: "one_to_many group_by group_key uses group_col",
+			pair: config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany, GroupBy: config.GroupByGroupKey}}},
+			left: refCfg, right: refCfg,
+			wantOK: true, wantKey: "grp",
+		},
+		{
+			name: "one_to_many group_by name uses name_col",
+			pair: config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany, GroupBy: config.GroupByName}}},
+			left: refCfg, right: refCfg,
+			wantOK: true, wantKey: "name",
+		},
+		{
+			name: "mixed selectors rejected",
+			pair: config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeReferenceOneToOne}, {Type: config.PassTypeOneToMany, GroupBy: config.GroupByName}}},
+			left: refCfg, right: refCfg,
+			wantOK: false,
+		},
+		{
+			name: "missing ref_col for reference pass rejected",
+			pair: config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeReferenceOneToOne}}},
+			left: noRefCfg, right: noRefCfg,
+			wantOK: false,
+		},
+		{
+			name: "missing name_col for name pass rejected",
+			pair: config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany, GroupBy: config.GroupByName}}},
+			left: noNameCfg, right: noNameCfg,
+			wantOK: false,
+		},
+		{
+			name: "missing group_col for group_key pass rejected",
+			pair: config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany, GroupBy: config.GroupByGroupKey}}},
+			left: noGroupCfg, right: noGroupCfg,
+			wantOK: false,
+		},
+		{
+			name: "name_tokens_one_to_one pass rejected",
+			pair: config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeNameTokensOneToOne}}},
+			left: refCfg, right: refCfg,
+			wantOK: false,
+		},
+		{
+			name: "name_mode tokens rejected",
+			pair: config.Pair{NameMode: "tokens"},
+			left: refCfg, right: refCfg,
+			wantOK: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			leftCol, _, ok, reason := PartitionKeyColumns(tc.pair, tc.left, tc.right)
+			if ok != tc.wantOK {
+				t.Fatalf("ok=%v reason=%q, want ok=%v", ok, reason, tc.wantOK)
+			}
+			if tc.wantOK && leftCol != tc.wantKey {
+				t.Fatalf("leftCol=%q, want %q", leftCol, tc.wantKey)
+			}
+		})
+	}
+}
+
+func mustParse(t *testing.T, sourceName, path string, cfg config.ParserCfg) []Transaction {
+	t.Helper()
+	txns, err := Parse(sourceName, path, cfg)
+	if err != nil {
+		t.Fatalf("parse %s: %v", sourceName, err)
+	}
+	return txns
+}
+
+// assertJSONResultsMatch compares two json-format Result documents by
+// unmarshaling both, stripping generated IDs, sorting all arrays, and
+// comparing canonical forms. Arrays are order-independent (partition order
+// differs from batch order).
+func assertJSONResultsMatch(t *testing.T, baseline, partitioned []byte) {
+	t.Helper()
+	var baseObj, partObj any
+	if err := json.Unmarshal(baseline, &baseObj); err != nil {
+		t.Fatalf("unmarshal baseline json: %v", err)
+	}
+	if err := json.Unmarshal(partitioned, &partObj); err != nil {
+		t.Fatalf("unmarshal partitioned json: %v", err)
+	}
+	sortJSONArrays(baseObj)
+	sortJSONArrays(partObj)
+	baseCanon, _ := json.Marshal(baseObj)
+	partCanon, _ := json.Marshal(partObj)
+	if string(baseCanon) != string(partCanon) {
+		t.Fatalf("json result mismatch\nbaseline:    %s\npartitioned: %s", baseCanon, partCanon)
+	}
+}
+
+// sortJSONArrays sorts every array in the JSON value by its canonical JSON
+// representation so that order-independent comparisons succeed.
+func sortJSONArrays(v any) {
+	switch val := v.(type) {
+	case map[string]any:
+		for k, child := range val {
+			if arr, ok := child.([]any); ok {
+				for _, elem := range arr {
+					sortJSONArrays(elem)
+				}
+				sort.Slice(arr, func(i, j int) bool {
+					bi, _ := json.Marshal(arr[i])
+					bj, _ := json.Marshal(arr[j])
+					return string(bi) < string(bj)
+				})
+				val[k] = arr
+			} else {
+				sortJSONArrays(child)
+			}
+		}
+	case []any:
+		for _, elem := range val {
+			sortJSONArrays(elem)
+		}
+	}
+}
+
 func lastSummaryLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -307,9 +690,6 @@ func sortedEventLines(s string) []string {
 		if err := json.Unmarshal([]byte(line), &value); err != nil {
 			continue
 		}
-		// Partition files restart parser row numbers, so generated synthetic IDs
-		// differ by partition. Business fields and event types remain comparable.
-		stripGeneratedIDs(value)
 		canonical, err := json.Marshal(value)
 		if err == nil {
 			events = append(events, string(canonical))
@@ -317,18 +697,4 @@ func sortedEventLines(s string) []string {
 	}
 	sort.Strings(events)
 	return events
-}
-
-func stripGeneratedIDs(value any) {
-	switch v := value.(type) {
-	case map[string]any:
-		delete(v, "id")
-		for _, child := range v {
-			stripGeneratedIDs(child)
-		}
-	case []any:
-		for _, child := range v {
-			stripGeneratedIDs(child)
-		}
-	}
 }

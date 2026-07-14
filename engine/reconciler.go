@@ -505,6 +505,7 @@ func reconcileStreamingWithOptions(
 
 	if err := ParseEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, rowNum int) error {
 		totalRight++
+		restorePartitionTransactionID(&tx, rightSource, duplicateOptions.rightPartitionOriginalRows, rowNum)
 		if err := cc.Observe(rightSource, tx); err != nil {
 			return err
 		}
@@ -681,6 +682,7 @@ func reconcileStreamingWithOptions(
 
 	if err := ParseEach(ctx, leftSource, leftPath, leftCfg, func(ltx Transaction, rowNum int) error {
 		totalLeft++
+		restorePartitionTransactionID(&ltx, leftSource, duplicateOptions.leftPartitionOriginalRows, rowNum)
 		if err := cc.Observe(leftSource, ltx); err != nil {
 			return err
 		}
@@ -871,6 +873,13 @@ func reconcileStreamingWithOptions(
 	}
 	reporter.complete(totalLeft + totalRight)
 	return nil
+}
+
+func restorePartitionTransactionID(tx *Transaction, source string, originalRows []int, rowNum int) {
+	if len(originalRows) == 0 {
+		return
+	}
+	tx.ID = fmt.Sprintf("%s-%d", source, partitionOriginalRow(originalRows, rowNum))
 }
 
 // matchByNameTokensStreaming runs the Jaccard secondary pass on pre-buffered

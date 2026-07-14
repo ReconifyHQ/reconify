@@ -217,10 +217,10 @@ Formats:
 
 			jobStart := time.Now()
 
-			// Grouped passes need complete groups in memory before they can compare
-			// summed amounts and group dates — this breaks the streaming memory contract.
-			// Route to the batch path when the pair pipeline contains one.
-			if containsBatchOnlyGroupedPass(pair.Passes) {
+			// Grouped passes with multiple counterparts always go to the batch path.
+			// Single-counterpart grouped pairs may use the partitioned backend when
+			// chooseIndexBackend selects it; otherwise they fall through to batch below.
+			if containsBatchOnlyGroupedPass(pair.Passes) && len(counterparts) != 1 {
 				if auditMode {
 					return fmt.Errorf("--audit is not yet supported with grouped passes")
 				}
@@ -228,42 +228,24 @@ Formats:
 				if parseErr != nil {
 					return fmt.Errorf("parse left source: %w", parseErr)
 				}
-				var batchResult *engine.Result
-				if len(counterparts) == 1 {
-					rightSrc := cfg.Sources[counterparts[0]]
-					rightPath := rightPaths[counterparts[0]]
-					rightTxns, rParseErr := engine.ParseWithTelemetry(context.Background(), counterparts[0], rightPath, rightSrc.Parser, pair.Left, telemetry)
-					if rParseErr != nil {
-						return fmt.Errorf("parse right source: %w", rParseErr)
+				cps := make([]engine.CounterpartInput, 0, len(counterparts))
+				for _, name := range counterparts {
+					src := cfg.Sources[name]
+					cpPath := rightPaths[name]
+					cpTxns, cpParseErr := engine.ParseWithTelemetry(context.Background(), name, cpPath, src.Parser, pair.Left, telemetry)
+					if cpParseErr != nil {
+						return fmt.Errorf("parse counterpart %q: %w", name, cpParseErr)
 					}
-					batchResult, parseErr = engine.ReconcileWithTelemetry(pairName, pair.Left, counterparts[0], leftTxns, rightTxns, pair, telemetry,
-						engine.ReconcileOptions{
-							LeftPolicy:  leftSrc.Parser.ResolvedDuplicatePolicy(),
-							RightPolicy: rightSrc.Parser.ResolvedDuplicatePolicy(),
-						})
-					if parseErr != nil {
-						return fmt.Errorf("reconciliation failed: %w", parseErr)
-					}
-				} else {
-					cps := make([]engine.CounterpartInput, 0, len(counterparts))
-					for _, name := range counterparts {
-						src := cfg.Sources[name]
-						cpPath := rightPaths[name]
-						cpTxns, cpParseErr := engine.ParseWithTelemetry(context.Background(), name, cpPath, src.Parser, pair.Left, telemetry)
-						if cpParseErr != nil {
-							return fmt.Errorf("parse counterpart %q: %w", name, cpParseErr)
-						}
-						cps = append(cps, engine.CounterpartInput{
-							SourceName:   name,
-							Transactions: cpTxns,
-							ParserCfg:    src.Parser,
-						})
-					}
-					batchResult, parseErr = engine.ReconcileMultiSourceWithTelemetry(pairName, pair.Left, leftTxns, cps, pair, telemetry,
-						engine.ReconcileOptions{LeftPolicy: leftSrc.Parser.ResolvedDuplicatePolicy()})
-					if parseErr != nil {
-						return fmt.Errorf("reconciliation failed: %w", parseErr)
-					}
+					cps = append(cps, engine.CounterpartInput{
+						SourceName:   name,
+						Transactions: cpTxns,
+						ParserCfg:    src.Parser,
+					})
+				}
+				batchResult, parseErr := engine.ReconcileMultiSourceWithTelemetry(pairName, pair.Left, leftTxns, cps, pair, telemetry,
+					engine.ReconcileOptions{LeftPolicy: leftSrc.Parser.ResolvedDuplicatePolicy()})
+				if parseErr != nil {
+					return fmt.Errorf("reconciliation failed: %w", parseErr)
 				}
 				if drainErr := drainResultToWriter(w, batchResult); drainErr != nil {
 					return drainErr
@@ -347,6 +329,43 @@ Formats:
 						fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 					}
 					if sc != nil && (sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 && failIfUnmatched {
+						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+					}
+					return nil
+				}
+
+				// Grouped passes that did not qualify for the partitioned backend fall
+				// back to the in-memory batch path (streaming cannot handle groups).
+				if containsBatchOnlyGroupedPass(pair.Passes) {
+					if auditMode {
+						return fmt.Errorf("--audit is not yet supported with grouped passes")
+					}
+					leftTxns, parseErr := engine.ParseWithTelemetry(context.Background(), pair.Left, leftPath, leftSrc.Parser, counterparts[0], telemetry)
+					if parseErr != nil {
+						return fmt.Errorf("parse left source: %w", parseErr)
+					}
+					rightTxns, rParseErr := engine.ParseWithTelemetry(context.Background(), counterparts[0], rightPath, rightSrc.Parser, pair.Left, telemetry)
+					if rParseErr != nil {
+						return fmt.Errorf("parse right source: %w", rParseErr)
+					}
+					batchResult, batchErr := engine.ReconcileWithTelemetry(pairName, pair.Left, counterparts[0], leftTxns, rightTxns, pair, telemetry,
+						engine.ReconcileOptions{
+							LeftPolicy:  leftSrc.Parser.ResolvedDuplicatePolicy(),
+							RightPolicy: rightSrc.Parser.ResolvedDuplicatePolicy(),
+						})
+					if batchErr != nil {
+						return fmt.Errorf("reconciliation failed: %w", batchErr)
+					}
+					if drainErr := drainResultToWriter(w, batchResult); drainErr != nil {
+						return drainErr
+					}
+					if commitErr := output.Commit(); commitErr != nil {
+						return commitErr
+					}
+					if progress {
+						fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
+					}
+					if failIfUnmatched && (batchResult.Summary.UnmatchedLeft+batchResult.Summary.UnmatchedRight) > 0 {
 						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
 					}
 					return nil

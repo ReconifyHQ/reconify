@@ -133,7 +133,7 @@ Reconify supports multiple right-side index backends for `reconcile`:
 - `disk`: lower RAM usage, slower lookups, uses SQLite temp files
 - `auto`: preserves the file-size threshold without resource budgets, and uses
   memory, disk, then partitioned fallbacks when budgets are configured
-- `partitioned`: bounded-memory CSV one-to-one reconciliation with extra disk passes
+- `partitioned`: bounded-memory single-counterpart CSV reconciliation, including grouped passes, with extra disk passes
 
 Use this for large files where in-memory indexing causes GC pressure or OOM risk.
 
