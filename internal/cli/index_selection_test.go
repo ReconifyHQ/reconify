@@ -162,3 +162,57 @@ func TestEstimateIndexResourcesIncludesStreamTracking(t *testing.T) {
 		t.Fatalf("estimate=%+v, want left rows and shared tracking included", estimate)
 	}
 }
+
+func TestChooseIndexBackendRejectsDiskForGroupedPasses(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	writeSelectionCSV(t, left)
+	writeSelectionCSV(t, right)
+	pair := config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany}}}
+	_, err := chooseIndexBackend(config.IndexCfg{Backend: "disk"}, left, right, selectionParser(), selectionParser(), pair, 1)
+	if err == nil || !strings.Contains(err.Error(), "disk backend does not support grouped passes") {
+		t.Fatalf("error=%v, want grouped disk rejection", err)
+	}
+}
+
+func TestPartitionedEligibilityRequiresDuplicateGroupColocation(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	writeSelectionCSV(t, left)
+	writeSelectionCSV(t, right)
+	pair := config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany, GroupBy: config.GroupByReference}}}
+	cfg := selectionParser()
+	cfg.GroupCol = "Group"
+	if reason, ok := partitionedEligible(left, right, cfg, cfg, pair, 1); ok || !strings.Contains(reason, "duplicate groups use") {
+		t.Fatalf("reason=%q, ok=%v, want duplicate co-location rejection", reason, ok)
+	}
+
+	cfg.GroupCol = "" // GroupKey falls back to RefCol; it is not "no groups".
+	cfg.NameCol = "Name"
+	pair.Passes[0].GroupBy = config.GroupByName
+	if reason, ok := partitionedEligible(left, right, cfg, cfg, pair, 1); ok || !strings.Contains(reason, "duplicate groups use") {
+		t.Fatalf("reason=%q, ok=%v, want fallback GroupKey rejection", reason, ok)
+	}
+}
+
+func TestEstimateIndexResourcesIncludesGroupedWorkingSet(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	writeSelectionCSV(t, left)
+	writeSelectionCSV(t, right)
+	plain, err := estimateIndexResources(left, right, selectionParser(), selectionParser(), config.Pair{}, 2, 1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupedPair := config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany}}}
+	grouped, err := estimateIndexResources(left, right, selectionParser(), selectionParser(), groupedPair, 2, 1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grouped.PartitionMemoryBytes <= plain.PartitionMemoryBytes || grouped.MemoryIndexBytes <= plain.MemoryIndexBytes {
+		t.Fatalf("plain=%+v grouped=%+v, want grouped working-set overhead", plain, grouped)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,9 +25,9 @@ type PartitionedOptions struct {
 	SpillDir       string
 }
 
-// ReconcilePartitioned reconciles exact/reference passes using bounded memory.
-// Grouped and token passes are intentionally rejected because their semantics
-// require cross-partition state.
+// ReconcilePartitioned reconciles supported passes using bounded memory. Grouped
+// passes run as complete batch operations within one partition; token passes
+// remain unsupported because their fallback buffer can span partitions.
 func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int) error {
 	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, PartitionedOptions{
 		MaxTokenBuffer: maxTokenBuffer,
@@ -65,54 +66,57 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		partitions = 32
 	}
 	reporter.start("partitioning", leftSource, rightSource, nil)
-	if len(pair.Passes) > 0 {
-		for _, pass := range pair.Passes {
-			if pass.Type != config.PassTypeReferenceOneToOne {
-				return fmt.Errorf("partitioned backend supports reference_one_to_one only (got %q)", pass.Type)
-			}
-		}
+	leftKeyCol, rightKeyCol, ok, reason := PartitionKeyColumns(pair, leftCfg, rightCfg)
+	if !ok {
+		return fmt.Errorf("partitioned backend: %s", reason)
 	}
-	if pair.NameMode == "tokens" {
-		return fmt.Errorf("partitioned backend supports reference matching only")
+	if safe, reason := PartitionDuplicateSafe(pair, leftCfg, rightCfg); !safe {
+		return fmt.Errorf("partitioned backend: %s", reason)
 	}
-	if leftCfg.RefCol == "" || rightCfg.RefCol == "" {
-		return fmt.Errorf("partitioned backend requires ref_col on both sources")
+	if err := validatePartitionCurrencies(ctx, leftSource, leftPath, leftCfg, rightSource, rightPath, rightCfg); err != nil {
+		return err
 	}
 
-	// Duplicate groups are keyed independently from the reference used for
-	// partition routing. Discover flagged groups from the complete inputs before
-	// partitioning so a group whose rows span multiple reference partitions has
-	// the same semantics as the regular streaming backend.
+	// For grouped passes, partition routing uses the same key as duplicate-group
+	// detection, so all members of every duplicate group land in the same
+	// partition. Per-partition Reconcile handles detection correctly; the
+	// pre-scan and cross-partition duplicate merge used by the streaming path
+	// are not needed and must be skipped to avoid double-emitting events.
+	isGrouped := containsGroupedPass(pair.Passes)
 	var rightDuplicateKeys map[string]bool
 	var rightDuplicateGroups []DuplicateGroup
 	var rightRepresentativeRows map[string]int
-	if rightCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
-		var err error
-		rightDuplicateKeys, rightDuplicateGroups, err = collectPartitionDuplicateGroups(ctx, rightSource, rightPath, rightCfg)
-		if err != nil {
-			return fmt.Errorf("collect right duplicates: %w", err)
-		}
-	} else if policy := rightCfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
-		var err error
-		rightRepresentativeRows, err = collectPartitionDuplicateRepresentatives(ctx, rightSource, rightPath, rightCfg, policy == config.DuplicatePolicyLatest)
-		if err != nil {
-			return fmt.Errorf("collect right duplicate representatives: %w", err)
+	if !isGrouped {
+		if rightCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
+			var err error
+			rightDuplicateKeys, rightDuplicateGroups, err = collectPartitionDuplicateGroups(ctx, rightSource, rightPath, rightCfg)
+			if err != nil {
+				return fmt.Errorf("collect right duplicates: %w", err)
+			}
+		} else if policy := rightCfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
+			var err error
+			rightRepresentativeRows, err = collectPartitionDuplicateRepresentatives(ctx, rightSource, rightPath, rightCfg, policy == config.DuplicatePolicyLatest)
+			if err != nil {
+				return fmt.Errorf("collect right duplicate representatives: %w", err)
+			}
 		}
 	}
 	var leftDuplicateKeys map[string]bool
 	var leftDuplicateGroups []DuplicateGroup
 	var leftRepresentativeRows map[string]int
-	if leftCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
-		var err error
-		leftDuplicateKeys, leftDuplicateGroups, err = collectPartitionDuplicateGroups(ctx, leftSource, leftPath, leftCfg)
-		if err != nil {
-			return fmt.Errorf("collect left duplicates: %w", err)
-		}
-	} else if policy := leftCfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
-		var err error
-		leftRepresentativeRows, err = collectPartitionDuplicateRepresentatives(ctx, leftSource, leftPath, leftCfg, policy == config.DuplicatePolicyLatest)
-		if err != nil {
-			return fmt.Errorf("collect left duplicate representatives: %w", err)
+	if !isGrouped {
+		if leftCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
+			var err error
+			leftDuplicateKeys, leftDuplicateGroups, err = collectPartitionDuplicateGroups(ctx, leftSource, leftPath, leftCfg)
+			if err != nil {
+				return fmt.Errorf("collect left duplicates: %w", err)
+			}
+		} else if policy := leftCfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
+			var err error
+			leftRepresentativeRows, err = collectPartitionDuplicateRepresentatives(ctx, leftSource, leftPath, leftCfg, policy == config.DuplicatePolicyLatest)
+			if err != nil {
+				return fmt.Errorf("collect left duplicate representatives: %w", err)
+			}
 		}
 	}
 	baseDir := options.SpillDir
@@ -127,11 +131,11 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		return fmt.Errorf("create partition directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	leftParts, leftRows, leftOriginalRows, err := partitionCSV(ctx, leftPath, leftCfg.RefCol, filepath.Join(dir, "left"), partitions, reporter.progress)
+	leftParts, leftRows, leftOriginalRows, err := partitionCSV(ctx, leftPath, leftKeyCol, filepath.Join(dir, "left"), partitions, reporter.progress)
 	if err != nil {
 		return fmt.Errorf("partition left source: %w", err)
 	}
-	rightParts, rightRows, rightOriginalRows, err := partitionCSV(ctx, rightPath, rightCfg.RefCol, filepath.Join(dir, "right"), partitions, func(rows int) {
+	rightParts, rightRows, rightOriginalRows, err := partitionCSV(ctx, rightPath, rightKeyCol, filepath.Join(dir, "right"), partitions, func(rows int) {
 		reporter.progress(leftRows + rows)
 	})
 	if err != nil {
@@ -144,25 +148,61 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		}
 	}
 	agg := &partitionSummaryWriter{ResultWriter: w}
-	for i := 0; i < partitions; i++ {
-		if err := ctx.Err(); err != nil {
-			return err
+	if isGrouped {
+		// Grouped passes require whole-group state. Because we partition by the
+		// group key every member of a group lands in the same partition, so we
+		// can safely parse each partition into memory and run the batch reconciler.
+		// WriteResultEvents emits the format-unsupported warning on the first
+		// partition only (suppressWarnings=true for i>0).
+		for i := 0; i < partitions; i++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			leftTxns, err := Parse(leftSource, leftParts[i], leftCfg)
+			if err != nil {
+				return fmt.Errorf("parse left partition %d: %w", i, err)
+			}
+			restorePartitionIDs(leftTxns, leftSource, leftOriginalRows[i])
+			rightTxns, err := Parse(rightSource, rightParts[i], rightCfg)
+			if err != nil {
+				return fmt.Errorf("parse right partition %d: %w", i, err)
+			}
+			restorePartitionIDs(rightTxns, rightSource, rightOriginalRows[i])
+			res, err := ReconcileWithTelemetry(pairName, leftSource, rightSource, leftTxns, rightTxns, pair, TelemetryOptions{}, ReconcileOptions{
+				LeftPolicy:  leftCfg.ResolvedDuplicatePolicy(),
+				RightPolicy: rightCfg.ResolvedDuplicatePolicy(),
+			})
+			if err != nil {
+				return fmt.Errorf("reconcile partition %d: %w", i, err)
+			}
+			if err := WriteResultEvents(agg, res, i > 0); err != nil {
+				return fmt.Errorf("write partition %d events: %w", i, err)
+			}
+			if err := agg.WriteSummary(res.Summary); err != nil {
+				return fmt.Errorf("write partition %d summary: %w", i, err)
+			}
 		}
-		idx := NewMemoryIndex()
-		err := reconcileStreamingWithOptions(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
-			globalRightDuplicateKeys:      rightDuplicateKeys,
-			globalLeftDuplicateKeys:       leftDuplicateKeys,
-			globalRightRepresentativeRows: rightRepresentativeRows,
-			globalLeftRepresentativeRows:  leftRepresentativeRows,
-			rightPartitionOriginalRows:    rightOriginalRows[i],
-			leftPartitionOriginalRows:     leftOriginalRows[i],
-		})
-		closeErr := idx.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
+	} else {
+		for i := 0; i < partitions; i++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			idx := NewMemoryIndex()
+			err := reconcileStreamingWithOptions(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
+				globalRightDuplicateKeys:      rightDuplicateKeys,
+				globalLeftDuplicateKeys:       leftDuplicateKeys,
+				globalRightRepresentativeRows: rightRepresentativeRows,
+				globalLeftRepresentativeRows:  leftRepresentativeRows,
+				rightPartitionOriginalRows:    rightOriginalRows[i],
+				leftPartitionOriginalRows:     leftOriginalRows[i],
+			})
+			closeErr := idx.Close()
+			if err != nil {
+				return err
+			}
+			if closeErr != nil {
+				return closeErr
+			}
 		}
 	}
 	for _, group := range leftDuplicateGroups {
@@ -176,6 +216,31 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 	}
 	reporter.complete(0)
 	return nil
+}
+
+func validatePartitionCurrencies(ctx context.Context, leftSource, leftPath string, leftCfg config.ParserCfg, rightSource, rightPath string, rightCfg config.ParserCfg) error {
+	cc := currencyTracker{}
+	if err := ParseEach(ctx, leftSource, leftPath, leftCfg, func(tx Transaction, _ int) error {
+		return cc.Observe(leftSource, tx)
+	}); err != nil {
+		return fmt.Errorf("validate left currencies: %w", err)
+	}
+	if err := ParseEach(ctx, rightSource, rightPath, rightCfg, func(tx Transaction, _ int) error {
+		return cc.Observe(rightSource, tx)
+	}); err != nil {
+		return fmt.Errorf("validate right currencies: %w", err)
+	}
+	return nil
+}
+
+func restorePartitionIDs(txns []Transaction, source string, originalRows []int) {
+	for i := range txns {
+		row := i + 1
+		if i < len(originalRows) {
+			row = originalRows[i]
+		}
+		txns[i].ID = fmt.Sprintf("%s-%d", source, row)
+	}
 }
 
 func collectPartitionDuplicateGroups(ctx context.Context, sourceName, path string, cfg config.ParserCfg) (map[string]bool, []DuplicateGroup, error) {
@@ -231,6 +296,61 @@ func (w *partitionSummaryWriter) WriteSummary(s Summary) error {
 
 func (w *partitionSummaryWriter) Flush() error { return nil }
 
+// GroupedEventWriter forwarding — prevents the embedded ResultWriter interface
+// from hiding the inner concrete writer's optional methods.
+func (w *partitionSummaryWriter) WriteGroupedMatch(p GroupedMatchedPair) error {
+	if gw, ok := w.ResultWriter.(GroupedEventWriter); ok {
+		return gw.WriteGroupedMatch(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteGroupedAmountDiff(p GroupedAmountDiffPair) error {
+	if gw, ok := w.ResultWriter.(GroupedEventWriter); ok {
+		return gw.WriteGroupedAmountDiff(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteGroupedTimingDiff(p GroupedTimingDiffPair) error {
+	if gw, ok := w.ResultWriter.(GroupedEventWriter); ok {
+		return gw.WriteGroupedTimingDiff(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteAmbiguousGroup(p AmbiguousGroupPair) error {
+	if gw, ok := w.ResultWriter.(GroupedEventWriter); ok {
+		return gw.WriteAmbiguousGroup(p)
+	}
+	return nil
+}
+
+// ManyToManyEventWriter forwarding.
+func (w *partitionSummaryWriter) WriteManyToManyMatch(p ManyToManyMatchedPair) error {
+	if mw, ok := w.ResultWriter.(ManyToManyEventWriter); ok {
+		return mw.WriteManyToManyMatch(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteManyToManyAmountDiff(p ManyToManyAmountDiffPair) error {
+	if mw, ok := w.ResultWriter.(ManyToManyEventWriter); ok {
+		return mw.WriteManyToManyAmountDiff(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteManyToManyTimingDiff(p ManyToManyTimingDiffPair) error {
+	if mw, ok := w.ResultWriter.(ManyToManyEventWriter); ok {
+		return mw.WriteManyToManyTimingDiff(p)
+	}
+	return nil
+}
+
+// SourceBreakdownWriter forwarding.
+func (w *partitionSummaryWriter) WriteSourceSummary(sourceName string, sum Summary) error {
+	if sbw, ok := w.ResultWriter.(SourceBreakdownWriter); ok {
+		return sbw.WriteSourceSummary(sourceName, sum)
+	}
+	return nil
+}
+
 func (w *partitionSummaryWriter) FlushSummary() error {
 	if !w.seen {
 		return w.ResultWriter.WriteSummary(Summary{})
@@ -279,13 +399,16 @@ func addSummaries(a, b Summary) Summary {
 		denom = a.TotalRight
 	}
 	if denom > 0 {
-		a.MatchRatePct = float64(a.MatchedCount) * 100 / float64(denom)
-		a.ReconciledRatePct = float64(a.MatchedCount+a.AmountDiffCount+a.TimingDiffCount) * 100 / float64(denom)
+		a.MatchRatePct = math.Round(float64(a.MatchedCount)/float64(denom)*10000) / 100
+		reconciledCount := a.MatchedCount + a.AmountDiffCount + a.TimingDiffCount +
+			a.GroupedMatchedCount + a.GroupedAmountDiffCount + a.GroupedTimingDiffCount +
+			a.ManyToManyMatchedCount + a.ManyToManyAmountDiffCount + a.ManyToManyTimingDiffCount
+		a.ReconciledRatePct = math.Round(float64(reconciledCount)/float64(denom)*10000) / 100
 	}
 	return a
 }
 
-func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, progress func(int)) ([]string, int, [][]int, error) {
+func partitionCSV(ctx context.Context, input, keyCol, prefix string, n int, progress func(int)) ([]string, int, [][]int, error) {
 	if n < 2 {
 		return nil, 0, nil, fmt.Errorf("partition count must be at least 2 (got %d)", n)
 	}
@@ -302,13 +425,13 @@ func partitionCSV(ctx context.Context, input, refCol, prefix string, n int, prog
 	}
 	refIdx := -1
 	for i, col := range header {
-		if strings.EqualFold(strings.TrimSpace(col), strings.TrimSpace(refCol)) {
+		if strings.EqualFold(strings.TrimSpace(col), strings.TrimSpace(keyCol)) {
 			refIdx = i
 			break
 		}
 	}
 	if refIdx < 0 {
-		return nil, 0, nil, fmt.Errorf("reference column %q not found", refCol)
+		return nil, 0, nil, fmt.Errorf("partition key column %q not found", keyCol)
 	}
 	files := make([]*os.File, n)
 	writers := make([]*csv.Writer, n)

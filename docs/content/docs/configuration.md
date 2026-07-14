@@ -248,7 +248,7 @@ Reconify supports multiple right-side index backends:
 | `memory` | You want the fastest lookups and the right-side file fits comfortably in RAM. |
 | `disk` | You need lower RAM usage and can accept slower lookups. |
 | `auto` | You want threshold-compatible selection without budgets, or resource-aware memory/disk/partitioned fallback with budgets. |
-| `partitioned` | You need bounded memory for a large CSV one-to-one reconciliation and can accept extra sequential disk passes. |
+| `partitioned` | You need bounded memory for a large single-counterpart CSV reconciliation, including grouped passes, and can accept extra sequential disk passes. |
 
 ```yaml
 index:
@@ -291,12 +291,13 @@ reconify reconcile \
   --out results.ndjson
 ```
 
-The partitioned backend currently supports CSV reference-based one-to-one
-reconciliation with `ref_col` configured on both sources. `one_to_many` and
-`many_to_many` passes continue through the existing grouped batch path, and
-multi-source (`rights`) pairs should use `memory` or `disk` until a partition
-coordinator is available. Partitioning must use the same effective reference
-value on both sides; reference normalization should happen before partitioning.
+The partitioned backend supports single-counterpart CSV pairs with a consistent
+reference, name, or group-key selector across all passes. `one_to_many` and
+`many_to_many` passes run as bounded batch operations one partition at a time.
+Duplicate groups must use the same effective key as partition routing; otherwise
+the CLI rejects partitioning and recommends `memory` or `disk`. Multi-source
+(`rights`) pairs should use `memory` or `disk` until a partition coordinator is
+available. Key normalization should happen before partitioning.
 
 ## Result emission modes
 

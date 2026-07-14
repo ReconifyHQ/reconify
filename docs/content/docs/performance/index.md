@@ -94,7 +94,7 @@ Go runtime. A telemetry sink failure does not interrupt the reconciliation.
 
 ### Bounded-memory partitioning
 
-For a large CSV one-to-one reconciliation, select the partitioned backend:
+For a large CSV reconciliation, select the partitioned backend:
 
 ```yaml
 index:
@@ -102,22 +102,24 @@ index:
   partition_count: 64
 ```
 
-Reconify first hashes the reference value in both inputs and writes each row to
-one of `partition_count` temporary files. It then repeats the normal streaming
-reconciliation for each partition: the right partition is indexed in memory,
-the corresponding left partition is streamed, and the temporary index is
-released. Equal reference values always select the same partition, so the
-matching algorithm remains unchanged while peak memory is bounded by the
-largest partition.
+Reconify first hashes the configured matching/grouping key in both inputs and
+writes each row to one of `partition_count` temporary files. For reference
+passes it repeats the normal streaming reconciliation per partition. For
+`one_to_many` and `many_to_many`, it loads and reconciles one complete pair of
+partitions at a time so grouped keys remain intact. Equal keys always select
+the same partition, so peak working memory is bounded by the largest partition.
 
 `partition_count: 0` uses the default of 32; explicit values must be at least 2.
 More partitions reduce memory but increase partition-file overhead and disk
 passes. Use `ndjson` or `csv` output so results do not accumulate in memory.
 
-The partitioned backend currently applies only to CSV reference-based
-one-to-one pairs with one counterpart. Grouped `one_to_many` and `many_to_many`
-passes continue through the existing batch implementation, and multi-source
-pairs should use the `memory` or `disk` backend.
+The partitioned backend applies to single-counterpart CSV pairs using a
+consistent reference, name, or group-key selector across all passes. Duplicate
+policies are supported when each duplicate group is co-located with the
+partition key; otherwise the CLI rejects partitioning to preserve global
+duplicate semantics. Grouped passes are batch operations within each partition,
+not whole-file batch operations. Multi-source pairs should use `memory` or
+`disk`.
 
 ### Resource-aware selection
 
@@ -141,10 +143,11 @@ meet its estimate, the run fails explicitly and does not publish final output.
 
 ### Grouped settlement passes
 
-The `one_to_many` and `many_to_many` passes are batch-only. They need complete
-groups in memory before they can sum amounts, compare group dates, and decide
-which rows to consume. The grouping itself is linear in row count, but peak memory
-is higher than the streaming 1:1 path because both side groups are held at once.
+The `one_to_many` and `many_to_many` passes are batch operations within a
+partition. They need complete groups in memory before they can sum amounts,
+compare group dates, and decide which rows to consume. Partitioning keeps this
+working set bounded by the largest partition; a single unusually large group can
+still require substantial memory.
 
 `many_to_many` does not perform subset-sum or fuzzy combination search. It only
 groups rows by an explicit key such as a payout ID, invoice ID, settlement ID, or

@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	defaultAutoMaxRightFileMB int64 = 2048
-	defaultPartitionCount           = 32
-	resourceHeadroomBytes     int64 = 64 << 20
-	resourceRowBytes          int64 = 128
-	resourceMapEntryBytes     int64 = 32
+	defaultAutoMaxRightFileMB  int64 = 2048
+	defaultPartitionCount            = 32
+	resourceHeadroomBytes      int64 = 64 << 20
+	resourceRowBytes           int64 = 128
+	resourceMapEntryBytes      int64 = 32
+	resourceGroupedResultBytes int64 = 64
 )
 
 type indexResourceEstimate struct {
@@ -86,9 +87,18 @@ func chooseAutoBackend(indexCfg config.IndexCfg, leftPath, rightPath string, lef
 
 	candidates := []string{"memory", "disk", "partitioned"}
 	if !resourcePolicy {
-		if estimate.RightBytes/(1024*1024) <= threshold {
+		switch {
+		case containsBatchOnlyGroupedPass(pair.Passes) && estimate.RightBytes/(1024*1024) <= threshold:
+			// Disk is a right-side streaming index and cannot execute grouped
+			// passes. Prefer bounded partitioning once memory is over threshold.
+			candidates = []string{"memory", "partitioned"}
+		case containsBatchOnlyGroupedPass(pair.Passes):
+			// Disk is a right-side streaming index and cannot execute grouped
+			// passes. Prefer bounded partitioning once memory is over threshold.
+			candidates = []string{"partitioned"}
+		case estimate.RightBytes/(1024*1024) <= threshold:
 			candidates = []string{"memory", "disk"}
-		} else {
+		default:
 			candidates = []string{"disk"}
 		}
 	}
@@ -116,6 +126,9 @@ func backendFits(backend string, indexCfg config.IndexCfg, leftPath, rightPath s
 		}
 		return "memory estimate fits configured policy", true
 	case "disk":
+		if containsBatchOnlyGroupedPass(pair.Passes) {
+			return "disk backend does not support grouped passes; use memory or partitioned", false
+		}
 		if indexCfg.MaxMemoryMB > 0 && estimate.DiskMemoryBytes > mbToBytes(indexCfg.MaxMemoryMB) {
 			return fmt.Sprintf("estimated disk memory %s exceeds max_memory_mb=%d", formatBytes(estimate.DiskMemoryBytes), indexCfg.MaxMemoryMB), false
 		}
@@ -160,16 +173,12 @@ func partitionedEligible(leftPath, rightPath string, leftCfg, rightCfg config.Pa
 	if !isCSVPath(leftPath, leftCfg) || !isCSVPath(rightPath, rightCfg) {
 		return "partitioned backend supports CSV inputs only", false
 	}
-	if leftCfg.RefCol == "" || rightCfg.RefCol == "" {
-		return "partitioned backend requires ref_col on both sources", false
+	_, _, ok, reason := engine.PartitionKeyColumns(pair, leftCfg, rightCfg)
+	if !ok {
+		return reason, false
 	}
-	if pair.NameMode == "tokens" {
-		return "partitioned backend does not support name-token matching", false
-	}
-	for _, pass := range pair.Passes {
-		if pass.Type != config.PassTypeReferenceOneToOne {
-			return fmt.Sprintf("partitioned backend does not support pass %q", pass.Type), false
-		}
+	if safe, reason := engine.PartitionDuplicateSafe(pair, leftCfg, rightCfg); !safe {
+		return reason, false
 	}
 	return "", true
 }
@@ -213,6 +222,12 @@ func estimateIndexResourcesFromShapes(left, right inputShape, leftCfg, rightCfg 
 	if pair.NameMode == "tokens" || containsIndexPass(pair.Passes, config.PassTypeNameTokensOneToOne) || counterpartCount > 1 || leftCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyLatest {
 		leftBufferBytes = leftPayloadBytes
 	}
+	if containsBatchOnlyGroupedPass(pair.Passes) {
+		// Grouped reconciliation parses both complete inputs and retains grouped
+		// result references until each batch is emitted.
+		leftBufferBytes += leftPayloadBytes + estimateRowPayload(right.rows, right.bytes) +
+			(left.rows+right.rows)*resourceGroupedResultBytes
+	}
 	estimate.SharedMemoryBytes = leftTrackingBytes + leftBufferBytes
 	estimate.PerIndexMemoryBytes = rightIndexBytes + rightTrackingBytes
 	estimate.PerIndexDiskMemoryBytes = resourceHeadroomBytes + rightTrackingBytes
@@ -230,6 +245,16 @@ func estimateIndexResourcesFromShapes(left, right inputShape, leftCfg, rightCfg 
 	partitionFieldBytes := (right.fieldBytes + int64(partitionCount) - 1) / int64(partitionCount)
 	partitionTrackingBytes := estimateReferenceTracking(partitionRows, rightCfg.ResolvedDuplicatePolicy(), partitionFieldBytes, partitionRows)
 	estimate.PartitionMemoryBytes = resourceHeadroomBytes + partitionIndexBytes + partitionTrackingBytes + leftTrackingBytes
+	if containsBatchOnlyGroupedPass(pair.Passes) {
+		partitionLeftRows := (left.rows + int64(partitionCount) - 1) / int64(partitionCount)
+		partitionLeftFieldBytes := (left.fieldBytes + int64(partitionCount) - 1) / int64(partitionCount)
+		partitionLeftTracking := estimateReferenceTracking(partitionLeftRows, leftCfg.ResolvedDuplicatePolicy(), partitionLeftFieldBytes, partitionLeftRows)
+		partitionLeftPayload := estimateRowPayload(partitionLeftRows, partitionLeftFieldBytes)
+		partitionRightPayload := estimateRowPayload(partitionRows, partitionFieldBytes)
+		partitionResultBytes := (partitionLeftRows + partitionRows) * resourceGroupedResultBytes
+		estimate.PartitionMemoryBytes = resourceHeadroomBytes + partitionIndexBytes + partitionTrackingBytes +
+			partitionLeftTracking + partitionLeftPayload + partitionRightPayload + partitionResultBytes
+	}
 	estimate.PartitionTempDiskBytes = estimate.LeftBytes + estimate.RightBytes + resourceHeadroomBytes
 	return estimate
 }
