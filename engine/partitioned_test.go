@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -490,6 +491,189 @@ func TestReconcilePartitionedMatchesBatchManyToMany(t *testing.T) {
 	if strings.Join(baseEvents, "\n") != strings.Join(partEvents, "\n") {
 		t.Fatalf("event mismatch: baseline=%d partitioned=%d", len(baseEvents), len(partEvents))
 	}
+}
+
+func TestReconcilePartitionedGroupedOutcomesMatchBatch(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	leftData := strings.Join([]string{
+		"date,amount,reference",
+		"2026-01-01,300,MATCH",
+		"2026-01-01,300,AMOUNT",
+		"2026-01-01,300,TIMING",
+		"2026-01-01,100,AMBIG",
+		"2026-01-01,150,AMBIG",
+		"2026-01-01,10,ONLY_LEFT",
+		"",
+	}, "\n")
+	rightData := strings.Join([]string{
+		"date,amount,reference",
+		"2026-01-01,100,MATCH",
+		"2026-01-01,200,MATCH",
+		"2026-01-01,100,AMOUNT",
+		"2026-01-01,100,AMOUNT",
+		"2026-01-10,100,TIMING",
+		"2026-01-10,200,TIMING",
+		"2026-01-01,100,AMBIG",
+		"2026-01-01,5,ONLY_RIGHT",
+		"",
+	}, "\n")
+	if err := os.WriteFile(left, []byte(leftData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte(rightData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference", SkipRaw: true}
+	pair := config.Pair{
+		Passes:     []config.PassConfig{{Type: config.PassTypeOneToMany}},
+		DateWindow: "1d",
+	}
+	leftTxns := mustParse(t, "left", left, cfg)
+	rightTxns := mustParse(t, "right", right, cfg)
+	base, err := Reconcile("p", "left", "right", leftTxns, rightTxns, pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var baseBuf bytes.Buffer
+	baseWriter, err := NewResultWriter("json", &baseBuf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteResult(baseWriter, base); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, partitions := range []int{2, 5} {
+		t.Run(fmt.Sprintf("partitions_%d", partitions), func(t *testing.T) {
+			var got bytes.Buffer
+			writer, err := NewResultWriter("json", &got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := ReconcilePartitioned(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, writer, 0, partitions); err != nil {
+				t.Fatal(err)
+			}
+			assertJSONResultsMatch(t, baseBuf.Bytes(), got.Bytes())
+		})
+	}
+}
+
+func TestReconcilePartitionedGroupedEmptyKeysAreStreamingUnmatched(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	if err := os.WriteFile(left, []byte("date,amount,reference\n2026-01-01,10,\n2026-01-01,20,\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte("date,amount,reference\n2026-01-01,10,\n2026-01-01,30,\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference", SkipRaw: true}
+	pair := config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeManyToMany}}}
+	var output bytes.Buffer
+	writer, err := NewResultWriter("ndjson", &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcilePartitioned(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, writer, 0, 2); err != nil {
+		t.Fatal(err)
+	}
+	summary := summaryFromNDJSON(output.String())
+	if !strings.Contains(summary, `"unmatched_left":2`) || !strings.Contains(summary, `"unmatched_right":2`) {
+		t.Fatalf("summary=%s, want all empty-key rows unmatched", summary)
+	}
+	if strings.Contains(output.String(), "many_to_many_match") || strings.Contains(output.String(), "grouped_match") {
+		t.Fatalf("output=%s, empty keys must not produce grouped matches", output.String())
+	}
+}
+
+func TestReconcilePartitionedGroupedSkewedGroupCleansSpill(t *testing.T) {
+	dir := t.TempDir()
+	spill := filepath.Join(dir, "spill")
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	lf, err := os.Create(left) // #nosec G304 -- test path is created under t.TempDir().
+	if err != nil {
+		t.Fatal(err)
+	}
+	rf, err := os.Create(right) // #nosec G304 -- test path is created under t.TempDir().
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fmt.Fprintln(lf, "date,amount,reference")
+	_, _ = fmt.Fprintln(rf, "date,amount,reference")
+	const installments = 20_000
+	_, _ = fmt.Fprintf(lf, "2026-01-01,%d,SKEW\n", installments)
+	for i := 0; i < installments; i++ {
+		_, _ = fmt.Fprintf(rf, "2026-01-01,1,SKEW\n")
+	}
+	if err := lf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference", SkipRaw: true}
+	pair := config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany}}}
+	var output bytes.Buffer
+	writer, err := NewResultWriter("ndjson", &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcilePartitionedWithOptions(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, writer, PartitionedOptions{Partitions: 2, SpillDir: spill}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(summaryFromNDJSON(output.String()), `"grouped_matched_count":1`) {
+		t.Fatalf("summary=%s, want one grouped match", summaryFromNDJSON(output.String()))
+	}
+	entries, err := os.ReadDir(spill)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("spill entries=%d, want cleanup", len(entries))
+	}
+}
+
+func TestPartitionSummaryWriterWarnsUnsupportedGroupedEventsOnce(t *testing.T) {
+	var output bytes.Buffer
+	inner, err := NewResultWriter("csv", &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agg := &partitionSummaryWriter{ResultWriter: inner}
+	warning := capturePartitionedStderr(t, func() {
+		if err := agg.WriteGroupedMatch(GroupedMatchedPair{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := agg.WriteAmbiguousGroup(AmbiguousGroupPair{}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if got := strings.Count(warning, "does not support grouped or ambiguous match events"); got != 1 {
+		t.Fatalf("grouped warning count=%d, want 1; stderr=%q", got, warning)
+	}
+}
+
+func capturePartitionedStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	previous := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = writer
+	fn()
+	_ = writer.Close()
+	os.Stderr = previous
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = reader.Close()
+	return string(data)
 }
 
 // TestPartitionKeyColumnsGating verifies gating logic for PartitionKeyColumns.

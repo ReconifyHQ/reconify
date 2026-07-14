@@ -105,9 +105,13 @@ index:
 Reconify first hashes the configured matching/grouping key in both inputs and
 writes each row to one of `partition_count` temporary files. For reference
 passes it repeats the normal streaming reconciliation per partition. For
-`one_to_many` and `many_to_many`, it loads and reconciles one complete pair of
-partitions at a time so grouped keys remain intact. Equal keys always select
-the same partition, so peak working memory is bounded by the largest partition.
+`one_to_many` and `many_to_many`, each partition is externally sorted into
+bounded runs and merge-read by key, so only the current left/right groups are
+materialized. Equal keys always select the same partition; peak grouped
+working memory is therefore bounded by the largest active group plus fixed
+sort/merge buffers rather than by the complete input or every group in a
+partition. The temporary-disk requirement is higher because sort runs and
+sorted outputs coexist briefly with the staged partitions.
 
 `partition_count: 0` uses the default of 32; explicit values must be at least 2.
 More partitions reduce memory but increase partition-file overhead and disk
@@ -143,11 +147,12 @@ meet its estimate, the run fails explicitly and does not publish final output.
 
 ### Grouped settlement passes
 
-The `one_to_many` and `many_to_many` passes are batch operations within a
-partition. They need complete groups in memory before they can sum amounts,
-compare group dates, and decide which rows to consume. Partitioning keeps this
-working set bounded by the largest partition; a single unusually large group can
-still require substantial memory.
+The `one_to_many` and `many_to_many` passes stream complete groups from
+externally sorted partition files. They need the current groups in memory before
+they can sum amounts, compare group dates, and decide which rows to consume.
+Other groups and sort runs are released as processing advances. A single
+unusually large group can still require substantial memory because grouped output
+contains every member of that group.
 
 `many_to_many` does not perform subset-sum or fuzzy combination search. It only
 groups rows by an explicit key such as a payout ID, invoice ID, settlement ID, or
@@ -159,7 +164,7 @@ runtime predictable and the output explainable.
 ## Benchmark Environment
 
 All numbers in this document were collected on an Apple M1 Pro (10-core, 32 GB
-unified memory, NVMe SSD) running macOS with Go 1.24.0.
+unified memory, NVMe SSD) running macOS with Go 1.26.4.
 
 The dataset contains 20 million rows per side, split across two CSV files with
 different column schemas (left uses `ref_id`/`description`; right uses
@@ -174,6 +179,29 @@ The outcome distribution reflects realistic financial reconciliation workloads:
 | Timing difference (1-3 days) | 5% |
 | Unmatched left only | 5% |
 | Unmatched right only | 5% |
+
+### Grouped partition benchmark
+
+The grouped benchmark uses 5,000 groups with three right-side rows per group for
+the balanced case, and one 20,000-row group for the skewed case. It was run with:
+
+```bash
+go test -run '^$' -bench='Benchmark(ReconcilePartitioned|ReconcileBatch)_OneToMany(Balanced|Skewed)$' -benchtime=1x -benchmem ./engine
+```
+
+Results from one warm-cache run:
+
+| Benchmark | Time | Allocated | Allocations |
+|---|---:|---:|---:|
+| Partitioned balanced | 145.6 ms | 78.4 MB | 760,475 |
+| Batch balanced | 9.7 ms | 26.5 MB | 55,373 |
+| Partitioned skewed | 138.5 ms | 109.8 MB | 621,823 |
+| Batch skewed | 9.7 ms | 40.9 MB | 284 |
+
+Peak RSS for the two partitioned cases was 208,355,328 bytes (~199 MiB), measured
+with `/usr/bin/time -l` around the same benchmark command. These are comparison
+measurements, not throughput guarantees; external sorting trades runtime and
+temporary disk for a working set independent of the number of groups.
 
 ---
 

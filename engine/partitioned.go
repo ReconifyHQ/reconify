@@ -131,15 +131,36 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		return fmt.Errorf("create partition directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	leftParts, leftRows, leftOriginalRows, err := partitionCSV(ctx, leftPath, leftKeyCol, filepath.Join(dir, "left"), partitions, reporter.progress)
-	if err != nil {
-		return fmt.Errorf("partition left source: %w", err)
-	}
-	rightParts, rightRows, rightOriginalRows, err := partitionCSV(ctx, rightPath, rightKeyCol, filepath.Join(dir, "right"), partitions, func(rows int) {
-		reporter.progress(leftRows + rows)
-	})
-	if err != nil {
-		return fmt.Errorf("partition right source: %w", err)
+	var leftParts, rightParts []string
+	var leftRows, rightRows int
+	var leftOriginalRows, rightOriginalRows [][]int
+	var leftGrouped, rightGrouped groupedPartitionFiles
+	if isGrouped {
+		leftGrouped, err = partitionCSVWithSidecars(ctx, leftPath, leftKeyCol, filepath.Join(dir, "left"), partitions, reporter.progress)
+		if err != nil {
+			return fmt.Errorf("partition left source: %w", err)
+		}
+		leftRows = leftGrouped.count
+		leftParts = leftGrouped.data
+		rightGrouped, err = partitionCSVWithSidecars(ctx, rightPath, rightKeyCol, filepath.Join(dir, "right"), partitions, func(rows int) {
+			reporter.progress(leftRows + rows)
+		})
+		if err != nil {
+			return fmt.Errorf("partition right source: %w", err)
+		}
+		rightRows = rightGrouped.count
+		rightParts = rightGrouped.data
+	} else {
+		leftParts, leftRows, leftOriginalRows, err = partitionCSV(ctx, leftPath, leftKeyCol, filepath.Join(dir, "left"), partitions, reporter.progress)
+		if err != nil {
+			return fmt.Errorf("partition left source: %w", err)
+		}
+		rightParts, rightRows, rightOriginalRows, err = partitionCSV(ctx, rightPath, rightKeyCol, filepath.Join(dir, "right"), partitions, func(rows int) {
+			reporter.progress(leftRows + rows)
+		})
+		if err != nil {
+			return fmt.Errorf("partition right source: %w", err)
+		}
 	}
 	reporter.complete(leftRows + rightRows)
 	for _, group := range rightDuplicateGroups {
@@ -149,37 +170,30 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 	}
 	agg := &partitionSummaryWriter{ResultWriter: w}
 	if isGrouped {
-		// Grouped passes require whole-group state. Because we partition by the
-		// group key every member of a group lands in the same partition, so we
-		// can safely parse each partition into memory and run the batch reconciler.
-		// WriteResultEvents emits the format-unsupported warning on the first
-		// partition only (suppressWarnings=true for i>0).
+		// Grouped passes require whole-group state, but not whole-partition state.
+		// Sort each partition externally by the configured group key and merge one
+		// key-group at a time so a skewed distribution does not retain every group
+		// in memory simultaneously.
 		for i := 0; i < partitions; i++ {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			leftTxns, err := Parse(leftSource, leftParts[i], leftCfg)
+			leftData, leftRowsPath, err := sortGroupedPartition(ctx, leftGrouped.data[i], leftGrouped.rows[i], filepath.Join(dir, fmt.Sprintf("sorted-left-%03d", i)), leftKeyCol)
 			if err != nil {
-				return fmt.Errorf("parse left partition %d: %w", i, err)
+				return fmt.Errorf("sort left partition %d: %w", i, err)
 			}
-			restorePartitionIDs(leftTxns, leftSource, leftOriginalRows[i])
-			rightTxns, err := Parse(rightSource, rightParts[i], rightCfg)
-			if err != nil {
-				return fmt.Errorf("parse right partition %d: %w", i, err)
+			if err := removeGroupedPartitionInputs(leftGrouped.data[i], leftGrouped.rows[i]); err != nil {
+				return fmt.Errorf("remove left partition %d staging files: %w", i, err)
 			}
-			restorePartitionIDs(rightTxns, rightSource, rightOriginalRows[i])
-			res, err := ReconcileWithTelemetry(pairName, leftSource, rightSource, leftTxns, rightTxns, pair, TelemetryOptions{}, ReconcileOptions{
-				LeftPolicy:  leftCfg.ResolvedDuplicatePolicy(),
-				RightPolicy: rightCfg.ResolvedDuplicatePolicy(),
-			})
+			rightData, rightRowsPath, err := sortGroupedPartition(ctx, rightGrouped.data[i], rightGrouped.rows[i], filepath.Join(dir, fmt.Sprintf("sorted-right-%03d", i)), rightKeyCol)
 			if err != nil {
+				return fmt.Errorf("sort right partition %d: %w", i, err)
+			}
+			if err := removeGroupedPartitionInputs(rightGrouped.data[i], rightGrouped.rows[i]); err != nil {
+				return fmt.Errorf("remove right partition %d staging files: %w", i, err)
+			}
+			if err := reconcileGroupedPartition(ctx, pairName, leftSource, rightSource, leftData, leftRowsPath, rightData, rightRowsPath, leftCfg, rightCfg, pair, agg); err != nil {
 				return fmt.Errorf("reconcile partition %d: %w", i, err)
-			}
-			if err := WriteResultEvents(agg, res, i > 0); err != nil {
-				return fmt.Errorf("write partition %d events: %w", i, err)
-			}
-			if err := agg.WriteSummary(res.Summary); err != nil {
-				return fmt.Errorf("write partition %d summary: %w", i, err)
 			}
 		}
 	} else {
@@ -233,16 +247,6 @@ func validatePartitionCurrencies(ctx context.Context, leftSource, leftPath strin
 	return nil
 }
 
-func restorePartitionIDs(txns []Transaction, source string, originalRows []int) {
-	for i := range txns {
-		row := i + 1
-		if i < len(originalRows) {
-			row = originalRows[i]
-		}
-		txns[i].ID = fmt.Sprintf("%s-%d", source, row)
-	}
-}
-
 func collectPartitionDuplicateGroups(ctx context.Context, sourceName, path string, cfg config.ParserCfg) (map[string]bool, []DuplicateGroup, error) {
 	counts := make(map[string]uint8)
 	if err := ParseEach(ctx, sourceName, path, cfg, func(tx Transaction, _ int) error {
@@ -284,8 +288,10 @@ func collectPartitionDuplicateRepresentatives(ctx context.Context, sourceName, p
 
 type partitionSummaryWriter struct {
 	ResultWriter
-	summary Summary
-	seen    bool
+	summary       Summary
+	seen          bool
+	warnedGrouped bool
+	warnedMany    bool
 }
 
 func (w *partitionSummaryWriter) WriteSummary(s Summary) error {
@@ -296,30 +302,54 @@ func (w *partitionSummaryWriter) WriteSummary(s Summary) error {
 
 func (w *partitionSummaryWriter) Flush() error { return nil }
 
+func (w *partitionSummaryWriter) warnGroupedEventsUnsupported() {
+	if w.warnedGrouped {
+		return
+	}
+	w.warnedGrouped = true
+	fmt.Fprintln(os.Stderr,
+		"warning: current output format does not support grouped or ambiguous match events; "+
+			"use --format=json or --format=ndjson to capture all one_to_many output")
+}
+
+func (w *partitionSummaryWriter) warnManyToManyEventsUnsupported() {
+	if w.warnedMany {
+		return
+	}
+	w.warnedMany = true
+	fmt.Fprintln(os.Stderr,
+		"warning: current output format does not support many_to_many match events; "+
+			"use --format=json or --format=ndjson to capture all many_to_many output")
+}
+
 // GroupedEventWriter forwarding — prevents the embedded ResultWriter interface
 // from hiding the inner concrete writer's optional methods.
 func (w *partitionSummaryWriter) WriteGroupedMatch(p GroupedMatchedPair) error {
 	if gw, ok := w.ResultWriter.(GroupedEventWriter); ok {
 		return gw.WriteGroupedMatch(p)
 	}
+	w.warnGroupedEventsUnsupported()
 	return nil
 }
 func (w *partitionSummaryWriter) WriteGroupedAmountDiff(p GroupedAmountDiffPair) error {
 	if gw, ok := w.ResultWriter.(GroupedEventWriter); ok {
 		return gw.WriteGroupedAmountDiff(p)
 	}
+	w.warnGroupedEventsUnsupported()
 	return nil
 }
 func (w *partitionSummaryWriter) WriteGroupedTimingDiff(p GroupedTimingDiffPair) error {
 	if gw, ok := w.ResultWriter.(GroupedEventWriter); ok {
 		return gw.WriteGroupedTimingDiff(p)
 	}
+	w.warnGroupedEventsUnsupported()
 	return nil
 }
 func (w *partitionSummaryWriter) WriteAmbiguousGroup(p AmbiguousGroupPair) error {
 	if gw, ok := w.ResultWriter.(GroupedEventWriter); ok {
 		return gw.WriteAmbiguousGroup(p)
 	}
+	w.warnGroupedEventsUnsupported()
 	return nil
 }
 
@@ -328,18 +358,21 @@ func (w *partitionSummaryWriter) WriteManyToManyMatch(p ManyToManyMatchedPair) e
 	if mw, ok := w.ResultWriter.(ManyToManyEventWriter); ok {
 		return mw.WriteManyToManyMatch(p)
 	}
+	w.warnManyToManyEventsUnsupported()
 	return nil
 }
 func (w *partitionSummaryWriter) WriteManyToManyAmountDiff(p ManyToManyAmountDiffPair) error {
 	if mw, ok := w.ResultWriter.(ManyToManyEventWriter); ok {
 		return mw.WriteManyToManyAmountDiff(p)
 	}
+	w.warnManyToManyEventsUnsupported()
 	return nil
 }
 func (w *partitionSummaryWriter) WriteManyToManyTimingDiff(p ManyToManyTimingDiffPair) error {
 	if mw, ok := w.ResultWriter.(ManyToManyEventWriter); ok {
 		return mw.WriteManyToManyTimingDiff(p)
 	}
+	w.warnManyToManyEventsUnsupported()
 	return nil
 }
 
