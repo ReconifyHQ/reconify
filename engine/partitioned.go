@@ -20,9 +20,24 @@ import (
 // Grouped and token passes are intentionally rejected because their semantics
 // require cross-partition state.
 func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int) error {
+	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, maxTokenBuffer, partitions, nil)
+}
+
+// ReconcilePartitionedWithTelemetry emits partitioning and per-partition
+// lifecycle records without changing bounded-memory reconciliation behavior.
+func ReconcilePartitionedWithTelemetry(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int, telemetry TelemetryOptions) error {
+	reporter := newTelemetryReporter(telemetry)
+	if reporter != nil {
+		defer reporter.close()
+	}
+	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, maxTokenBuffer, partitions, reporter)
+}
+
+func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, maxTokenBuffer, partitions int, reporter *telemetryReporter) error {
 	if partitions < 2 {
 		partitions = 32
 	}
+	reporter.start("partitioning", leftSource, rightSource, nil)
 	if len(pair.Passes) > 0 {
 		for _, pass := range pair.Passes {
 			if pass.Type != config.PassTypeReferenceOneToOne {
@@ -46,13 +61,14 @@ func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 	if err != nil {
 		return fmt.Errorf("partition right source: %w", err)
 	}
+	reporter.complete(partitions)
 	agg := &partitionSummaryWriter{ResultWriter: w}
 	for i := 0; i < partitions; i++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		idx := NewMemoryIndex()
-		err := ReconcileStreaming(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, maxTokenBuffer)
+		err := reconcileStreaming(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, maxTokenBuffer, reporter)
 		closeErr := idx.Close()
 		if err != nil {
 			return err
@@ -61,7 +77,12 @@ func ReconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			return closeErr
 		}
 	}
-	return agg.FlushSummary()
+	reporter.start("finalization", leftSource, rightSource, nil)
+	if err := agg.FlushSummary(); err != nil {
+		return err
+	}
+	reporter.complete(partitions)
+	return nil
 }
 
 type partitionSummaryWriter struct {

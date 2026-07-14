@@ -183,7 +183,7 @@ Engine entry points mirror the single-counterpart ones:
 - `ReconcileMultiSource` (non-streaming) is the `rights` equivalent of `Reconcile`.
 - `ReconcileStreamingMultiSource` (streaming) is the `rights` equivalent of `ReconcileStreaming`. Its first pass streams the left file from disk exactly like `ReconcileStreaming` does; unmatched-left rows are buffered in memory and replayed against each subsequent counterpart's freshly built index. It currently does not support `name_mode: tokens`.
 
-The CLI (`internal/cli/reconcile.go`) calls the existing single-counterpart path unchanged when `len(pair.Counterparts()) == 1`, and only switches to the multi-source path for `rights` pairs with more than one counterpart — `--audit` and `--progress` are not yet supported in that path, and `--right-file` doesn't apply since each counterpart resolves its own file via its source's `file_pattern`.
+The CLI (`internal/cli/reconcile.go`) calls the existing single-counterpart path unchanged when `len(pair.Counterparts()) == 1`, and switches to the multi-source path for `rights` pairs with more than one counterpart. `--audit` is not yet supported in that path, but `--progress` and `--progress-out` cover every counterpart pass. `--right-file` does not apply because each counterpart resolves its file via its source's `file_pattern`.
 
 Output gets one additive field, `BySource`, giving a per-counterpart breakdown alongside the aggregate `Summary` (see "Result shape" above). Writers that support a breakdown (`json`, `json-stream`, `ndjson`) implement an optional `SourceBreakdownWriter` interface; `csv` and `table` silently omit it, same pattern as the existing optional `RunInfoSetter` interface for `--audit`.
 
@@ -260,7 +260,7 @@ TotalDiscrepancy = UnmatchedAmountLeft + UnmatchedAmountRight + AmountDiffTotal
 
 **`reconciled_rate_pct` denominator caveat.** The `one_to_many` pass inflates `total_right` because N right rows correspond to one left row. A fully reconciled grouped dataset can report a sub-100% `reconciled_rate_pct` — this is expected. `match_rate_pct` counts only exact 1-to-1 matches (unchanged); `reconciled_rate_pct` includes grouped matched, grouped amount diff, and grouped timing diff outcomes.
 
-**Batch-only.** The `one_to_many` pass requires all right rows for a reference to be in memory simultaneously (to sum amounts and detect ambiguous left references). This fundamentally breaks the streaming memory contract. The CLI detects `one_to_many` in a pair's passes and automatically routes to the in-memory batch path (`engine.Reconcile` / `engine.ReconcileMultiSource`). `--audit` is not yet supported with `one_to_many` passes; `--progress` is silently skipped. Writers that do not support grouped events (`csv`, `table`) receive a warning on stderr; use `--format=json` or `--format=ndjson` to capture the full output including `grouped_matched`, `grouped_amount_diff`, `grouped_timing_diff`, and `ambiguous_groups`.
+**Batch-only.** The `one_to_many` pass requires all right rows for a reference to be in memory simultaneously (to sum amounts and detect ambiguous left references). This fundamentally breaks the streaming memory contract. The CLI detects `one_to_many` in a pair's passes and automatically routes to the in-memory batch path (`engine.Reconcile` / `engine.ReconcileMultiSource`). `--audit` is not yet supported with `one_to_many` passes. Progress telemetry remains available, but batch/grouped stages can report totals only when the data is already in memory. Writers that do not support grouped events (`csv`, `table`) receive a warning on stderr; use `--format=json` or `--format=ndjson` to capture the full output including `grouped_matched`, `grouped_amount_diff`, `grouped_timing_diff`, and `ambiguous_groups`.
 
 ### `many_to_many` pass
 
@@ -298,6 +298,28 @@ passes:
 - **Both fail** — all rows stay unmatched and available for later passes.
 
 **What it does not do.** The pass does not search arbitrary combinations of rows that happen to sum to the same amount, and it does not use fuzzy matching. Rows must share the configured group key. With `rights: [stripe, paypal]`, the pass runs against each counterpart in order and carries forward unmatched left rows; it does not reconcile one group across multiple right sources at once.
+
+## Progress and heartbeat telemetry
+
+The engine has an additive telemetry API for long-running jobs:
+
+```go
+err := engine.ReconcileStreamingWithTelemetry(ctx, "bank_vs_stripe", "bank", "stripe",
+    leftPath, rightPath, leftParser, rightParser, pairCfg, index, writer, 0,
+    engine.TelemetryOptions{Sink: func(event engine.TelemetryEvent) error {
+        // Encode or forward the event. Returning an error disables telemetry only.
+        return nil
+    }, HeartbeatEvery: 30 * time.Second})
+```
+
+`TelemetryEvent` records `progress` and wall-clock `heartbeat` events for right
+indexing, left matching, duplicate scans, token/grouped passes, partitioning, and
+finalization. It includes the run ID, RFC3339 timestamp, source/counterpart,
+stage/status, rows, rate, elapsed time, optional totals/percentage/ETA, and
+best-effort RSS, CPU, heap, and GC measurements. Existing
+`ReconcileStreamingWithProgress` callbacks remain supported through an adapter.
+Telemetry is observational: a sink error disables that sink after reporting it
+once and never changes matching or result-writer behavior.
 
 **Pass-order caveat.** If `reference_one_to_one` runs before `many_to_many` and the grouped rows share the same reference, the reference pass can consume individual rows as matches, amount diffs, or timing diffs before the group pass sees them. Use `many_to_many` alone for settlement groups where the reference is the group key, or use a different `group_by` key such as `name` or `group_key` when the reference pass should run first.
 

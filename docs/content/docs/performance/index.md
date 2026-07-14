@@ -75,6 +75,23 @@ per event and use O(1) memory regardless of result size. `json` accumulates all
 results in memory before flushing and is intended for smaller datasets or API
 integration.
 
+### Observing a live run
+
+For unattended large-file jobs, write telemetry separately from the reconciliation
+result:
+
+```bash
+reconify reconcile --config reconify.yaml --pair bank_vs_stripe \
+  --format ndjson --out results.ndjson \
+  --progress-out progress.ndjson --heartbeat-every 30s
+```
+
+`progress.ndjson` receives lifecycle events while `results.ndjson` keeps only
+reconciliation data. The stream includes rows/sec and elapsed time; totals and
+ETA remain absent when obtaining them would add a full scan. RSS/CPU are
+best-effort platform metrics, while heap and GC counters are available from the
+Go runtime. A telemetry sink failure does not interrupt the reconciliation.
+
 ### Bounded-memory partitioning
 
 For a large CSV one-to-one reconciliation, select the partitioned backend:

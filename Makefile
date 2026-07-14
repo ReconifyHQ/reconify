@@ -1,4 +1,4 @@
-.PHONY: help build build-all test lint fmt-check mod-check security preflight clean install bench-smoke bench-deterministic bench-realistic bench-full
+.PHONY: help build build-all test lint fmt-check mod-check security check preflight clean install bench-smoke bench-deterministic bench-realistic bench-full
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
@@ -18,7 +18,8 @@ help: ## Show this help message
 	@echo '  make mod-check  - Verify modules and fail on go.mod/go.sum drift'
 	@echo '  make lint       - Run linters'
 	@echo '  make security   - Run govulncheck and gosec'
-	@echo '  make preflight  - Run the full pre-PR quality and security gate'
+	@echo '  make check      - Run the local equivalent of GitHub Actions checks'
+	@echo '  make preflight  - Alias for make check'
 	@echo '  make bench-smoke         - Run small correctness benchmarks'
 	@echo '  make bench-deterministic - Run deterministic 1-N benchmarks'
 	@echo '  make bench-realistic     - Run realistic synthetic benchmarks'
@@ -76,7 +77,9 @@ security: ## Run vulnerability and security checks
 		exit 1; \
 	fi
 
-preflight: mod-check fmt-check lint security test build bench-smoke ## Run full pre-PR gate
+check: mod-check fmt-check lint security test build bench-smoke ## Run the local equivalent of GitHub Actions checks
+
+preflight: check ## Alias for make check
 
 # Benchmarks
 bench-smoke: ## Run small correctness benchmarks

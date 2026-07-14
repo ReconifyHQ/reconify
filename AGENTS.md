@@ -29,10 +29,11 @@ make test
 make lint
 make security
 make build
+make check
 make preflight
 ```
 
-Use `go test ./...` for quick verification. Use `make test` when race detection and coverage output are needed. Run `make preflight` before opening a PR; it runs dependency drift checks, formatting checks, linting, security scans, tests, build, and smoke benchmarks.
+Use `go test ./...` for quick verification. Use `make test` when race detection and coverage output are needed. **After any code change and before opening a PR, run `make check`.** It is the local equivalent of the GitHub Actions quality gate: dependency drift checks, formatting checks, linting, security scans, race-tested coverage, build, and smoke benchmarks. `make preflight` remains an alias for compatibility.
 
 ## CLI Conventions
 

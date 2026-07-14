@@ -2,11 +2,13 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/reconifyhq/reconify/config"
@@ -26,6 +28,8 @@ func newReconcileCmd() *cobra.Command {
 	var deterministic bool
 	var progress bool
 	var progressEvery int
+	var heartbeatEvery string
+	var progressOut string
 	var failIfUnmatched bool
 
 	cmd := &cobra.Command{
@@ -50,6 +54,19 @@ Formats:
 			_ = args
 			if pairName == "" {
 				return configErr("--pair is required")
+			}
+			if progressEvery <= 0 {
+				return configErr("--progress-every must be greater than zero")
+			}
+			heartbeatInterval, err := time.ParseDuration(heartbeatEvery)
+			if err != nil || heartbeatInterval <= 0 {
+				return configErr("--heartbeat-every must be a positive duration (for example 30s)")
+			}
+			telemetryEnabled := progress || progressOut != ""
+			if progressOut != "" {
+				if err := validateProgressOutput(progressOut, outputPath); err != nil {
+					return configErr(err.Error())
+				}
 			}
 
 			cfgPath := getConfigPath()
@@ -99,6 +116,15 @@ Formats:
 				return err
 			}
 			defer output.Cleanup()
+
+			telemetry, closeTelemetry, err := openTelemetry(progress, progressOut, progressEvery, heartbeatInterval)
+			if err != nil {
+				return err
+			}
+			defer closeTelemetry()
+			if !telemetryEnabled {
+				telemetry = engine.TelemetryOptions{}
+			}
 
 			// All formats route through ReconcileStreaming.
 			// The caller creates the index and passes it in — ReconcileStreaming
@@ -177,7 +203,7 @@ Formats:
 					if rParseErr != nil {
 						return fmt.Errorf("parse right source: %w", rParseErr)
 					}
-					batchResult, parseErr = engine.Reconcile(pairName, pair.Left, counterparts[0], leftTxns, rightTxns, pair,
+					batchResult, parseErr = engine.ReconcileWithTelemetry(pairName, pair.Left, counterparts[0], leftTxns, rightTxns, pair, telemetry,
 						engine.ReconcileOptions{
 							LeftPolicy:  leftSrc.Parser.ResolvedDuplicatePolicy(),
 							RightPolicy: rightSrc.Parser.ResolvedDuplicatePolicy(),
@@ -209,7 +235,7 @@ Formats:
 							ParserCfg:    src.Parser,
 						})
 					}
-					batchResult, parseErr = engine.ReconcileMultiSource(pairName, pair.Left, leftTxns, cps, pair,
+					batchResult, parseErr = engine.ReconcileMultiSourceWithTelemetry(pairName, pair.Left, leftTxns, cps, pair, telemetry,
 						engine.ReconcileOptions{LeftPolicy: leftSrc.Parser.ResolvedDuplicatePolicy()})
 					if parseErr != nil {
 						return fmt.Errorf("reconciliation failed: %w", parseErr)
@@ -245,7 +271,7 @@ Formats:
 					if auditMode {
 						return configErr("--audit is not supported with the partitioned backend")
 					}
-					if err := engine.ReconcilePartitioned(context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, maxTokenBuffer, cfg.Index.PartitionCount); err != nil {
+					if err := engine.ReconcilePartitionedWithTelemetry(context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, maxTokenBuffer, cfg.Index.PartitionCount, telemetry); err != nil {
 						return err
 					}
 					if sc != nil && (sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 && failIfUnmatched {
@@ -296,36 +322,11 @@ Formats:
 					fmt.Fprintf(os.Stderr, "progress: index backend=%s\n", backendLabel)
 				}
 
-				progressFn := func(e engine.ProgressEvent) {
-					elapsed := e.Elapsed.Round(time.Second)
-					rate := 0.0
-					if e.Elapsed > 0 {
-						rate = float64(e.Rows) / e.Elapsed.Seconds()
-					}
-					if e.Done {
-						fmt.Fprintf(os.Stderr, "progress: %s done rows=%d elapsed=%s avg_rate=%.0f rows/s\n", e.Phase, e.Rows, elapsed, rate)
-						return
-					}
-					fmt.Fprintf(os.Stderr, "progress: %s rows=%d elapsed=%s rate=%.0f rows/s\n", e.Phase, e.Rows, elapsed, rate)
-				}
-
 				run := func() error {
-					if progress {
-						return engine.ReconcileStreamingWithProgress(
-							context.Background(),
-							pairName,
-							pair.Left,
-							counterparts[0],
-							leftPath,
-							rightPath,
-							leftSrc.Parser,
-							rightSrc.Parser,
-							pair,
-							idx,
-							w,
-							maxTokenBuffer,
-							progressFn,
-							progressEvery,
+					if telemetryEnabled {
+						return engine.ReconcileStreamingWithTelemetry(
+							context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath,
+							leftSrc.Parser, rightSrc.Parser, pair, idx, w, maxTokenBuffer, telemetry,
 						)
 					}
 					return engine.ReconcileStreaming(
@@ -354,10 +355,6 @@ Formats:
 				if rightFile != "" {
 					return fmt.Errorf("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
 				}
-				if progress {
-					fmt.Fprintln(os.Stderr, "warning: --progress is not yet supported for multi-counterpart (rights) pairs; ignoring")
-				}
-
 				cps := make([]engine.CounterpartStream, 0, len(counterparts))
 				var indexes []engine.RightIndex
 				defer func() {
@@ -390,7 +387,7 @@ Formats:
 					})
 				}
 
-				if err := engine.ReconcileStreamingMultiSource(
+				if err := engine.ReconcileStreamingMultiSourceWithTelemetry(
 					context.Background(),
 					pairName,
 					pair.Left,
@@ -400,6 +397,7 @@ Formats:
 					pair,
 					w,
 					maxTokenBuffer,
+					telemetry,
 				); err != nil {
 					return fmt.Errorf("reconciliation failed: %w", err)
 				}
@@ -443,10 +441,92 @@ Formats:
 		"Log progress to stderr while processing large files")
 	cmd.Flags().IntVar(&progressEvery, "progress-every", 1_000_000,
 		"Progress log interval in rows (used with --progress)")
+	cmd.Flags().StringVar(&heartbeatEvery, "heartbeat-every", "30s",
+		"Wall-clock telemetry heartbeat interval (for example 30s)")
+	cmd.Flags().StringVar(&progressOut, "progress-out", "",
+		"Write live telemetry events as NDJSON to this path (must differ from --out)")
 	cmd.Flags().BoolVar(&failIfUnmatched, "fail-if-unmatched", false,
 		"Exit with code 3 if reconciliation completes with any unmatched rows on either side")
 
 	return cmd
+}
+
+func openTelemetry(human bool, path string, progressEvery int, heartbeatEvery time.Duration) (engine.TelemetryOptions, func(), error) {
+	if !human && path == "" {
+		return engine.TelemetryOptions{}, func() {}, nil
+	}
+	var (
+		file *os.File
+		mu   sync.Mutex
+	)
+	if path != "" {
+		var err error
+		file, err = os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) // #nosec G304 -- validated explicit telemetry destination.
+		if err != nil {
+			return engine.TelemetryOptions{}, func() {}, fmt.Errorf("open --progress-out: %w", err)
+		}
+	}
+	closeFn := func() {
+		if file != nil {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: close telemetry output: %v\n", err)
+			}
+		}
+	}
+	return engine.TelemetryOptions{
+		ProgressEvery:  progressEvery,
+		HeartbeatEvery: heartbeatEvery,
+		Sink: func(event engine.TelemetryEvent) error {
+			mu.Lock()
+			defer mu.Unlock()
+			if human && event.Type == "progress" && (event.Status == "running" || event.Status == "completed") {
+				elapsed := time.Duration(event.Elapsed * float64(time.Second)).Round(time.Second)
+				if event.Status == "completed" {
+					fmt.Fprintf(os.Stderr, "progress: %s done rows=%d elapsed=%s avg_rate=%.0f rows/s\n", event.Stage, event.Rows, elapsed, event.RowsPerSecond)
+				} else {
+					fmt.Fprintf(os.Stderr, "progress: %s rows=%d elapsed=%s rate=%.0f rows/s\n", event.Stage, event.Rows, elapsed, event.RowsPerSecond)
+				}
+			}
+			if file == nil {
+				return nil
+			}
+			return json.NewEncoder(file).Encode(event)
+		},
+		OnError: func(err error) {
+			fmt.Fprintf(os.Stderr, "warning: telemetry output disabled: %v\n", err)
+		},
+	}, closeFn, nil
+}
+
+func validateProgressOutput(progressPath, resultPath string) error {
+	if progressPath == "-" || progressPath == "/dev/stdout" {
+		return fmt.Errorf("--progress-out must not write to stdout")
+	}
+	progressAbs, err := filepath.Abs(progressPath)
+	if err != nil {
+		return fmt.Errorf("resolve --progress-out path: %w", err)
+	}
+	if progressInfo, err := os.Stat(progressAbs); err == nil {
+		if stdoutInfo, statErr := os.Stdout.Stat(); statErr == nil && os.SameFile(progressInfo, stdoutInfo) {
+			return fmt.Errorf("--progress-out must not write to stdout")
+		}
+	}
+	if resultPath == "" || resultPath == "-" || resultPath == "/dev/stdout" {
+		return nil
+	}
+	resultAbs, err := filepath.Abs(resultPath)
+	if err != nil {
+		return fmt.Errorf("resolve --out path: %w", err)
+	}
+	if progressAbs == resultAbs {
+		return fmt.Errorf("--progress-out must differ from --out")
+	}
+	progressInfo, progressErr := os.Stat(progressAbs)
+	resultInfo, resultErr := os.Stat(resultAbs)
+	if progressErr == nil && resultErr == nil && os.SameFile(progressInfo, resultInfo) {
+		return fmt.Errorf("--progress-out must differ from --out")
+	}
+	return nil
 }
 
 // summaryCapture wraps a ResultWriter and captures the final Summary written by

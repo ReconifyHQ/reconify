@@ -1,10 +1,129 @@
 package cli
 
 import (
+	"bufio"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/reconifyhq/reconify/engine"
 )
+
+func TestTelemetryOutputIsNDJSONAndSeparateFromResults(t *testing.T) {
+	dir := t.TempDir()
+	progressPath := filepath.Join(dir, "progress.ndjson")
+	resultPath := filepath.Join(dir, "result.ndjson")
+	options, closeFn, err := openTelemetry(false, progressPath, 1, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := options.Sink(engine.TelemetryEvent{Type: "progress", RunID: "run", Timestamp: time.Now(), Stage: "left_match", Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resultPath, []byte(`{"type":"summary"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	closeFn()
+	f, err := os.Open(progressPath) // #nosec G304 -- t.TempDir test file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var event engine.TelemetryEvent
+	if err := json.NewDecoder(bufio.NewReader(f)).Decode(&event); err != nil {
+		t.Fatalf("progress output is not NDJSON: %v", err)
+	}
+	if event.Type != "progress" {
+		t.Fatalf("event type = %q", event.Type)
+	}
+	result, err := os.ReadFile(resultPath) // #nosec G304 -- t.TempDir test file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(result) != `{"type":"summary"}` {
+		t.Fatalf("result output changed: %q", result)
+	}
+}
+
+func TestValidateProgressOutputRejectsStdoutAndCollisions(t *testing.T) {
+	if err := validateProgressOutput("-", "results.ndjson"); err == nil {
+		t.Fatal("expected stdout rejection")
+	}
+	path := filepath.Join(t.TempDir(), "same.ndjson")
+	if err := validateProgressOutput(path, path); err == nil {
+		t.Fatal("expected output collision rejection")
+	}
+}
+
+func TestReconcileProgressOutPreservesResultOutput(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.csv")
+	rightPath := filepath.Join(dir, "right.csv")
+	configPath := filepath.Join(dir, "reconify.yaml")
+	resultPath := filepath.Join(dir, "result.ndjson")
+	progressPath := filepath.Join(dir, "progress.ndjson")
+	csv := "date,amount,reference\n2024-01-01,1.00,ref-1\n"
+	for _, path := range []string{leftPath, rightPath} {
+		if err := os.WriteFile(path, []byte(csv), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	yaml := "version: 1\nsources:\n  left:\n    file_pattern: " + leftPath + "\n    parser: &parser\n      type: csv\n      date_col: date\n      date_layout: \"2006-01-02\"\n      amount_col: amount\n      multiplier: 100\n      ref_col: reference\n  right:\n    file_pattern: " + rightPath + "\n    parser: *parser\npairs:\n  pair:\n    left: left\n    right: right\n    date_window: 0d\n"
+	if err := os.WriteFile(configPath, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G204 -- test invokes the local Go toolchain with a fixed program and t.TempDir paths.
+	command := exec.Command("go", "run", "./cmd/reconify", "reconcile", "--config", configPath, "--pair", "pair", "--format", "ndjson", "--out", resultPath, "--progress-out", progressPath, "--progress-every", "1")
+	command.Dir = root
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("reconcile with progress output failed: %v\n%s", err, output)
+	}
+	result, err := os.ReadFile(resultPath) // #nosec G304 -- t.TempDir test file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(result), `"type":"summary"`) {
+		t.Fatalf("result output does not contain a reconciliation summary: %s", result)
+	}
+	progress, err := os.ReadFile(progressPath) // #nosec G304 -- t.TempDir test file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(progress), `"type":"progress"`) || !strings.Contains(string(progress), `"stage":"right_index"`) {
+		t.Fatalf("progress output missing lifecycle NDJSON: %s", progress)
+	}
+}
+
+func TestReconcileRejectsInvalidTelemetryIntervals(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"reconcile", "--pair", "pair", "--progress-every", "0"},
+		{"reconcile", "--pair", "pair", "--heartbeat-every", "0s"},
+	} {
+		// #nosec G204 -- test invokes the local Go toolchain with fixed argument cases below.
+		command := exec.Command("go", append([]string{"run", "./cmd/reconify"}, args...)...)
+		command.Dir = root
+		output, err := command.CombinedOutput()
+		if err == nil {
+			t.Fatalf("expected invalid telemetry interval to fail: %v", args)
+		}
+		if !strings.Contains(string(output), "must be") {
+			t.Fatalf("invalid telemetry interval error was unclear: %s", output)
+		}
+	}
+}
 
 func TestResolveFile_RejectsGlobOutsideConfigDir(t *testing.T) {
 	root := t.TempDir()

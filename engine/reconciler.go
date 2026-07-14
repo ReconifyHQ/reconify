@@ -115,6 +115,31 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 	return result, nil
 }
 
+// ReconcileWithTelemetry is the batch equivalent of Reconcile. It adds only
+// observational lifecycle records; matching and returned results are identical.
+func ReconcileWithTelemetry(pairName, leftSource, rightSource string, left, right []Transaction, pair config.Pair, telemetry TelemetryOptions, opts ...ReconcileOptions) (*Result, error) {
+	reporter := newTelemetryReporter(telemetry)
+	if reporter != nil {
+		defer reporter.close()
+	}
+	rightTotal, leftTotal := len(right), len(left)
+	reporter.start("right_index", rightSource, rightSource, &rightTotal)
+	reporter.complete(rightTotal)
+	stage := "left_match"
+	if len(pair.Passes) > 0 {
+		stage = "grouped_pass"
+	}
+	reporter.start(stage, leftSource, rightSource, &leftTotal)
+	result, err := Reconcile(pairName, leftSource, rightSource, left, right, pair, opts...)
+	reporter.complete(leftTotal)
+	if err != nil {
+		return nil, err
+	}
+	reporter.start("finalization", leftSource, rightSource, nil)
+	reporter.complete(leftTotal + rightTotal)
+	return result, nil
+}
+
 // buildSummary computes aggregate counts, rates, and monetary totals from a fully
 // populated Result (Matched/UnmatchedLeft/UnmatchedRight/AmountDiff/TimingDiff/
 // Duplicates already set). totalLeft/totalRight are the original input row counts —
@@ -265,7 +290,7 @@ func ReconcileStreaming(
 	w ResultWriter,
 	maxTokenBuffer int,
 ) error {
-	return reconcileStreaming(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, nil, 0)
+	return reconcileStreaming(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, nil)
 }
 
 // ProgressEvent reports incremental progress for long-running reconciliations.
@@ -300,7 +325,57 @@ func ReconcileStreamingWithProgress(
 	progress ProgressFunc,
 	progressEvery int,
 ) error {
-	return reconcileStreaming(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, progress, progressEvery)
+	reporter := newTelemetryReporter(TelemetryOptions{
+		ProgressEvery: progressEvery,
+		Sink:          legacyProgressSink(progress),
+	})
+	defer reporter.close()
+	return reconcileStreaming(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, reporter)
+}
+
+// ReconcileStreamingWithTelemetry emits typed lifecycle telemetry while preserving
+// the streaming reconciliation and ResultWriter behavior of ReconcileStreaming.
+func ReconcileStreamingWithTelemetry(
+	ctx context.Context,
+	pairName string,
+	leftSource string,
+	rightSource string,
+	leftPath string,
+	rightPath string,
+	leftCfg config.ParserCfg,
+	rightCfg config.ParserCfg,
+	pair config.Pair,
+	idx RightIndex,
+	w ResultWriter,
+	maxTokenBuffer int,
+	telemetry TelemetryOptions,
+) error {
+	reporter := newTelemetryReporter(telemetry)
+	if reporter != nil {
+		defer reporter.close()
+	}
+	return reconcileStreaming(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, reporter)
+}
+
+func legacyProgressSink(progress ProgressFunc) TelemetrySink {
+	if progress == nil {
+		return nil
+	}
+	return func(event TelemetryEvent) error {
+		if event.Type != "progress" || (event.Status != "running" && event.Status != "completed") {
+			return nil
+		}
+		if event.Stage != "right_index" && event.Stage != "left_match" {
+			return nil
+		}
+		progress(ProgressEvent{
+			Phase:   event.Stage,
+			Rows:    event.Rows,
+			Elapsed: time.Duration(event.Elapsed * float64(time.Second)),
+			Done:    event.Status == "completed",
+		})
+		return nil
+	}
 }
 
 func reconcileStreaming(
@@ -316,8 +391,7 @@ func reconcileStreaming(
 	idx RightIndex,
 	w ResultWriter,
 	maxTokenBuffer int,
-	progress ProgressFunc,
-	progressEvery int,
+	reporter *telemetryReporter,
 ) error {
 	dateWindowDays, err := parseDateWindow(pair.DateWindow)
 	if err != nil {
@@ -336,14 +410,6 @@ func reconcileStreaming(
 			return err
 		}
 	}
-	if progressEvery <= 0 {
-		progressEvery = 1_000_000
-	}
-	startRight := time.Now()
-	startLeft := time.Now()
-	nextRight := progressEvery
-	nextLeft := progressEvery
-
 	// -----------------------------------------------------------------------
 	// Pass 1: stream right CSV into index, track right duplicates
 	// -----------------------------------------------------------------------
@@ -364,16 +430,14 @@ func reconcileStreaming(
 		rightLatestBuf = make(map[string]Transaction)
 	}
 	var totalRight int
+	reporter.start("right_index", rightSource, rightSource, nil)
 
 	if err := ParseEach(ctx, rightSource, rightPath, rightCfgNoRaw, func(tx Transaction, _ int) error {
 		totalRight++
 		if err := cc.Observe(rightSource, tx); err != nil {
 			return err
 		}
-		if progress != nil && totalRight >= nextRight {
-			progress(ProgressEvent{Phase: "right_index", Rows: totalRight, Elapsed: time.Since(startRight)})
-			nextRight += progressEvery
-		}
+		reporter.progress(totalRight)
 		switch rightPolicy {
 		case config.DuplicatePolicyFlag:
 			if tx.GroupKey != "" {
@@ -414,19 +478,13 @@ func reconcileStreaming(
 			}
 		}
 	}
-	if progress != nil {
-		progress(ProgressEvent{
-			Phase:   "right_index",
-			Rows:    totalRight,
-			Elapsed: time.Since(startRight),
-			Done:    true,
-		})
-	}
+	reporter.complete(totalRight)
 
 	// Emit right duplicate groups via targeted re-scan (flag policy only).
 	// collectDuplicates is only called when duplicates actually exist.
 	dupTxnCount := 0
 	if rightPolicy == config.DuplicatePolicyFlag && len(rightDupKeys) > 0 {
+		reporter.start("right_duplicate_scan", rightSource, rightSource, nil)
 		groups, err := collectDuplicates(ctx, rightSource, rightPath, rightCfg, rightDupKeys)
 		if err != nil {
 			return fmt.Errorf("collect right duplicates: %w", err)
@@ -437,12 +495,13 @@ func reconcileStreaming(
 				return err
 			}
 		}
+		reporter.complete(dupTxnCount)
 	}
 
 	// -----------------------------------------------------------------------
 	// Pass 2: stream left CSV, match against index, emit events immediately
 	// -----------------------------------------------------------------------
-	startLeft = time.Now()
+	reporter.start("left_match", leftSource, rightSource, nil)
 	leftPolicy := leftCfg.ResolvedDuplicatePolicy()
 	// leftSeen/leftDupKeys are only used for the "flag" policy.
 	leftSeen := make(map[string]uint8)
@@ -539,10 +598,7 @@ func reconcileStreaming(
 		if err := cc.Observe(leftSource, ltx); err != nil {
 			return err
 		}
-		if progress != nil && totalLeft >= nextLeft {
-			progress(ProgressEvent{Phase: "left_match", Rows: totalLeft, Elapsed: time.Since(startLeft)})
-			nextLeft += progressEvery
-		}
+		reporter.progress(totalLeft)
 		switch leftPolicy {
 		case config.DuplicatePolicyFlag:
 			if ltx.GroupKey != "" {
@@ -586,17 +642,11 @@ func reconcileStreaming(
 			}
 		}
 	}
-	if progress != nil {
-		progress(ProgressEvent{
-			Phase:   "left_match",
-			Rows:    totalLeft,
-			Elapsed: time.Since(startLeft),
-			Done:    true,
-		})
-	}
+	reporter.complete(totalLeft)
 
 	// Emit left duplicate groups via targeted re-scan (flag policy only).
 	if leftPolicy == config.DuplicatePolicyFlag && len(leftDupKeys) > 0 {
+		reporter.start("left_duplicate_scan", leftSource, rightSource, nil)
 		groups, err := collectDuplicates(ctx, leftSource, leftPath, leftCfg, leftDupKeys)
 		if err != nil {
 			return fmt.Errorf("collect left duplicates: %w", err)
@@ -607,6 +657,7 @@ func reconcileStreaming(
 				return err
 			}
 		}
+		reporter.complete(dupTxnCount)
 	}
 
 	// -----------------------------------------------------------------------
@@ -635,6 +686,7 @@ func reconcileStreaming(
 	// Guarded by maxTokenBuffer advisory limit.
 	// -----------------------------------------------------------------------
 	if effectiveTokenMode {
+		reporter.start("token_match", leftSource, rightSource, nil)
 		bufTotal := len(tokenUnmatchedLeft) + len(tokenUnmatchedRight)
 		if maxTokenBuffer > 0 && bufTotal > maxTokenBuffer {
 			fmt.Fprintf(os.Stderr,
@@ -669,6 +721,7 @@ func reconcileStreaming(
 				return err
 			}
 		}
+		reporter.complete(bufTotal)
 	}
 
 	// -----------------------------------------------------------------------
@@ -692,6 +745,7 @@ func reconcileStreaming(
 		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
 	}
 
+	reporter.start("finalization", leftSource, rightSource, nil)
 	if err := w.WriteSummary(Summary{
 		TotalLeft:            totalLeft,
 		TotalRight:           totalRight,
@@ -712,8 +766,11 @@ func reconcileStreaming(
 	}); err != nil {
 		return err
 	}
-
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	reporter.complete(totalLeft + totalRight)
+	return nil
 }
 
 // matchByNameTokensStreaming runs the Jaccard secondary pass on pre-buffered
