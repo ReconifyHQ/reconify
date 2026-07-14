@@ -340,7 +340,7 @@ func scanCSVShape(path string, cfg config.ParserCfg) (inputShape, error) {
 			return shape, readErr
 		}
 		shape.rows++
-		shape.fieldBytes += int64(fieldLen(record, refIndex) + fieldLen(record, currencyIndex) + fieldLen(record, nameIndex))
+		shape.fieldBytes += fieldLen(record, refIndex) + fieldLen(record, currencyIndex) + fieldLen(record, nameIndex)
 	}
 }
 
