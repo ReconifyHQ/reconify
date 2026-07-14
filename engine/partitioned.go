@@ -124,6 +124,9 @@ func addSummaries(a, b Summary) Summary {
 }
 
 func partitionCSV(ctx context.Context, input, refCol, prefix string, n int) ([]string, error) {
+	if n < 2 {
+		return nil, fmt.Errorf("partition count must be at least 2 (got %d)", n)
+	}
 	in, err := os.Open(input) // #nosec G304 -- input is an explicit caller-selected reconciliation file.
 	if err != nil {
 		return nil, err

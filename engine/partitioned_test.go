@@ -3,9 +3,11 @@ package engine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -58,6 +60,11 @@ func TestReconcilePartitionedMatchesStreamingResults(t *testing.T) {
 	if baseSummary != partSummary {
 		t.Fatalf("summary mismatch\nbaseline: %s\npartitioned: %s", baseSummary, partSummary)
 	}
+	baseEvents := sortedEventLines(baseline.String())
+	partitionedEvents := sortedEventLines(partitioned.String())
+	if strings.Join(baseEvents, "\n") != strings.Join(partitionedEvents, "\n") {
+		t.Fatalf("event output mismatch\nbaseline: %s\npartitioned: %s", strings.Join(baseEvents, "\n"), strings.Join(partitionedEvents, "\n"))
+	}
 }
 
 func lastSummaryLine(s string) string {
@@ -68,4 +75,43 @@ func lastSummaryLine(s string) string {
 		}
 	}
 	return ""
+}
+
+func sortedEventLines(s string) []string {
+	var events []string
+	for _, line := range strings.Split(strings.TrimSpace(s), "\n") {
+		var event struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(line), &event); err != nil || event.Type == "summary" || event.Type == "" {
+			continue
+		}
+		var value any
+		if err := json.Unmarshal([]byte(line), &value); err != nil {
+			continue
+		}
+		// Partition files restart parser row numbers, so generated synthetic IDs
+		// differ by partition. Business fields and event types remain comparable.
+		stripGeneratedIDs(value)
+		canonical, err := json.Marshal(value)
+		if err == nil {
+			events = append(events, string(canonical))
+		}
+	}
+	sort.Strings(events)
+	return events
+}
+
+func stripGeneratedIDs(value any) {
+	switch v := value.(type) {
+	case map[string]any:
+		delete(v, "id")
+		for _, child := range v {
+			stripGeneratedIDs(child)
+		}
+	case []any:
+		for _, child := range v {
+			stripGeneratedIDs(child)
+		}
+	}
 }
