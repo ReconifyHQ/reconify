@@ -6,14 +6,10 @@ package engine
 
 import (
 	"context"
-	"encoding/csv"
 	"fmt"
-	"hash/fnv"
-	"io"
 	"math"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/reconifyhq/reconify/config"
 )
@@ -70,7 +66,7 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 	}
 	partitions := options.Partitions
 	if partitions < 2 {
-		partitions = 32
+		partitions = adaptivePartitionCountFromFiles(leftPath, rightPath)
 	}
 	reporter.start("partitioning", leftSource, rightSource, nil)
 	leftKeyCol, rightKeyCol, ok, reason := PartitionKeyColumns(pair, leftCfg, rightCfg)
@@ -84,48 +80,7 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		return err
 	}
 
-	// For grouped passes, partition routing uses the same key as duplicate-group
-	// detection, so all members of every duplicate group land in the same
-	// partition. Per-partition Reconcile handles detection correctly; the
-	// pre-scan and cross-partition duplicate merge used by the streaming path
-	// are not needed and must be skipped to avoid double-emitting events.
 	isGrouped := containsGroupedPass(pair.Passes)
-	var rightDuplicateKeys map[string]bool
-	var rightDuplicateGroups []DuplicateGroup
-	var rightRepresentativeRows map[string]int
-	if !isGrouped {
-		if rightCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
-			var err error
-			rightDuplicateKeys, rightDuplicateGroups, err = collectPartitionDuplicateGroups(ctx, rightSource, rightPath, rightCfg)
-			if err != nil {
-				return fmt.Errorf("collect right duplicates: %w", err)
-			}
-		} else if policy := rightCfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
-			var err error
-			rightRepresentativeRows, err = collectPartitionDuplicateRepresentatives(ctx, rightSource, rightPath, rightCfg, policy == config.DuplicatePolicyLatest)
-			if err != nil {
-				return fmt.Errorf("collect right duplicate representatives: %w", err)
-			}
-		}
-	}
-	var leftDuplicateKeys map[string]bool
-	var leftDuplicateGroups []DuplicateGroup
-	var leftRepresentativeRows map[string]int
-	if !isGrouped {
-		if leftCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
-			var err error
-			leftDuplicateKeys, leftDuplicateGroups, err = collectPartitionDuplicateGroups(ctx, leftSource, leftPath, leftCfg)
-			if err != nil {
-				return fmt.Errorf("collect left duplicates: %w", err)
-			}
-		} else if policy := leftCfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
-			var err error
-			leftRepresentativeRows, err = collectPartitionDuplicateRepresentatives(ctx, leftSource, leftPath, leftCfg, policy == config.DuplicatePolicyLatest)
-			if err != nil {
-				return fmt.Errorf("collect left duplicate representatives: %w", err)
-			}
-		}
-	}
 	baseDir := options.SpillDir
 	if baseDir == "" {
 		baseDir = os.TempDir()
@@ -138,9 +93,9 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		return fmt.Errorf("create partition directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	var leftParts, rightParts []string
+	var leftParts, rightParts groupedPartitionFiles
+	var leftDuplicateParts, rightDuplicateParts groupedPartitionFiles
 	var leftRows, rightRows int
-	var leftOriginalRows, rightOriginalRows [][]int
 	var leftGrouped, rightGrouped groupedPartitionFiles
 	if isGrouped {
 		leftGrouped, err = partitionCSVWithSidecars(ctx, leftPath, leftKeyCol, filepath.Join(dir, "left"), partitions, reporter.progress)
@@ -148,7 +103,7 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			return fmt.Errorf("partition left source: %w", err)
 		}
 		leftRows = leftGrouped.count
-		leftParts = leftGrouped.data
+		leftParts = leftGrouped
 		rightGrouped, err = partitionCSVWithSidecars(ctx, rightPath, rightKeyCol, filepath.Join(dir, "right"), partitions, func(rows int) {
 			reporter.progress(leftRows + rows)
 		})
@@ -156,23 +111,37 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			return fmt.Errorf("partition right source: %w", err)
 		}
 		rightRows = rightGrouped.count
-		rightParts = rightGrouped.data
+		rightParts = rightGrouped
 	} else {
-		leftParts, leftRows, leftOriginalRows, err = partitionCSV(ctx, leftPath, leftKeyCol, filepath.Join(dir, "left"), partitions, reporter.progress)
+		leftParts, leftDuplicateParts, err = partitionCSVWithDuplicateSpill(ctx, leftPath, leftKeyCol, duplicateSpillColumn(leftCfg), filepath.Join(dir, "left"), partitions, reporter.progress)
 		if err != nil {
 			return fmt.Errorf("partition left source: %w", err)
 		}
-		rightParts, rightRows, rightOriginalRows, err = partitionCSV(ctx, rightPath, rightKeyCol, filepath.Join(dir, "right"), partitions, func(rows int) {
+		leftRows = leftParts.count
+		rightParts, rightDuplicateParts, err = partitionCSVWithDuplicateSpill(ctx, rightPath, rightKeyCol, duplicateSpillColumn(rightCfg), filepath.Join(dir, "right"), partitions, func(rows int) {
 			reporter.progress(leftRows + rows)
 		})
 		if err != nil {
 			return fmt.Errorf("partition right source: %w", err)
 		}
+		rightRows = rightParts.count
 	}
 	reporter.complete(leftRows + rightRows)
-	for _, group := range rightDuplicateGroups {
-		if err := w.WriteDuplicate(group); err != nil {
-			return err
+	var leftDisposition, rightDisposition *partitionedDuplicateDisposition
+	if !isGrouped {
+		_, _, leftSelector, _, _ := partitionKeyColumns(pair, leftCfg, rightCfg)
+		leftDisposition, err = buildPartitionedDuplicateDisposition(ctx, leftSource, leftCfg, leftSelector, leftDuplicateParts, filepath.Join(dir, "left-duplicate"), partitions)
+		if err != nil {
+			return fmt.Errorf("prepare left duplicate disposition: %w", err)
+		}
+		rightDisposition, err = buildPartitionedDuplicateDisposition(ctx, rightSource, rightCfg, leftSelector, rightDuplicateParts, filepath.Join(dir, "right-duplicate"), partitions)
+		if err != nil {
+			return fmt.Errorf("prepare right duplicate disposition: %w", err)
+		}
+		defer leftDisposition.Cleanup()
+		defer rightDisposition.Cleanup()
+		if err := rightDisposition.Emit(w, ctx); err != nil {
+			return fmt.Errorf("emit right duplicates: %w", err)
 		}
 	}
 	agg := &partitionSummaryWriter{ResultWriter: w}
@@ -208,14 +177,28 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+			leftOriginalRows, err := readPartitionRows(leftParts.rows[i])
+			if err != nil {
+				return fmt.Errorf("read left partition %d rows: %w", i, err)
+			}
+			rightOriginalRows, err := readPartitionRows(rightParts.rows[i])
+			if err != nil {
+				return fmt.Errorf("read right partition %d rows: %w", i, err)
+			}
+			leftRepresentatives, err := leftDisposition.Representatives(i)
+			if err != nil {
+				return fmt.Errorf("read left representatives for partition %d: %w", i, err)
+			}
+			rightRepresentatives, err := rightDisposition.Representatives(i)
+			if err != nil {
+				return fmt.Errorf("read right representatives for partition %d: %w", i, err)
+			}
 			idx := NewMemoryIndex()
-			err := reconcileStreamingWithOptions(ctx, pairName, leftSource, rightSource, leftParts[i], rightParts[i], leftCfg, rightCfg, pair, idx, agg, options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
-				globalRightDuplicateKeys:      rightDuplicateKeys,
-				globalLeftDuplicateKeys:       leftDuplicateKeys,
-				globalRightRepresentativeRows: rightRepresentativeRows,
-				globalLeftRepresentativeRows:  leftRepresentativeRows,
-				rightPartitionOriginalRows:    rightOriginalRows[i],
-				leftPartitionOriginalRows:     leftOriginalRows[i],
+			err = reconcileStreamingWithOptions(ctx, pairName, leftSource, rightSource, leftParts.data[i], rightParts.data[i], partitionedPolicyConfig(leftCfg), partitionedPolicyConfig(rightCfg), pair, idx, agg, options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
+				rightRepresentativeRows:    rightRepresentatives,
+				leftRepresentativeRows:     leftRepresentatives,
+				rightPartitionOriginalRows: rightOriginalRows,
+				leftPartitionOriginalRows:  leftOriginalRows,
 			})
 			closeErr := idx.Close()
 			if err != nil {
@@ -226,9 +209,15 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 			}
 		}
 	}
-	for _, group := range leftDuplicateGroups {
-		if err := w.WriteDuplicate(group); err != nil {
-			return err
+	if !isGrouped {
+		if err := leftDisposition.Emit(w, ctx); err != nil {
+			return fmt.Errorf("emit left duplicates: %w", err)
+		}
+		if leftDisposition != nil {
+			agg.summary.DuplicateCount += leftDisposition.duplicateCount
+		}
+		if rightDisposition != nil {
+			agg.summary.DuplicateCount += rightDisposition.duplicateCount
 		}
 	}
 	reporter.start("finalization", leftSource, rightSource, nil)
@@ -253,45 +242,6 @@ func validatePartitionCurrencies(ctx context.Context, leftSource, leftPath strin
 		return fmt.Errorf("validate right currencies: %w", err)
 	}
 	return nil
-}
-
-func collectPartitionDuplicateGroups(ctx context.Context, sourceName, path string, cfg config.ParserCfg) (map[string]bool, []DuplicateGroup, error) {
-	counts := make(map[string]uint8)
-	if err := ParseEach(ctx, sourceName, path, cfg, func(tx Transaction, _ int) error {
-		if tx.GroupKey != "" && counts[tx.GroupKey] < 2 {
-			counts[tx.GroupKey]++
-		}
-		return nil
-	}); err != nil {
-		return nil, nil, err
-	}
-	keys := make(map[string]bool)
-	for key, count := range counts {
-		if count >= 2 {
-			keys[key] = true
-		}
-	}
-	if len(keys) == 0 {
-		return keys, nil, nil
-	}
-	groups, err := collectDuplicates(ctx, sourceName, path, cfg, keys)
-	if err != nil {
-		return nil, nil, err
-	}
-	return keys, groups, nil
-}
-
-func collectPartitionDuplicateRepresentatives(ctx context.Context, sourceName, path string, cfg config.ParserCfg, latest bool) (map[string]int, error) {
-	representatives := make(map[string]int)
-	return representatives, ParseEach(ctx, sourceName, path, cfg, func(tx Transaction, rowNum int) error {
-		if tx.GroupKey == "" {
-			return nil
-		}
-		if latest || representatives[tx.GroupKey] == 0 {
-			representatives[tx.GroupKey] = rowNum
-		}
-		return nil
-	})
 }
 
 type partitionSummaryWriter struct {
@@ -447,95 +397,4 @@ func addSummaries(a, b Summary) Summary {
 		a.ReconciledRatePct = math.Round(float64(reconciledCount)/float64(denom)*10000) / 100
 	}
 	return a
-}
-
-func partitionCSV(ctx context.Context, input, keyCol, prefix string, n int, progress func(int)) ([]string, int, [][]int, error) {
-	if n < 2 {
-		return nil, 0, nil, fmt.Errorf("partition count must be at least 2 (got %d)", n)
-	}
-	in, err := os.Open(input) // #nosec G304 -- input is an explicit caller-selected reconciliation file.
-	if err != nil {
-		return nil, 0, nil, err
-	}
-	defer func() { _ = in.Close() }()
-	r := csv.NewReader(in)
-	r.TrimLeadingSpace = true
-	header, err := r.Read()
-	if err != nil {
-		return nil, 0, nil, err
-	}
-	refIdx := -1
-	for i, col := range header {
-		if strings.EqualFold(strings.TrimSpace(col), strings.TrimSpace(keyCol)) {
-			refIdx = i
-			break
-		}
-	}
-	if refIdx < 0 {
-		return nil, 0, nil, fmt.Errorf("partition key column %q not found", keyCol)
-	}
-	files := make([]*os.File, n)
-	writers := make([]*csv.Writer, n)
-	paths := make([]string, n)
-	originalRows := make([][]int, n)
-	closeAll := func() {
-		for i := range files {
-			if files[i] != nil {
-				_ = files[i].Close()
-			}
-		}
-	}
-	defer closeAll()
-	for i := 0; i < n; i++ {
-		paths[i] = fmt.Sprintf("%s-%03d.csv", prefix, i)
-		if err := os.MkdirAll(filepath.Dir(paths[i]), 0o750); err != nil {
-			return nil, 0, nil, err
-		}
-		f, err := os.Create(paths[i])
-		if err != nil {
-			return nil, 0, nil, err
-		}
-		files[i] = f
-		writers[i] = csv.NewWriter(f)
-		if err := writers[i].Write(header); err != nil {
-			return nil, 0, nil, err
-		}
-	}
-	rows := 0
-	for row := 2; ; row++ {
-		if err := ctx.Err(); err != nil {
-			return nil, 0, nil, err
-		}
-		record, err := r.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, 0, nil, fmt.Errorf("row %d: %w", row, err)
-		}
-		key := ""
-		if refIdx < len(record) {
-			// Keep partition routing identical to parser normalization: the
-			// reference value is trimmed before it becomes an index key.
-			key = strings.TrimSpace(record[refIdx])
-		}
-		h := fnv.New32a()
-		_, _ = h.Write([]byte(key))
-		p := int(uint64(h.Sum32()) % uint64(n)) // #nosec G115 -- result is bounded by positive partition count.
-		if err := writers[p].Write(record); err != nil {
-			return nil, 0, nil, err
-		}
-		originalRows[p] = append(originalRows[p], row-1)
-		rows++
-		if progress != nil {
-			progress(rows)
-		}
-	}
-	for _, w := range writers {
-		w.Flush()
-		if err := w.Error(); err != nil {
-			return nil, 0, nil, err
-		}
-	}
-	return paths, rows, originalRows, nil
 }

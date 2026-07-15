@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 	"path/filepath"
@@ -74,6 +76,67 @@ func TestReconcilePartitionedMultiSourceMatchesStreamingMultiSource(t *testing.T
 	if len(entries) != 0 {
 		t.Fatalf("spill directory contains cleanup artifacts: %v", entries)
 	}
+}
+
+func TestReconcilePartitionedMultiSourceDuplicateParityAcrossPartitions(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	first := filepath.Join(dir, "first.csv")
+	second := filepath.Join(dir, "second.csv")
+	refForPartition := func(ref string) int {
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(ref))
+		return int(h.Sum32() % 2)
+	}
+	firstRef, secondRef := "REF-0", "REF-1"
+	for i := 1; refForPartition(firstRef) == refForPartition(secondRef); i++ {
+		secondRef = fmt.Sprintf("REF-%d", i)
+	}
+	header := "id,date,amount,reference,group\n"
+	if err := os.WriteFile(left, []byte(header+
+		"l1,2026-01-01,100,"+firstRef+",DUP-LEFT\n"+
+		"l2,2026-01-01,200,"+secondRef+",DUP-LEFT\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(first, []byte(header+"a1,2026-01-01,100,"+firstRef+",UNIQUE\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte(header+"b1,2026-01-01,200,"+secondRef+",UNIQUE\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", Multiplier: 1, RefCol: "reference", GroupCol: "group"}
+	pair := config.Pair{DateWindow: "0d", AmountToleranceMinor: 0}
+
+	var baseline bytes.Buffer
+	bw, err := NewResultWriter("json", &baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexes := []RightIndex{NewMemoryIndex(), NewMemoryIndex()}
+	if err := ReconcileStreamingMultiSource(context.Background(), "p", "left", left, cfg, []CounterpartStream{
+		{SourceName: "first", RightPath: first, RightCfg: cfg, Index: indexes[0]},
+		{SourceName: "second", RightPath: second, RightCfg: cfg, Index: indexes[1]},
+	}, pair, bw, 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, index := range indexes {
+		if err := index.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var partitioned bytes.Buffer
+	pw, err := NewResultWriter("json", &partitioned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcilePartitionedMultiSourceWithOptions(context.Background(), "p", "left", left, cfg, []PartitionedCounterpartInput{
+		{SourceName: "first", RightPath: first, ParserCfg: cfg},
+		{SourceName: "second", RightPath: second, ParserCfg: cfg},
+	}, pair, pw, PartitionedOptions{Partitions: 2, SpillDir: filepath.Join(dir, "spill")}); err != nil {
+		t.Fatal(err)
+	}
+	assertJSONResultsMatch(t, baseline.Bytes(), partitioned.Bytes())
 }
 
 func TestReconcilePartitionedMultiSourceGroupedCarryForward(t *testing.T) {

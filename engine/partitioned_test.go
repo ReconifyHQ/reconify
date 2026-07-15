@@ -363,6 +363,69 @@ func TestReconcilePartitionedPreservesDuplicateGroupsAcrossPartitions(t *testing
 	}
 }
 
+func TestReconcilePartitionedDuplicateJSONParityWithGroupColumn(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	refForPartition := func(ref string) int {
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(ref))
+		return int(h.Sum32() % 2)
+	}
+	firstRef := "REF-0"
+	secondRef := "REF-1"
+	for i := 1; refForPartition(firstRef) == refForPartition(secondRef); i++ {
+		secondRef = fmt.Sprintf("REF-%d", i)
+	}
+	leftCSV := "date,amount,currency,reference,group\n" +
+		"2026-01-01,100,USD," + firstRef + ",DUP-1\n" +
+		"2026-01-01,200,USD," + secondRef + ",DUP-1\n" +
+		"2026-01-01,300,USD,REF-UNIQUE,UNIQUE\n"
+	rightCSV := "date,amount,currency,reference,group\n" +
+		"2026-01-01,100,USD," + firstRef + ",DUP-RIGHT\n" +
+		"2026-01-02,999,USD,REF-RIGHT-UNMATCHED,DUP-RIGHT\n"
+	if err := os.WriteFile(left, []byte(leftCSV), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte(rightCSV), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{
+		Type:        "csv",
+		DateCol:     "date",
+		DateLayout:  "2006-01-02",
+		AmountCol:   "amount",
+		CurrencyCol: "currency",
+		RefCol:      "reference",
+		GroupCol:    "group",
+		SkipRaw:     true,
+	}
+	pair := config.Pair{Left: "left", Right: "right", DateWindow: "0d"}
+
+	var baseline bytes.Buffer
+	bw, err := NewResultWriter("json", &baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := NewMemoryIndex()
+	if err := ReconcileStreaming(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, idx, bw, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var partitioned bytes.Buffer
+	pw, err := NewResultWriter("json", &partitioned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReconcilePartitioned(context.Background(), "p", "left", "right", left, right, cfg, cfg, pair, pw, 0, 2); err != nil {
+		t.Fatal(err)
+	}
+	assertJSONResultsMatch(t, baseline.Bytes(), partitioned.Bytes())
+}
+
 func TestReconcilePartitionedPreservesDuplicatePolicyAcrossPartitions(t *testing.T) {
 	dir := t.TempDir()
 	left := filepath.Join(dir, "left.csv")
@@ -419,6 +482,11 @@ func TestReconcilePartitionedPreservesDuplicatePolicyAcrossPartitions(t *testing
 			}
 			if got, want := summaryFromNDJSON(partitioned.String()), summaryFromNDJSON(baseline.String()); got != want {
 				t.Fatalf("summary mismatch\npartitioned: %s\nbaseline: %s", got, want)
+			}
+			gotEvents := sortedEventLines(partitioned.String())
+			wantEvents := sortedEventLines(baseline.String())
+			if strings.Join(gotEvents, "\n") != strings.Join(wantEvents, "\n") {
+				t.Fatalf("event mismatch\npartitioned: %s\nbaseline: %s", strings.Join(gotEvents, "\n"), strings.Join(wantEvents, "\n"))
 			}
 		})
 	}

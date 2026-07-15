@@ -259,6 +259,46 @@ func BenchmarkReconcileStreaming_20M_Realistic(b *testing.B) {
 	}
 }
 
+// benchmarkReconcilePartitionedLarge measures the disk-backed duplicate
+// disposition path. Generate fixtures with --duplicate-groups to exercise the
+// duplicate-group emission path; the benchmark remains env-gated so normal
+// tests never require multi-gigabyte inputs.
+func benchmarkReconcilePartitionedLarge(b *testing.B, expectedRows int) {
+	leftPath, rightPath := requireBenchData(b)
+	leftCfg, rightCfg := largeFileCfgs()
+	leftCfg.GroupCol = "processor_hint"
+	leftRows, err := countCSVDataRows(leftPath)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if leftRows != expectedRows {
+		b.Skipf("fixture has %d rows; this benchmark requires %d rows", leftRows, expectedRows)
+	}
+
+	pair := config.Pair{Left: "bank", Right: "processor", DateWindow: "0d"}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		w, _ := NewResultWriter("ndjson", io.Discard)
+		if err := ReconcilePartitionedWithOptions(
+			context.Background(), "bench_partitioned", "bank", "processor",
+			leftPath, rightPath, leftCfg, rightCfg, pair, w,
+			PartitionedOptions{Partitions: 64},
+		); err != nil {
+			b.Fatal(err)
+		}
+		b.ReportMetric(float64(leftRows), "left_rows/op")
+	}
+}
+
+func BenchmarkReconcilePartitioned_5M_DuplicatePreScan(b *testing.B) {
+	benchmarkReconcilePartitionedLarge(b, 5_000_000)
+}
+
+func BenchmarkReconcilePartitioned_20M_DuplicatePreScan(b *testing.B) {
+	benchmarkReconcilePartitionedLarge(b, 20_000_000)
+}
+
 // ---------------------------------------------------------------------------
 // one_to_many batch benchmarks
 // ---------------------------------------------------------------------------

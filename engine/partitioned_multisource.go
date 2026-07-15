@@ -132,7 +132,12 @@ func reconcilePartitionedMultiSource(
 	}
 	partitions := options.Partitions
 	if partitions < 2 {
-		partitions = 32
+		paths := make([]string, 0, len(counterparts)+1)
+		paths = append(paths, leftPath)
+		for _, counterpart := range counterparts {
+			paths = append(paths, counterpart.RightPath)
+		}
+		partitions = adaptivePartitionCountFromFiles(paths...)
 	}
 	baseDir := options.SpillDir
 	if baseDir == "" {
@@ -157,16 +162,18 @@ func reconcilePartitionedMultiSource(
 	}
 
 	reporter.start("partitioning", leftSource, strings.Join(counterpartNames(counterparts), ","), nil)
-	leftParts, err := partitionCSVWithSidecars(ctx, leftPath, leftKey, filepath.Join(spillDir, "left-original"), partitions, reporter.progress)
+	leftParts, leftDuplicateParts, err := partitionCSVWithDuplicateSpill(ctx, leftPath, leftKey, duplicateSpillColumn(leftCfg), filepath.Join(spillDir, "left-original"), partitions, reporter.progress)
 	if err != nil {
 		return fmt.Errorf("partition left source: %w", err)
 	}
 	reporter.complete(leftParts.count)
 
-	leftDupGroups, leftDupCount, leftRepresentatives, err := preparePartitionedLeftDisposition(ctx, leftSource, leftPath, leftCfg)
+	_, _, leftSelector, _, _ := partitionKeyColumns(pair, leftCfg, counterparts[0].parserCfg())
+	leftDisposition, err := buildPartitionedDuplicateDisposition(ctx, leftSource, leftCfg, leftSelector, leftDuplicateParts, filepath.Join(spillDir, "left-duplicate"), partitions)
 	if err != nil {
 		return fmt.Errorf("prepare left disposition: %w", err)
 	}
+	defer leftDisposition.Cleanup()
 
 	currentLeft := leftParts
 	var aggregate Summary
@@ -180,41 +187,42 @@ func reconcilePartitionedMultiSource(
 			return err
 		}
 		rightCfg := counterpart.parserCfg()
-		rightParts, rightDupGroups, rightDupCount, rightRepresentatives, err := preparePartitionedCounterpart(
+		rightParts, rightDisposition, err := preparePartitionedCounterpart(
 			ctx, spillDir, passIndex, counterpart, rightCfg, pair, leftCfg, partitions, reporter,
 		)
 		if err != nil {
 			return fmt.Errorf("prepare counterpart %q: %w", counterpart.SourceName, err)
 		}
-		for _, group := range rightDupGroups {
-			if err := w.WriteDuplicate(group); err != nil {
-				return err
-			}
+		if err := rightDisposition.Emit(w, ctx); err != nil {
+			return fmt.Errorf("emit duplicates for counterpart %q: %w", counterpart.SourceName, err)
 		}
 
 		reporter.start("counterpart_pass", leftSource, counterpart.SourceName, nil)
 		nextLeft, passSummary, err := reconcilePartitionedCounterpartPass(
 			ctx, pairName, leftSource, leftCfg, currentLeft, counterpart.SourceName, rightCfg, rightParts,
-			pair, w, options, passIndex, spillDir, leftRepresentatives, rightRepresentatives, reporter,
+			pair, w, options, passIndex, spillDir, leftDisposition, rightDisposition, reporter,
 		)
 		if err != nil {
 			return fmt.Errorf("counterpart %q: %w", counterpart.SourceName, err)
 		}
-		passSummary.DuplicateCount = rightDupCount
+		if rightDisposition != nil {
+			passSummary.DuplicateCount = rightDisposition.duplicateCount
+		}
 		passSummary.TotalRight = rightParts.count
 		bySource[counterpart.SourceName] = passSummary
 		aggregate = addSummaries(aggregate, passSummary)
 		totalRight += rightParts.count
-		rightDuplicateTotal += rightDupCount
+		if rightDisposition != nil {
+			rightDuplicateTotal += rightDisposition.duplicateCount
+		}
 
 		if passIndex == 0 {
-			for _, group := range leftDupGroups {
-				if err := w.WriteDuplicate(group); err != nil {
-					return err
-				}
+			if err := leftDisposition.Emit(w, ctx); err != nil {
+				return fmt.Errorf("emit left duplicates: %w", err)
 			}
 		}
 		currentLeft = nextLeft
+		rightDisposition.Cleanup()
 		reporter.complete(passSummary.TotalLeft + passSummary.TotalRight)
 	}
 
@@ -227,7 +235,10 @@ func reconcilePartitionedMultiSource(
 	aggregate.TotalRight = totalRight
 	aggregate.UnmatchedLeft = finalUnmatched
 	aggregate.UnmatchedAmountLeft = finalUnmatchedAmount
-	aggregate.DuplicateCount = leftDupCount + rightDuplicateTotal
+	aggregate.DuplicateCount = rightDuplicateTotal
+	if leftDisposition != nil {
+		aggregate.DuplicateCount += leftDisposition.duplicateCount
+	}
 	aggregate.Currency = currency
 	finalizeAggregateSummary(&aggregate)
 
@@ -323,25 +334,6 @@ func validatePartitionedMultiSourceCurrencies(ctx context.Context, leftSource, l
 	return cc.base, nil
 }
 
-func preparePartitionedLeftDisposition(ctx context.Context, source, path string, cfg config.ParserCfg) ([]DuplicateGroup, int, map[string]int, error) {
-	if cfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
-		_, groups, err := collectPartitionDuplicateGroups(ctx, source, path, cfg)
-		if err != nil {
-			return nil, 0, nil, err
-		}
-		count := 0
-		for _, group := range groups {
-			count += len(group.Transactions)
-		}
-		return groups, count, nil, nil
-	}
-	if policy := cfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
-		reps, err := collectPartitionDuplicateRepresentatives(ctx, source, path, cfg, policy == config.DuplicatePolicyLatest)
-		return nil, 0, reps, err
-	}
-	return nil, 0, nil, nil
-}
-
 func preparePartitionedCounterpart(
 	ctx context.Context,
 	spillDir string,
@@ -352,35 +344,24 @@ func preparePartitionedCounterpart(
 	leftCfg config.ParserCfg,
 	partitions int,
 	reporter *telemetryReporter,
-) (groupedPartitionFiles, []DuplicateGroup, int, map[string]int, error) {
+) (groupedPartitionFiles, *partitionedDuplicateDisposition, error) {
 	_, rightKey, _, ok, reason := partitionKeyColumns(pair, leftCfg, cfg)
 	if !ok {
-		return groupedPartitionFiles{}, nil, 0, nil, fmt.Errorf("%s", reason)
+		return groupedPartitionFiles{}, nil, fmt.Errorf("%s", reason)
 	}
 	prefix := filepath.Join(spillDir, fmt.Sprintf("right-%02d", passIndex))
 	reporter.start("counterpart_partitioning", counterpart.SourceName, counterpart.SourceName, nil)
-	parts, err := partitionCSVWithSidecars(ctx, counterpart.RightPath, rightKey, prefix, partitions, reporter.progress)
+	parts, duplicateParts, err := partitionCSVWithDuplicateSpill(ctx, counterpart.RightPath, rightKey, duplicateSpillColumn(cfg), prefix, partitions, reporter.progress)
 	if err != nil {
-		return groupedPartitionFiles{}, nil, 0, nil, err
+		return groupedPartitionFiles{}, nil, err
 	}
 	reporter.complete(parts.count)
-
-	if cfg.ResolvedDuplicatePolicy() != config.DuplicatePolicyFlag {
-		var reps map[string]int
-		if policy := cfg.ResolvedDuplicatePolicy(); policy == config.DuplicatePolicyMerge || policy == config.DuplicatePolicyLatest {
-			reps, err = collectPartitionDuplicateRepresentatives(ctx, counterpart.SourceName, counterpart.RightPath, cfg, policy == config.DuplicatePolicyLatest)
-		}
-		return parts, nil, 0, reps, err
-	}
-	_, groups, err := collectPartitionDuplicateGroups(ctx, counterpart.SourceName, counterpart.RightPath, cfg)
+	_, _, selector, _, _ := partitionKeyColumns(pair, leftCfg, cfg)
+	disposition, err := buildPartitionedDuplicateDisposition(ctx, counterpart.SourceName, cfg, selector, duplicateParts, filepath.Join(spillDir, fmt.Sprintf("right-%02d-duplicate", passIndex)), partitions)
 	if err != nil {
-		return groupedPartitionFiles{}, nil, 0, nil, err
+		return groupedPartitionFiles{}, nil, err
 	}
-	count := 0
-	for _, group := range groups {
-		count += len(group.Transactions)
-	}
-	return parts, groups, count, nil, nil
+	return parts, disposition, nil
 }
 
 func reconcilePartitionedCounterpartPass(
@@ -396,7 +377,7 @@ func reconcilePartitionedCounterpartPass(
 	options PartitionedOptions,
 	passIndex int,
 	spillDir string,
-	leftRepresentatives, rightRepresentatives map[string]int,
+	leftDisposition, rightDisposition *partitionedDuplicateDisposition,
 	reporter *telemetryReporter,
 ) (groupedPartitionFiles, Summary, error) {
 	partitions := len(leftParts.data)
@@ -408,13 +389,8 @@ func reconcilePartitionedCounterpartPass(
 		return groupedPartitionFiles{}, Summary{}, fmt.Errorf("%s", reason)
 	}
 
-	leftCfgForPass := leftCfg
-	if leftCfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
-		// Left duplicate groups are emitted once from the original manifest. The
-		// matcher still processes every row, but must not re-count carried rows.
-		leftCfgForPass.DuplicatePolicy = config.DuplicatePolicyKeep
-	}
-	globalRightDuplicates := map[string]bool{}
+	leftCfgForPass := partitionedPolicyConfig(leftCfg)
+	rightCfgForPass := partitionedPolicyConfig(rightCfg)
 	for i := 0; i < partitions; i++ {
 		if err := ctx.Err(); err != nil {
 			return groupedPartitionFiles{}, Summary{}, err
@@ -449,15 +425,21 @@ func reconcilePartitionedCounterpartPass(
 			runErr = firstPartitionError(runErr, sortErr)
 		} else {
 			idx := NewMemoryIndex()
+			leftRepresentatives, repErr := leftDisposition.Representatives(i)
+			if repErr != nil {
+				return groupedPartitionFiles{}, Summary{}, fmt.Errorf("read left representatives for partition %d: %w", i, repErr)
+			}
+			rightRepresentatives, repErr := rightDisposition.Representatives(i)
+			if repErr != nil {
+				return groupedPartitionFiles{}, Summary{}, fmt.Errorf("read right representatives for partition %d: %w", i, repErr)
+			}
 			runErr = reconcileStreamingWithOptions(ctx, pairName, leftSource, rightSource,
-				leftParts.data[i], rightParts.data[i], leftCfgForPass, rightCfg, pair, idx, partWriter,
+				leftParts.data[i], rightParts.data[i], leftCfgForPass, rightCfgForPass, pair, idx, partWriter,
 				options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
-					globalRightDuplicateKeys:      globalRightDuplicates,
-					globalLeftDuplicateKeys:       nil,
-					globalRightRepresentativeRows: rightRepresentatives,
-					globalLeftRepresentativeRows:  leftRepresentatives,
-					rightPartitionOriginalRows:    rightRows,
-					leftPartitionOriginalRows:     leftRows,
+					rightRepresentativeRows:    rightRepresentatives,
+					leftRepresentativeRows:     leftRepresentatives,
+					rightPartitionOriginalRows: rightRows,
+					leftPartitionOriginalRows:  leftRows,
 				})
 			closeErr := idx.Close()
 			runErr = firstPartitionError(runErr, closeErr)

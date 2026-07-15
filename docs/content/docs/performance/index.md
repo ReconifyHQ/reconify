@@ -113,9 +113,21 @@ sort/merge buffers rather than by the complete input or every group in a
 partition. The temporary-disk requirement is higher because sort runs and
 sorted outputs coexist briefly with the staged partitions.
 
-`partition_count: 0` uses the default of 32; explicit values must be at least 2.
-More partitions reduce memory but increase partition-file overhead and disk
-passes. Use `ndjson` or `csv` output so results do not accumulate in memory.
+`partition_count: 0` selects a power-of-two count from the input size and, when
+configured, the memory budget; explicit values must be at least 2. The adaptive
+selector targets roughly one million rows per active partition and increases
+the count until the estimated working set fits `max_memory_mb`. More partitions
+reduce memory but increase partition-file overhead and disk passes.
+
+For non-grouped passes, duplicate handling uses a second disk-backed set of
+hash buckets keyed by the effective `group_col`. Each bucket is externally
+sorted and streamed one group at a time. `flag` emits duplicate groups from the
+sorted stream; `merge` and `latest` write representative row IDs to per-match-
+partition sidecars. The matching loop loads only the active partition's
+sidecars, so duplicate metadata no longer grows with the complete input. This
+uses additional temporary disk, which is included in resource estimates.
+
+Use `ndjson` or `csv` output so results do not accumulate in memory.
 
 The partitioned backend applies to CSV pairs using a consistent reference,
 name, or group-key selector across all passes. Duplicate policies are supported
@@ -127,7 +139,7 @@ For `rights` pairs, the coordinator partitions the left file once, partitions
 one counterpart at a time, and writes unmatched left rows to carry-forward
 manifests before advancing to the next configured counterpart. Only one left
 partition and one counterpart partition are active in memory. Right duplicate
-and left disposition tracking preserve duplicate policies and annotations;
+and left disposition spill files preserve duplicate policies and annotations;
 the private spill tree is removed on success and on failure. Multi-source
 partitioning rejects non-CSV inputs, token-name matching, incompatible
 selectors, and duplicate layouts that cannot be safely co-located.
@@ -176,6 +188,21 @@ runtime predictable and the output explainable.
 ---
 
 ## Benchmark Environment
+
+The partitioned duplicate-disposition benchmarks are environment-gated so they
+do not run during ordinary tests. Generate either fixture size and run the same
+command before and after a change:
+
+```bash
+go run scripts/gen_bench_data.go --rows 5000000 --duplicate-groups 100000 --out /tmp/bench-5m
+BENCH_DATA_DIR=/tmp/bench-5m go test -run '^$' \
+  -bench='BenchmarkReconcilePartitioned_5M_DuplicatePreScan$' \
+  -benchtime=1x -benchmem -timeout=600s ./engine
+```
+
+Use `--rows 20000000` and the corresponding `20M` benchmark for the larger
+fixture. Record partition count, output format, Go version, elapsed time, peak
+RSS, and temporary-disk usage with the result.
 
 All numbers in this document were collected on an Apple M1 Pro (10-core, 32 GB
 unified memory, NVMe SSD) running macOS with Go 1.26.4.

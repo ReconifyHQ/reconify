@@ -194,7 +194,8 @@ type IndexCfg struct {
 	// selector still checks actual free space.
 	MaxTempDiskMB int64 `yaml:"max_temp_disk_mb,omitempty"`
 	// PartitionCount controls the number of hash partitions for the bounded-memory
-	// backend. Zero uses the default (32); positive values must be at least 2.
+	// backend. Zero selects an adaptive power-of-two count; positive values must
+	// be at least 2.
 	PartitionCount int `yaml:"partition_count,omitempty"`
 }
 
