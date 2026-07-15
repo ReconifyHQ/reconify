@@ -327,29 +327,11 @@ func sortGroupedPartition(ctx context.Context, dataPath, rowPath, prefix, keyCol
 		return dataOut, rowsOut, nil
 	}
 
-	cursors := make([]*groupedRunCursor, len(runPaths))
-	queue := make(groupedRunHeap, 0, len(runPaths))
-	for i, path := range runPaths {
-		f, openErr := os.Open(path) // #nosec G304 -- path was created by this sort pass.
-		if openErr != nil {
-			return "", "", openErr
-		}
-		cursor := &groupedRunCursor{index: i, file: f, decoder: gob.NewDecoder(f)}
-		cursors[i] = cursor
-		if advanceErr := cursor.advance(); advanceErr != nil {
-			return "", "", advanceErr
-		}
-		if !cursor.done {
-			heap.Push(&queue, cursor)
-		}
+	cursors, queue, err := openGroupedRunCursors(runPaths)
+	if err != nil {
+		return "", "", err
 	}
-	defer func() {
-		for _, cursor := range cursors {
-			if cursor != nil && cursor.file != nil {
-				_ = cursor.file.Close()
-			}
-		}
-	}()
+	defer closeGroupedRunCursors(cursors)
 
 	for queue.Len() > 0 {
 		if err := ctx.Err(); err != nil {
@@ -380,6 +362,55 @@ func sortGroupedPartition(ctx context.Context, dataPath, rowPath, prefix, keyCol
 		return "", "", err
 	}
 	return dataOut, rowsOut, nil
+}
+
+func openGroupedRunCursors(runPaths []string) ([]*groupedRunCursor, groupedRunHeap, error) {
+	return openGroupedRunCursorsWith(runPaths,
+		os.Open,
+		func(cursor *groupedRunCursor) error {
+			return cursor.advance()
+		},
+	)
+}
+
+func openGroupedRunCursorsWith(
+	runPaths []string,
+	open func(string) (*os.File, error),
+	advance func(*groupedRunCursor) error,
+) (cursors []*groupedRunCursor, queue groupedRunHeap, err error) {
+	cursors = make([]*groupedRunCursor, len(runPaths))
+	queue = make(groupedRunHeap, 0, len(runPaths))
+	cleanupOnReturn := true
+	defer func() {
+		if cleanupOnReturn {
+			closeGroupedRunCursors(cursors)
+		}
+	}()
+
+	for i, path := range runPaths {
+		f, openErr := open(path)
+		if openErr != nil {
+			return cursors, queue, openErr
+		}
+		cursor := &groupedRunCursor{index: i, file: f, decoder: gob.NewDecoder(f)}
+		cursors[i] = cursor
+		if advanceErr := advance(cursor); advanceErr != nil {
+			return cursors, queue, advanceErr
+		}
+		if !cursor.done {
+			heap.Push(&queue, cursor)
+		}
+	}
+	cleanupOnReturn = false
+	return cursors, queue, nil
+}
+
+func closeGroupedRunCursors(cursors []*groupedRunCursor) {
+	for _, cursor := range cursors {
+		if cursor != nil && cursor.file != nil {
+			_ = cursor.file.Close()
+		}
+	}
 }
 
 type groupedRunCursor struct {

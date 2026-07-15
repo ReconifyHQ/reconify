@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -53,6 +52,7 @@ Formats:
   table        Aligned ASCII table; buffers all rows in memory.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
+			ctx := cmd.Context()
 			if pairName == "" {
 				return configErr("--pair is required")
 			}
@@ -245,9 +245,9 @@ Formats:
 					}
 					var runErr error
 					if telemetryEnabled {
-						runErr = engine.ReconcilePartitionedMultiSourceWithOptionsAndTelemetry(context.Background(), pairName, pair.Left, leftPath, leftSrc.Parser, partitionedCounterparts, pair, w, options, telemetry)
+						runErr = engine.ReconcilePartitionedMultiSourceWithOptionsAndTelemetry(ctx, pairName, pair.Left, leftPath, leftSrc.Parser, partitionedCounterparts, pair, w, options, telemetry)
 					} else {
-						runErr = engine.ReconcilePartitionedMultiSourceWithOptions(context.Background(), pairName, pair.Left, leftPath, leftSrc.Parser, partitionedCounterparts, pair, w, options)
+						runErr = engine.ReconcilePartitionedMultiSourceWithOptions(ctx, pairName, pair.Left, leftPath, leftSrc.Parser, partitionedCounterparts, pair, w, options)
 					}
 					if runErr != nil {
 						return fmt.Errorf("reconciliation failed: %w", runErr)
@@ -272,7 +272,7 @@ Formats:
 				if auditMode {
 					return fmt.Errorf("--audit is not yet supported with grouped passes")
 				}
-				leftTxns, parseErr := engine.ParseWithTelemetry(context.Background(), pair.Left, leftPath, leftSrc.Parser, strings.Join(counterparts, ","), telemetry)
+				leftTxns, parseErr := engine.ParseWithTelemetry(ctx, pair.Left, leftPath, leftSrc.Parser, strings.Join(counterparts, ","), telemetry)
 				if parseErr != nil {
 					return fmt.Errorf("parse left source: %w", parseErr)
 				}
@@ -280,7 +280,7 @@ Formats:
 				for _, name := range counterparts {
 					src := cfg.Sources[name]
 					cpPath := rightPaths[name]
-					cpTxns, cpParseErr := engine.ParseWithTelemetry(context.Background(), name, cpPath, src.Parser, pair.Left, telemetry)
+					cpTxns, cpParseErr := engine.ParseWithTelemetry(ctx, name, cpPath, src.Parser, pair.Left, telemetry)
 					if cpParseErr != nil {
 						return fmt.Errorf("parse counterpart %q: %w", name, cpParseErr)
 					}
@@ -363,9 +363,9 @@ Formats:
 					}
 					var runErr error
 					if telemetryEnabled {
-						runErr = engine.ReconcilePartitionedWithOptionsAndTelemetry(context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, options, telemetry)
+						runErr = engine.ReconcilePartitionedWithOptionsAndTelemetry(ctx, pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, options, telemetry)
 					} else {
-						runErr = engine.ReconcilePartitionedWithOptions(context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, options)
+						runErr = engine.ReconcilePartitionedWithOptions(ctx, pairName, pair.Left, counterparts[0], leftPath, rightPath, leftSrc.Parser, rightSrc.Parser, pair, w, options)
 					}
 					if runErr != nil {
 						return fmt.Errorf("reconciliation failed: %w", runErr)
@@ -388,11 +388,11 @@ Formats:
 					if auditMode {
 						return fmt.Errorf("--audit is not yet supported with grouped passes")
 					}
-					leftTxns, parseErr := engine.ParseWithTelemetry(context.Background(), pair.Left, leftPath, leftSrc.Parser, counterparts[0], telemetry)
+					leftTxns, parseErr := engine.ParseWithTelemetry(ctx, pair.Left, leftPath, leftSrc.Parser, counterparts[0], telemetry)
 					if parseErr != nil {
 						return fmt.Errorf("parse left source: %w", parseErr)
 					}
-					rightTxns, rParseErr := engine.ParseWithTelemetry(context.Background(), counterparts[0], rightPath, rightSrc.Parser, pair.Left, telemetry)
+					rightTxns, rParseErr := engine.ParseWithTelemetry(ctx, counterparts[0], rightPath, rightSrc.Parser, pair.Left, telemetry)
 					if rParseErr != nil {
 						return fmt.Errorf("parse right source: %w", rParseErr)
 					}
@@ -431,12 +431,12 @@ Formats:
 				run := func() error {
 					if telemetryEnabled {
 						return engine.ReconcileStreamingWithTelemetry(
-							context.Background(), pairName, pair.Left, counterparts[0], leftPath, rightPath,
+							ctx, pairName, pair.Left, counterparts[0], leftPath, rightPath,
 							leftSrc.Parser, rightSrc.Parser, pair, idx, w, maxTokenBuffer, telemetry,
 						)
 					}
 					return engine.ReconcileStreaming(
-						context.Background(),
+						ctx,
 						pairName,
 						pair.Left,
 						counterparts[0],
@@ -486,7 +486,7 @@ Formats:
 				}
 
 				if err := engine.ReconcileStreamingMultiSourceWithTelemetry(
-					context.Background(),
+					ctx,
 					pairName,
 					pair.Left,
 					leftPath,

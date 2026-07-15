@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 
@@ -86,7 +85,7 @@ This validates that required columns exist and that sample data can be parsed.`,
 				return configErrf("source %q not found in config", sourceName)
 			}
 
-			headers, err := engine.ReadInputHeaders(context.Background(), filePath, source.Parser)
+			headers, err := engine.ReadInputHeaders(cmd.Context(), filePath, source.Parser)
 			if err != nil {
 				return configErrf("failed to read file: %v", err)
 			}

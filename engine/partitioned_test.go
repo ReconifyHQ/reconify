@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -118,6 +119,116 @@ func TestReconcilePartitionedWithOptionsCleansConfiguredSpillDir(t *testing.T) {
 	entries, err := os.ReadDir(spill)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("spill entries=%d, want cleanup", len(entries))
+	}
+}
+
+func TestOpenGroupedRunCursorsClosesEarlierRunsOnOpenFailure(t *testing.T) {
+	dir := t.TempDir()
+	paths := []string{filepath.Join(dir, "run-0.gob"), filepath.Join(dir, "run-1.gob")}
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte("run"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var opened []*os.File
+	_, _, err := openGroupedRunCursorsWith(paths, func(path string) (*os.File, error) {
+		if len(opened) == 1 {
+			return nil, errors.New("injected later run open failure")
+		}
+		f, openErr := os.Open(path) // #nosec G304 -- test paths are created under t.TempDir().
+		if openErr == nil {
+			opened = append(opened, f)
+		}
+		return f, openErr
+	}, func(*groupedRunCursor) error {
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "injected later run open failure") {
+		t.Fatalf("error = %v, want injected open failure", err)
+	}
+	if len(opened) != 1 {
+		t.Fatalf("opened files = %d, want one earlier run", len(opened))
+	}
+	if closeErr := opened[0].Close(); closeErr == nil {
+		t.Fatal("earlier run file remained open after setup failure")
+	}
+}
+
+func TestOpenGroupedRunCursorsClosesEarlierRunsOnPrimeFailure(t *testing.T) {
+	dir := t.TempDir()
+	paths := []string{filepath.Join(dir, "run-0.gob"), filepath.Join(dir, "run-1.gob")}
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte("run"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var opened []*os.File
+	_, _, err := openGroupedRunCursorsWith(paths, func(path string) (*os.File, error) {
+		f, openErr := os.Open(path) // #nosec G304 -- test paths are created under t.TempDir().
+		if openErr == nil {
+			opened = append(opened, f)
+		}
+		return f, openErr
+	}, func(cursor *groupedRunCursor) error {
+		if cursor.index == 1 {
+			return errors.New("injected later run prime failure")
+		}
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "injected later run prime failure") {
+		t.Fatalf("error = %v, want injected prime failure", err)
+	}
+	if len(opened) != 2 {
+		t.Fatalf("opened files = %d, want two primed runs", len(opened))
+	}
+	for i, file := range opened {
+		if closeErr := file.Close(); closeErr == nil {
+			t.Fatalf("run %d remained open after setup failure", i)
+		}
+	}
+}
+
+func TestReconcilePartitionedCancellationCleansConfiguredSpillDir(t *testing.T) {
+	dir := t.TempDir()
+	spill := filepath.Join(dir, "spill")
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	content := "date,amount,reference\n2026-01-01,100,REF-1\n"
+	for _, path := range []string{left, right} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference"}
+	w, err := NewResultWriter("ndjson", &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err = ReconcilePartitionedWithOptionsAndTelemetry(ctx, "p", "left", "right", left, right, cfg, cfg, config.Pair{}, w, PartitionedOptions{
+		Partitions: 2,
+		SpillDir:   spill,
+	}, TelemetryOptions{
+		ProgressEvery: 1,
+		Sink: func(event TelemetryEvent) error {
+			if event.Stage == "partitioning" && event.Status == "running" {
+				cancel()
+			}
+			return nil
+		},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	entries, readErr := os.ReadDir(spill)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	if len(entries) != 0 {
 		t.Fatalf("spill entries=%d, want cleanup", len(entries))
