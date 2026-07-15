@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -86,7 +85,7 @@ Formats:
 func parseNDJSON(sourceName, filePath string, parserCfg config.ParserCfg, cmd *cobra.Command) error {
 	enc := json.NewEncoder(os.Stdout)
 	count := 0
-	err := engine.ParseEach(context.Background(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
+	err := engine.ParseEach(cmd.Context(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
 		count++
 		return enc.Encode(tx)
 	})
@@ -99,7 +98,11 @@ func parseNDJSON(sourceName, filePath string, parserCfg config.ParserCfg, cmd *c
 
 // parseJSON loads all transactions and writes a JSON array.
 func parseJSON(sourceName, filePath string, parserCfg config.ParserCfg, cmd *cobra.Command) error {
-	txns, err := engine.Parse(sourceName, filePath, parserCfg)
+	var txns []engine.Transaction
+	err := engine.ParseEach(cmd.Context(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
+		txns = append(txns, tx)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("parse failed: %w", err)
 	}
@@ -121,7 +124,7 @@ func parseCSVOut(sourceName, filePath string, parserCfg config.ParserCfg, cmd *c
 		return err
 	}
 	count := 0
-	err := engine.ParseEach(context.Background(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
+	err := engine.ParseEach(cmd.Context(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
 		count++
 		return w.Write([]string{
 			tx.ID,
@@ -147,7 +150,7 @@ func parseCSVOut(sourceName, filePath string, parserCfg config.ParserCfg, cmd *c
 // parseTable buffers all transactions and renders an ASCII table.
 func parseTable(sourceName, filePath string, parserCfg config.ParserCfg, cmd *cobra.Command) error {
 	var txns []engine.Transaction
-	err := engine.ParseEach(context.Background(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
+	err := engine.ParseEach(cmd.Context(), sourceName, filePath, parserCfg, func(tx engine.Transaction, _ int) error {
 		txns = append(txns, tx)
 		return nil
 	})

@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -20,6 +23,13 @@ func ErrorFormat() string { return errorFormat }
 
 // Execute runs the CLI application
 func Execute(version, buildTime string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	return newRootCmd(version, buildTime).ExecuteContext(ctx)
+}
+
+func newRootCmd(version, buildTime string) *cobra.Command {
 	cliVersion = version
 	rootCmd := &cobra.Command{
 		Use:   "reconify",
@@ -48,7 +58,7 @@ It ingests financial data from multiple sources, normalizes them, and compares t
 	rootCmd.AddCommand(newReconcileCmd())
 	rootCmd.AddCommand(newParseCmd())
 
-	return rootCmd.Execute()
+	return rootCmd
 }
 
 // getConfigPath returns the config file path, checking environment variable if not set
