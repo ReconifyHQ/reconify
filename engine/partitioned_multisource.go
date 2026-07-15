@@ -236,6 +236,7 @@ func reconcilePartitionedMultiSource(
 		}
 	}
 	reporter.start("finalization", leftSource, strings.Join(names, ","), nil)
+	reporter.progress(leftParts.count + totalRight)
 	if err := w.WriteSummary(aggregate); err != nil {
 		return err
 	}

@@ -388,7 +388,11 @@ func ReconcileStreamingWithTelemetry(
 	if reporter != nil {
 		defer reporter.close()
 	}
-	return reconcileStreaming(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, reporter)
+	err := reconcileStreaming(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, idx, w, maxTokenBuffer, reporter)
+	if err != nil {
+		reporter.fail(0)
+	}
+	return err
 }
 
 func legacyProgressSink(progress ProgressFunc) TelemetrySink {
@@ -576,6 +580,7 @@ func reconcileStreamingWithOptions(
 		}
 		for _, g := range groups {
 			dupTxnCount += len(g.Transactions)
+			reporter.progress(dupTxnCount)
 			if err := w.WriteDuplicate(g); err != nil {
 				return err
 			}
@@ -754,6 +759,7 @@ func reconcileStreamingWithOptions(
 		}
 		for _, g := range groups {
 			dupTxnCount += len(g.Transactions)
+			reporter.progress(dupTxnCount)
 			if err := w.WriteDuplicate(g); err != nil {
 				return err
 			}
@@ -789,6 +795,7 @@ func reconcileStreamingWithOptions(
 	if effectiveTokenMode {
 		reporter.start("token_match", leftSource, rightSource, nil)
 		bufTotal := len(tokenUnmatchedLeft) + len(tokenUnmatchedRight)
+		reporter.progress(bufTotal)
 		if maxTokenBuffer > 0 && bufTotal > maxTokenBuffer {
 			fmt.Fprintf(os.Stderr,
 				"warning: token mode unmatched buffer is %d rows (limit %d); memory usage may be high\n",
@@ -847,6 +854,7 @@ func reconcileStreamingWithOptions(
 	}
 
 	reporter.start("finalization", leftSource, rightSource, nil)
+	reporter.progress(totalLeft + totalRight)
 	if err := w.WriteSummary(Summary{
 		Currency:             cc.base,
 		TotalLeft:            totalLeft,

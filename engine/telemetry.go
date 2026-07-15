@@ -48,16 +48,21 @@ type telemetryReporter struct {
 	options TelemetryOptions
 	started time.Time
 
-	mu          sync.Mutex
-	failed      bool
+	mu       sync.Mutex
+	disabled bool
+	stages   []telemetryStage
+	stop     chan struct{}
+	done     chan struct{}
+}
+
+type telemetryStage struct {
 	stage       string
 	source      string
 	counterpart string
 	rows        int
 	total       *int
-	stageAt     time.Time
-	stop        chan struct{}
-	done        chan struct{}
+	startedAt   time.Time
+	terminal    bool
 }
 
 var telemetrySequence uint64
@@ -123,7 +128,13 @@ func (r *telemetryReporter) start(stage, source, counterpart string, total *int)
 		return
 	}
 	r.mu.Lock()
-	r.stage, r.source, r.counterpart, r.rows, r.total, r.stageAt = stage, source, counterpart, 0, total, time.Now()
+	r.stages = append(r.stages, telemetryStage{
+		stage:       stage,
+		source:      source,
+		counterpart: counterpart,
+		total:       total,
+		startedAt:   time.Now(),
+	})
 	r.mu.Unlock()
 	r.emit("progress", "started")
 }
@@ -133,7 +144,13 @@ func (r *telemetryReporter) progress(rows int) {
 		return
 	}
 	r.mu.Lock()
-	r.rows = rows
+	if len(r.stages) == 0 {
+		r.mu.Unlock()
+		return
+	}
+	for i := range r.stages {
+		r.stages[i].rows = rows
+	}
 	every := r.options.ProgressEvery
 	r.mu.Unlock()
 	if rows > 0 && rows%every == 0 {
@@ -145,55 +162,86 @@ func (r *telemetryReporter) complete(rows int) {
 	if r == nil {
 		return
 	}
-	r.mu.Lock()
-	r.rows = rows
-	r.mu.Unlock()
-	r.emit("progress", "completed")
+	r.finish("completed", rows, true)
 }
 
 func (r *telemetryReporter) fail(rows int) {
 	if r == nil {
 		return
 	}
-	r.mu.Lock()
-	r.rows = rows
-	r.mu.Unlock()
-	r.emit("progress", "failed")
+	// A zero value means that the caller does not have a more precise count.
+	// Keep the last count recorded by progress in that case.
+	for {
+		r.mu.Lock()
+		active := len(r.stages) > 0
+		r.mu.Unlock()
+		if !active {
+			return
+		}
+		r.finish("failed", rows, rows > 0)
+		rows = 0
+	}
 }
 
 func (r *telemetryReporter) emit(eventType, status string) {
 	if r == nil {
 		return
 	}
+	r.emitEvent(eventType, status, false, 0, false)
+}
+
+func (r *telemetryReporter) finish(status string, rows int, setRows bool) {
+	r.emitEvent("progress", status, true, rows, setRows)
+}
+
+func (r *telemetryReporter) emitEvent(eventType, status string, terminal bool, rows int, setRows bool) {
+	var onError func(error)
+	var sinkErr error
+
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.failed || r.options.Sink == nil || r.stage == "" {
+	if r.disabled || r.options.Sink == nil || len(r.stages) == 0 {
+		if terminal && len(r.stages) > 0 {
+			r.stages = r.stages[:len(r.stages)-1]
+		}
+		r.mu.Unlock()
 		return
 	}
+	stageIndex := len(r.stages) - 1
+	stage := &r.stages[stageIndex]
+	if terminal && stage.terminal {
+		r.mu.Unlock()
+		return
+	}
+	if setRows {
+		stage.rows = rows
+		for i := 0; i < stageIndex; i++ {
+			r.stages[i].rows = rows
+		}
+	}
 	now := time.Now()
-	elapsed := now.Sub(r.stageAt)
+	elapsed := now.Sub(stage.startedAt)
 	event := TelemetryEvent{
 		Type:        eventType,
 		RunID:       r.options.RunID,
 		Timestamp:   now.UTC(),
-		Stage:       r.stage,
+		Stage:       stage.stage,
 		Status:      status,
-		Source:      r.source,
-		Counterpart: r.counterpart,
-		Rows:        r.rows,
+		Source:      stage.source,
+		Counterpart: stage.counterpart,
+		Rows:        stage.rows,
 		Elapsed:     elapsed.Seconds(),
 	}
 	if elapsed > 0 {
-		event.RowsPerSecond = float64(r.rows) / elapsed.Seconds()
+		event.RowsPerSecond = float64(stage.rows) / elapsed.Seconds()
 	}
-	if r.total != nil {
-		total := *r.total
+	if stage.total != nil {
+		total := *stage.total
 		event.TotalRows = &total
 		if total > 0 {
-			pct := float64(r.rows) * 100 / float64(total)
+			pct := float64(stage.rows) * 100 / float64(total)
 			event.Percentage = &pct
-			if event.RowsPerSecond > 0 && r.rows <= total {
-				eta := float64(total-r.rows) / event.RowsPerSecond
+			if event.RowsPerSecond > 0 && stage.rows <= total {
+				eta := float64(total-stage.rows) / event.RowsPerSecond
 				event.ETA = &eta
 			}
 		}
@@ -201,11 +249,21 @@ func (r *telemetryReporter) emit(eventType, status string) {
 	metrics := sampleResources()
 	event.RSSBytes, event.CPUSeconds = metrics.rssBytes, metrics.cpuSeconds
 	event.HeapBytes, event.GCCycles = metrics.heapBytes, metrics.gcCycles
-	if err := r.options.Sink(event); err != nil {
-		r.failed = true
-		if r.options.OnError != nil {
-			r.options.OnError(err)
-		}
+	if terminal {
+		stage.terminal = true
+	}
+	sinkErr = r.options.Sink(event)
+	if sinkErr != nil {
+		r.disabled = true
+		onError = r.options.OnError
+	}
+	if terminal {
+		r.stages = r.stages[:stageIndex]
+	}
+	r.mu.Unlock()
+
+	if sinkErr != nil && onError != nil {
+		onError(sinkErr)
 	}
 }
 

@@ -57,7 +57,11 @@ func ReconcilePartitionedWithOptionsAndTelemetry(ctx context.Context, pairName, 
 	if reporter != nil {
 		defer reporter.close()
 	}
-	return reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, options, reporter)
+	err := reconcilePartitioned(ctx, pairName, leftSource, rightSource, leftPath, rightPath, leftCfg, rightCfg, pair, w, options, reporter)
+	if err != nil {
+		reporter.fail(0)
+	}
+	return err
 }
 
 func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, options PartitionedOptions, reporter *telemetryReporter) error {
@@ -225,6 +229,7 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		}
 	}
 	reporter.start("finalization", leftSource, rightSource, nil)
+	reporter.progress(leftRows + rightRows)
 	if err := agg.FlushSummary(); err != nil {
 		return err
 	}
