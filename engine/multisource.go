@@ -48,6 +48,9 @@ func ReconcileMultiSource(
 	if len(counterparts) == 0 {
 		return nil, fmt.Errorf("at least one counterpart source is required")
 	}
+	if err := validateCounterpartNames(counterpartInputNames(counterparts)); err != nil {
+		return nil, err
+	}
 
 	var leftPolicy config.DuplicatePolicy
 	if len(opts) > 0 {
@@ -132,6 +135,12 @@ func ReconcileMultiSourceWithTelemetry(
 	telemetry TelemetryOptions,
 	opts ...ReconcileOptions,
 ) (*Result, error) {
+	if len(counterparts) == 0 {
+		return nil, fmt.Errorf("at least one counterpart source is required")
+	}
+	if err := validateCounterpartNames(counterpartInputNames(counterparts)); err != nil {
+		return nil, err
+	}
 	reporter := newTelemetryReporter(telemetry)
 	if reporter != nil {
 		defer reporter.close()
@@ -233,6 +242,9 @@ func reconcileStreamingMultiSource(
 ) error {
 	if len(counterparts) == 0 {
 		return fmt.Errorf("at least one counterpart source is required")
+	}
+	if err := validateCounterpartStreams(counterparts); err != nil {
+		return err
 	}
 	if pair.NameMode == "tokens" {
 		return fmt.Errorf("name_mode=tokens is not yet supported for multi-source (rights) reconciliation")
@@ -496,40 +508,14 @@ func runStreamingPass(
 		totalLeft                                                           int
 	)
 
-	processLeft := func(ltx Transaction) error {
-		totalLeft++
-		reporter.progress(totalLeft)
-		if fromFile {
-			if oerr := cc.Observe(leftSource, ltx); oerr != nil {
-				return oerr
-			}
-			if leftPolicy == config.DuplicatePolicyFlag && ltx.GroupKey != "" {
-				if leftSeen[ltx.GroupKey] < 2 {
-					leftSeen[ltx.GroupKey]++
-				}
-				if leftSeen[ltx.GroupKey] == 2 {
-					leftDupKeys[ltx.GroupKey] = true
-				}
-			}
-			// Dedup for merge: skip if GroupKey already seen (first-seen wins).
-			if leftPolicy == config.DuplicatePolicyMerge && ltx.GroupKey != "" {
-				if leftMergeSeen[ltx.GroupKey] {
-					return nil
-				}
-				leftMergeSeen[ltx.GroupKey] = true
-			}
-			// Dedup for latest: buffer and defer processing until after scan.
-			if leftPolicy == config.DuplicatePolicyLatest && ltx.GroupKey != "" {
-				leftLatestBuf[ltx.GroupKey] = ltx
-				return nil
-			}
-		}
-
+	// matchLeft contains only matching and outcome accounting. The first pass
+	// calls it for ordinary rows, while latest representatives call it directly
+	// after the scan so replay cannot re-enter the deduplication buffer.
+	matchLeft := func(ltx Transaction) error {
 		decision, derr := decideMatch(ltx, idx, tolerance, dateWindowDays)
 		if derr != nil {
 			return derr
 		}
-
 		switch decision.outcome {
 		case outcomeExact:
 			if merr := idx.MarkUsed(decision.right); merr != nil {
@@ -571,6 +557,37 @@ func runStreamingPass(
 		}
 	}
 
+	processLeft := func(ltx Transaction) error {
+		totalLeft++
+		reporter.progress(totalLeft)
+		if fromFile {
+			if oerr := cc.Observe(leftSource, ltx); oerr != nil {
+				return oerr
+			}
+			if leftPolicy == config.DuplicatePolicyFlag && ltx.GroupKey != "" {
+				if leftSeen[ltx.GroupKey] < 2 {
+					leftSeen[ltx.GroupKey]++
+				}
+				if leftSeen[ltx.GroupKey] == 2 {
+					leftDupKeys[ltx.GroupKey] = true
+				}
+			}
+			// Dedup for merge: skip if GroupKey already seen (first-seen wins).
+			if leftPolicy == config.DuplicatePolicyMerge && ltx.GroupKey != "" {
+				if leftMergeSeen[ltx.GroupKey] {
+					return nil
+				}
+				leftMergeSeen[ltx.GroupKey] = true
+			}
+			// Dedup for latest: buffer and defer processing until after scan.
+			if leftPolicy == config.DuplicatePolicyLatest && ltx.GroupKey != "" {
+				leftLatestBuf[ltx.GroupKey] = ltx
+				return nil
+			}
+		}
+		return matchLeft(ltx)
+	}
+
 	reporter.start("left_match", leftSource, rightSource, nil)
 	if fromFile {
 		if perr := ParseCSVEach(ctx, leftSource, leftPath, leftCfg, func(tx Transaction, _ int) error {
@@ -591,11 +608,13 @@ func runStreamingPass(
 	// For "latest" (first pass only): process buffered left rows now that the scan
 	// is complete and we know which row is last for each GroupKey.
 	if fromFile && leftPolicy == config.DuplicatePolicyLatest {
+		// These rows were already counted and currency-validated during the file
+		// scan; replay only the final representative for each non-empty group key.
 		for _, ltx := range leftLatestBuf {
 			if ctx.Err() != nil {
 				return nil, Summary{}, nil, ctx.Err()
 			}
-			if perr := processLeft(ltx); perr != nil {
+			if perr := matchLeft(ltx); perr != nil {
 				return nil, Summary{}, nil, perr
 			}
 		}
@@ -653,4 +672,51 @@ func runStreamingPass(
 	}
 
 	return leftover, summary, leftDups, nil
+}
+
+func counterpartInputNames(counterparts []CounterpartInput) []string {
+	names := make([]string, 0, len(counterparts))
+	for _, counterpart := range counterparts {
+		names = append(names, counterpart.SourceName)
+	}
+	return names
+}
+
+// validateCounterpartStreams performs all streaming preflight checks before any
+// right file is indexed, preventing partial output for invalid multi-source input.
+func validateCounterpartStreams(counterparts []CounterpartStream) error {
+	if err := validateCounterpartNames(counterpartStreamNames(counterparts)); err != nil {
+		return err
+	}
+	for index, counterpart := range counterparts {
+		if counterpart.Index == nil {
+			return fmt.Errorf("counterpart[%d] %q: right index cannot be nil", index, counterpart.SourceName)
+		}
+	}
+	return nil
+}
+
+func counterpartStreamNames(counterparts []CounterpartStream) []string {
+	names := make([]string, 0, len(counterparts))
+	for _, counterpart := range counterparts {
+		names = append(names, counterpart.SourceName)
+	}
+	return names
+}
+
+// validateCounterpartNames preserves configured order while rejecting names that
+// would make per-source summaries ambiguous or unsafe to populate.
+func validateCounterpartNames(names []string) error {
+	seen := make(map[string]int, len(names))
+	for index, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			return fmt.Errorf("counterpart[%d]: source name cannot be empty", index)
+		}
+		if previousIndex, exists := seen[trimmed]; exists {
+			return fmt.Errorf("counterpart[%d] %q: duplicate source name (already configured at index %d)", index, name, previousIndex)
+		}
+		seen[trimmed] = index
+	}
+	return nil
 }

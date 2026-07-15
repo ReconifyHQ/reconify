@@ -153,6 +153,34 @@ func TestParseAmount_Precision(t *testing.T) {
 			multiplier: 100,
 			want:       100, // rounds up to 1.00 in minor units
 		},
+		{
+			name:       "positive int64 boundary",
+			amount:     "9223372036854775807",
+			decimal:    ".",
+			multiplier: 1,
+			want:       9223372036854775807,
+		},
+		{
+			name:       "negative int64 boundary",
+			amount:     "-9223372036854775808",
+			decimal:    ".",
+			multiplier: 1,
+			want:       -9223372036854775808,
+		},
+		{
+			name:       "positive fractional boundary carry",
+			amount:     "92233720368547758.07",
+			decimal:    ".",
+			multiplier: 100,
+			want:       9223372036854775807,
+		},
+		{
+			name:       "negative fractional boundary carry",
+			amount:     "-92233720368547758.08",
+			decimal:    ".",
+			multiplier: 100,
+			want:       -9223372036854775808,
+		},
 	}
 
 	for _, tc := range tests {
@@ -165,6 +193,51 @@ func TestParseAmount_Precision(t *testing.T) {
 				t.Errorf("parseAmount(%q) = %d, want %d", tc.amount, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseAmount_RejectsOverflow(t *testing.T) {
+	tests := []struct {
+		name       string
+		amount     string
+		multiplier int64
+	}{
+		{name: "positive boundary overflow", amount: "9223372036854775808", multiplier: 1},
+		{name: "negative boundary overflow", amount: "-9223372036854775809", multiplier: 1},
+		{name: "whole-number multiplication", amount: "2", multiplier: 9223372036854775807},
+		{name: "fractional addition", amount: "92233720368547758.08", multiplier: 100},
+		{name: "negative fractional addition", amount: "-92233720368547758.09", multiplier: 100},
+		{name: "invalid multiplier", amount: "1", multiplier: 0},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := parseAmount(tc.amount, ".", "", tc.multiplier); err == nil || !strings.Contains(err.Error(), "overflow") && !strings.Contains(err.Error(), "multiplier") {
+				t.Fatalf("parseAmount(%q, multiplier=%d) error = %v, want overflow/multiplier error", tc.amount, tc.multiplier, err)
+			}
+		})
+	}
+}
+
+func TestParseCSVEach_AmountOverflowIncludesRowContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "overflow.csv")
+	content := "date,amount,reference\n2024-01-01,9223372036854775808,REF-1\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ParseCSV("ledger", path, config.CSVParserCfg{
+		Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount",
+		Multiplier: 1, RefCol: "reference",
+	})
+	if err == nil {
+		t.Fatal("expected amount overflow")
+	}
+	for _, want := range []string{path, "row 2", `source "ledger"`, "amount overflow"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
 	}
 }
 

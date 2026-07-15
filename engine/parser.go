@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -691,16 +692,20 @@ func parseAmount(s string, decimal string, thousands string, multiplier int64) (
 		return 0, fmt.Errorf("not a number: %q", s)
 	}
 
-	intVal, err := strconv.ParseInt(intPart, 10, 64)
+	if multiplier <= 0 {
+		return 0, fmt.Errorf("invalid multiplier: %d", multiplier)
+	}
+
+	intVal, err := strconv.ParseUint(intPart, 10, 64)
 	if err != nil {
+		if errors.Is(err, strconv.ErrRange) {
+			return 0, fmt.Errorf("amount overflow: %q", s)
+		}
 		return 0, fmt.Errorf("not a number: %q", s)
 	}
 
-	var fracScaled int64
+	var fracScaled uint64
 	if fracPart != "" {
-		if multiplier < 0 {
-			return 0, fmt.Errorf("invalid multiplier: %d", multiplier)
-		}
 		fracVal, err := strconv.ParseUint(fracPart, 10, 64)
 		if err != nil {
 			return 0, fmt.Errorf("not a number: %q", s)
@@ -722,12 +727,26 @@ func parseAmount(s string, decimal string, thousands string, multiplier int64) (
 		if q > uint64(math.MaxInt64) {
 			return 0, fmt.Errorf("amount overflow: %q", s)
 		}
-		fracScaled = int64(q)
+		fracScaled = q
 	}
 
-	amount := intVal*multiplier + fracScaled
+	// Keep the magnitude unsigned until the final conversion. This allows the
+	// negative side to represent exactly one more unit than the positive side
+	// (math.MinInt64) without ever overflowing a signed intermediate.
+	limit := uint64(math.MaxInt64)
 	if negative {
-		amount = -amount
+		limit++
 	}
-	return amount, nil
+	hi, lo := bits.Mul64(intVal, uint64(multiplier))
+	if hi != 0 || lo > limit-fracScaled {
+		return 0, fmt.Errorf("amount overflow: %q", s)
+	}
+	magnitude := lo + fracScaled
+	if negative {
+		if magnitude == uint64(math.MaxInt64)+1 {
+			return math.MinInt64, nil
+		}
+		return -int64(magnitude), nil // #nosec G115 -- magnitude is <= MaxInt64 after the MinInt64 case above.
+	}
+	return int64(magnitude), nil // #nosec G115 -- magnitude is bounded by MaxInt64 above.
 }

@@ -328,11 +328,23 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 		errs = append(errs, fmt.Errorf("pairs.%s: one of right or rights is required", name))
 	}
 
-	for _, counterpart := range pair.Counterparts() {
-		if counterpart == "" {
-			errs = append(errs, fmt.Errorf("pairs.%s.rights: entries cannot be empty", name))
+	// Counterparts form an ordered pipeline. Reject duplicate names before source
+	// lookup so no later pass can overwrite an earlier source's breakdown.
+	seenCounterparts := make(map[string]int, len(pair.Counterparts()))
+	for index, counterpart := range pair.Counterparts() {
+		trimmedCounterpart := strings.TrimSpace(counterpart)
+		if trimmedCounterpart == "" {
+			errs = append(errs, fmt.Errorf("pairs.%s.rights[%d]: counterpart name cannot be empty", name, index))
 			continue
 		}
+		if previousIndex, exists := seenCounterparts[trimmedCounterpart]; exists {
+			errs = append(errs, fmt.Errorf(
+				"pairs.%s.rights[%d]: duplicate counterpart %q (already configured at index %d)",
+				name, index, counterpart, previousIndex,
+			))
+			continue
+		}
+		seenCounterparts[trimmedCounterpart] = index
 		if _, exists := sources[counterpart]; !exists {
 			errs = append(errs, fmt.Errorf("pairs.%s: unknown source %q (available: %v)", name, counterpart, getSourceNames(sources)))
 		}

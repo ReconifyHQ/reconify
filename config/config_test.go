@@ -202,6 +202,47 @@ func TestConfigValidate_RightsValid(t *testing.T) {
 	}
 }
 
+func TestConfigValidate_RightsRejectsDuplicateCounterparts(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.Right = ""
+	p.Rights = []string{"right", "right"}
+	cfg.Pairs["p"] = p
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for duplicate counterpart")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "duplicate counterpart") && strings.Contains(err.Error(), "rights[1]") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected indexed duplicate counterpart error, got: %v", errs)
+	}
+}
+
+func TestConfigValidate_RightsRejectsBlankCounterpart(t *testing.T) {
+	cfg := baseValidConfig()
+	p := cfg.Pairs["p"]
+	p.Right = ""
+	p.Rights = []string{"right", "   "}
+	cfg.Pairs["p"] = p
+
+	errs := cfg.Validate()
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for blank counterpart")
+	}
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "counterpart name cannot be empty") && strings.Contains(err.Error(), "rights[1]") {
+			return
+		}
+	}
+	t.Fatalf("expected indexed blank counterpart error, got: %v", errs)
+}
+
 func TestConfigValidate_NameMatchThresholdBounds(t *testing.T) {
 	tests := []struct {
 		name      string

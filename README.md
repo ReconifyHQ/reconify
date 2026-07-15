@@ -154,6 +154,9 @@ with that selector. Temporary partitions and carry-forward manifests are
 removed on both successful and failed runs. Use `--format ndjson` or `--format
 csv` for bounded output memory.
 
+Counterpart names in `rights` must be non-empty and unique. Their configured
+order determines which source gets the first opportunity to consume a left row.
+
 ## Result emission modes
 
 Use `--result-mode` to control which reconciliation events appear in the output:

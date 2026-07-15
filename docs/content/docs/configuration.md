@@ -131,6 +131,8 @@ pairs:
 
 Passes run in the order listed in `rights`. Unmatched ledger rows from the `stripe_settlements` pass carry forward to the `paypal_settlements` pass. If two counterpart sources could match the same left row, the earlier source in `rights` wins.
 
+Each `rights` entry must be non-empty and unique. Duplicate counterpart names are rejected during configuration validation rather than being processed twice.
+
 Run the pair with a readable structured output format:
 
 ```bash
