@@ -118,6 +118,9 @@ func reconcilePartitionedMultiSource(
 	options PartitionedOptions,
 	reporter *telemetryReporter,
 ) error {
+	if err := validateCollaborator("result writer", w); err != nil {
+		return err
+	}
 	if len(counterparts) == 0 {
 		return fmt.Errorf("at least one counterpart source is required")
 	}

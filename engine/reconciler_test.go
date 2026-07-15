@@ -40,6 +40,19 @@ func TestReconcile_FailsOnMixedCurrency(t *testing.T) {
 	}
 }
 
+func TestReconcileStreamingRejectsNilCollaborators(t *testing.T) {
+	var nilIndex *memoryIndex
+	writer := &captureWriter{}
+	err := ReconcileStreaming(context.Background(), "pair", "left", "right", "missing-left.csv", "missing-right.csv", config.ParserCfg{}, config.ParserCfg{}, config.Pair{}, nilIndex, writer, 0)
+	if err == nil || !strings.Contains(err.Error(), "right index cannot be nil") {
+		t.Fatalf("nil index error = %v", err)
+	}
+	err = ReconcileStreaming(context.Background(), "pair", "left", "right", "missing-left.csv", "missing-right.csv", config.ParserCfg{}, config.ParserCfg{}, config.Pair{}, NewMemoryIndex(), nil, 0)
+	if err == nil || !strings.Contains(err.Error(), "result writer cannot be nil") {
+		t.Fatalf("nil writer error = %v", err)
+	}
+}
+
 func TestReconcileStreaming_MonetaryTotalsInvariant(t *testing.T) {
 	dir := t.TempDir()
 	leftPath := filepath.Join(dir, "left.csv")

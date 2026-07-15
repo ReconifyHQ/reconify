@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -754,37 +753,26 @@ func TestPartitionSummaryWriterWarnsUnsupportedGroupedEventsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agg := &partitionSummaryWriter{ResultWriter: inner}
-	warning := capturePartitionedStderr(t, func() {
-		if err := agg.WriteGroupedMatch(GroupedMatchedPair{}); err != nil {
-			t.Fatal(err)
-		}
-		if err := agg.WriteAmbiguousGroup(AmbiguousGroupPair{}); err != nil {
-			t.Fatal(err)
-		}
-	})
-	if got := strings.Count(warning, "does not support grouped or ambiguous match events"); got != 1 {
-		t.Fatalf("grouped warning count=%d, want 1; stderr=%q", got, warning)
+	observed := &warningCaptureWriter{ResultWriter: inner}
+	agg := &partitionSummaryWriter{ResultWriter: observed}
+	if err := agg.WriteGroupedMatch(GroupedMatchedPair{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := agg.WriteAmbiguousGroup(AmbiguousGroupPair{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(strings.Join(observed.warnings, "\n"), "does not support grouped or ambiguous match events"); got != 1 {
+		t.Fatalf("grouped warning count=%d, want 1; warnings=%q", got, observed.warnings)
 	}
 }
 
-func capturePartitionedStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	previous := os.Stderr
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stderr = writer
-	fn()
-	_ = writer.Close()
-	os.Stderr = previous
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = reader.Close()
-	return string(data)
+type warningCaptureWriter struct {
+	ResultWriter
+	warnings []string
+}
+
+func (w *warningCaptureWriter) ObserveWarning(warning Warning) {
+	w.warnings = append(w.warnings, warning.Message)
 }
 
 // TestPartitionKeyColumnsGating verifies gating logic for PartitionKeyColumns.

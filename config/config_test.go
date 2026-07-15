@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -94,6 +96,15 @@ func TestConfigValidate_IndexResourceBudgetsNegative(t *testing.T) {
 				t.Fatal("expected validation error for negative resource budget")
 			}
 		})
+	}
+}
+
+func TestConfigValidate_IndexResourceBudgetsRejectByteOverflow(t *testing.T) {
+	cfg := &Config{Version: 1, Index: IndexCfg{MaxMemoryMB: math.MaxInt64, MaxTempDiskMB: math.MaxInt64}}
+	errs := cfg.Validate()
+	joined := errors.Join(errs...)
+	if joined == nil || !strings.Contains(joined.Error(), "too large to convert to bytes") {
+		t.Fatalf("Validate() errors = %v, want byte-conversion overflow", errs)
 	}
 }
 
