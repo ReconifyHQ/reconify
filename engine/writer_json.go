@@ -1,0 +1,175 @@
+package engine
+
+import (
+	"encoding/json"
+	"io"
+	"sort"
+)
+
+// ---------------------------------------------------------------------------
+// JSONWriter — buffers full Result struct, writes indented JSON on Flush().
+// Supports SetRunInfo (embeds RunInfo in Result.RunInfo) and SetDeterministic
+// (sorts all output sections before encoding for stable diff-based audit trails).
+// ---------------------------------------------------------------------------
+
+type jsonWriter struct {
+	w             io.Writer
+	result        Result
+	deterministic bool
+}
+
+func newJSONWriter(w io.Writer) *jsonWriter { return &jsonWriter{w: w} }
+
+func (j *jsonWriter) WriteMatch(pair MatchedPair) error {
+	j.result.Matched = append(j.result.Matched, pair)
+	return nil
+}
+func (j *jsonWriter) WriteAmountDiff(pair AmountDiffPair) error {
+	j.result.AmountDiff = append(j.result.AmountDiff, pair)
+	return nil
+}
+func (j *jsonWriter) WriteTimingDiff(pair TimingDiffPair) error {
+	j.result.TimingDiff = append(j.result.TimingDiff, pair)
+	return nil
+}
+func (j *jsonWriter) WriteUnmatched(tx Transaction, side string) error {
+	if side == "left" {
+		j.result.UnmatchedLeft = append(j.result.UnmatchedLeft, tx)
+	} else {
+		j.result.UnmatchedRight = append(j.result.UnmatchedRight, tx)
+	}
+	return nil
+}
+func (j *jsonWriter) WriteDuplicate(group DuplicateGroup) error {
+	j.result.Duplicates = append(j.result.Duplicates, group)
+	return nil
+}
+func (j *jsonWriter) WriteSummary(s Summary) error {
+	j.result.Summary = s
+	return nil
+}
+
+// WriteSourceSummary records a per-counterpart breakdown for 1-N source runs.
+// Implements SourceBreakdownWriter.
+func (j *jsonWriter) WriteSourceSummary(sourceName string, s Summary) error {
+	if j.result.BySource == nil {
+		j.result.BySource = make(map[string]Summary)
+	}
+	j.result.BySource[sourceName] = s
+	return nil
+}
+
+// GroupedEventWriter implementation — appends to the result struct fields flushed by Flush().
+func (j *jsonWriter) WriteGroupedMatch(pair GroupedMatchedPair) error {
+	j.result.GroupedMatched = append(j.result.GroupedMatched, pair)
+	return nil
+}
+func (j *jsonWriter) WriteGroupedAmountDiff(pair GroupedAmountDiffPair) error {
+	j.result.GroupedAmountDiff = append(j.result.GroupedAmountDiff, pair)
+	return nil
+}
+func (j *jsonWriter) WriteGroupedTimingDiff(pair GroupedTimingDiffPair) error {
+	j.result.GroupedTimingDiff = append(j.result.GroupedTimingDiff, pair)
+	return nil
+}
+func (j *jsonWriter) WriteAmbiguousGroup(pair AmbiguousGroupPair) error {
+	j.result.AmbiguousGroups = append(j.result.AmbiguousGroups, pair)
+	return nil
+}
+
+// ManyToManyEventWriter implementation — appends to the result struct fields flushed by Flush().
+func (j *jsonWriter) WriteManyToManyMatch(pair ManyToManyMatchedPair) error {
+	j.result.ManyToManyMatched = append(j.result.ManyToManyMatched, pair)
+	return nil
+}
+func (j *jsonWriter) WriteManyToManyAmountDiff(pair ManyToManyAmountDiffPair) error {
+	j.result.ManyToManyAmountDiff = append(j.result.ManyToManyAmountDiff, pair)
+	return nil
+}
+func (j *jsonWriter) WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPair) error {
+	j.result.ManyToManyTimingDiff = append(j.result.ManyToManyTimingDiff, pair)
+	return nil
+}
+
+// SetMeta sets pair and source names on the result. Fixes the pre-existing bug
+// where PairName/LeftSource/RightSource were never populated in the JSON output.
+func (j *jsonWriter) SetMeta(pairName, leftSource, rightSource string) {
+	j.result.PairName = pairName
+	j.result.LeftSource = leftSource
+	j.result.RightSource = rightSource
+}
+
+// SetRunInfo stores the audit envelope for inclusion in the JSON output.
+// Implements RunInfoSetter.
+func (j *jsonWriter) SetRunInfo(info RunInfo) error {
+	j.result.RunInfo = &info
+	return nil
+}
+
+func (j *jsonWriter) SetIndexSelection(selection IndexSelection) error {
+	j.result.IndexSelection = &selection
+	return nil
+}
+
+// SetDeterministic enables stable output ordering. When true, Flush() sorts all
+// result sections by a stable key before encoding. This adds O(n log n) sort time
+// on the result set — typically 4-8 seconds at 17M matched rows.
+func (j *jsonWriter) SetDeterministic(on bool) { j.deterministic = on }
+
+// sortResult sorts all result sections in place for deterministic output.
+func (j *jsonWriter) sortResult() {
+	sort.Slice(j.result.Matched, func(i, k int) bool {
+		return j.result.Matched[i].Left.ID < j.result.Matched[k].Left.ID
+	})
+	sort.Slice(j.result.UnmatchedLeft, func(i, k int) bool {
+		return j.result.UnmatchedLeft[i].ID < j.result.UnmatchedLeft[k].ID
+	})
+	sort.Slice(j.result.UnmatchedRight, func(i, k int) bool {
+		return j.result.UnmatchedRight[i].ID < j.result.UnmatchedRight[k].ID
+	})
+	sort.Slice(j.result.AmountDiff, func(i, k int) bool {
+		return j.result.AmountDiff[i].Left.ID < j.result.AmountDiff[k].Left.ID
+	})
+	sort.Slice(j.result.TimingDiff, func(i, k int) bool {
+		return j.result.TimingDiff[i].Left.ID < j.result.TimingDiff[k].Left.ID
+	})
+	sort.Slice(j.result.Duplicates, func(i, k int) bool {
+		if j.result.Duplicates[i].Reference != j.result.Duplicates[k].Reference {
+			return j.result.Duplicates[i].Reference < j.result.Duplicates[k].Reference
+		}
+		return j.result.Duplicates[i].Source < j.result.Duplicates[k].Source
+	})
+	sort.Slice(j.result.GroupedMatched, func(i, k int) bool {
+		return j.result.GroupedMatched[i].Left.ID < j.result.GroupedMatched[k].Left.ID
+	})
+	sort.Slice(j.result.GroupedAmountDiff, func(i, k int) bool {
+		return j.result.GroupedAmountDiff[i].Left.ID < j.result.GroupedAmountDiff[k].Left.ID
+	})
+	sort.Slice(j.result.GroupedTimingDiff, func(i, k int) bool {
+		return j.result.GroupedTimingDiff[i].Left.ID < j.result.GroupedTimingDiff[k].Left.ID
+	})
+	sort.Slice(j.result.AmbiguousGroups, func(i, k int) bool {
+		return j.result.AmbiguousGroups[i].Reference < j.result.AmbiguousGroups[k].Reference
+	})
+	sort.Slice(j.result.ManyToManyMatched, func(i, k int) bool {
+		return firstTransactionID(j.result.ManyToManyMatched[i].Lefts) < firstTransactionID(j.result.ManyToManyMatched[k].Lefts)
+	})
+	sort.Slice(j.result.ManyToManyAmountDiff, func(i, k int) bool {
+		return firstTransactionID(j.result.ManyToManyAmountDiff[i].Lefts) < firstTransactionID(j.result.ManyToManyAmountDiff[k].Lefts)
+	})
+	sort.Slice(j.result.ManyToManyTimingDiff, func(i, k int) bool {
+		return firstTransactionID(j.result.ManyToManyTimingDiff[i].Lefts) < firstTransactionID(j.result.ManyToManyTimingDiff[k].Lefts)
+	})
+}
+
+func (j *jsonWriter) Flush() error {
+	if j.deterministic {
+		j.sortResult()
+	}
+	enc := json.NewEncoder(j.w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(j.result)
+}
+
+// GetResult returns the accumulated Result. Used by the batch Reconcile() wrapper.
+func (j *jsonWriter) GetResult() *Result { return &j.result }
