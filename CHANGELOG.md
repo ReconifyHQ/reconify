@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`one_to_many` reconciliation pass** — matches one left transaction against N right transactions by summing amounts; includes ambiguous group detection, monetary invariants, and a `GroupedEventWriter` interface for grouped result emission.
+- **`group_by` field for `one_to_many` passes** — defaults to `"reference"`, validated against known built-in keys, and wired into `matchByReferenceOneToMany`.
+- **Many-to-many reconciliation pass** — supports matching left and right sets with arbitrary cardinality.
+- **Configurable duplicate handling policy (`duplicate_policy`)** — four values: `flag` (default), `keep`, `merge`, `latest`; both batch and streaming paths (including multi-source) respect the policy.
+- **Bounded-memory partitioned reconciliation backend** — new internal backend that splits large datasets into memory-safe partitions, enabling reconciliation of datasets that exceed available RAM.
+- **Partitioned multi-source reconciliation** — extends the partitioned backend to run across multiple counterpart sources in a single pass.
+- **Resource-aware index selection** — automatically selects the memory or disk index backend based on available RAM at runtime; Windows resource probing supported.
+- **Reconciliation progress telemetry** — structured lifecycle events and progress reporting emitted to stderr during long-running reconciliations.
+- **Configurable result emission modes (`--result-mode`)** — `all` (default), `exceptions_only`, and `summary_only` control which events are written to output, reducing noise for large runs.
+- **Preflight quality and security gate** — `make check` now runs dependency audit, formatting, lint, security scan, race-tested coverage, build, and smoke benchmarks as a single local gate before opening a PR.
+- **LLM-agent-ready CLI** — adds `--error-format json` for machine-readable error output, meaningful exit codes (0 = success, 1 = unmatched, 2 = validation failure, 3 = fatal error), `--fail-if-unmatched` flag, and `reconify config schema` command to emit the full config JSON schema.
+- **Agent skill installer** — `npx @reconifyhq/skills` copies the canonical `.agents/skills/` files into any project; new skills added: `reconify-debug`, `reconify-bootstrap`, `reconify-ci`. Expanded `llms.txt` for LLM discoverability.
+- **Benchmark suite** — deterministic and realistic benchmarks for the partitioned backend and multi-source reconciliation scenarios.
+
+### Performance
+
+- Disk index inserts are now batched in transactions, reducing write overhead on large right-side files.
+- Reduced disk index match write amplification — match entries are written more efficiently during the match pass.
+- Bounded grouped partition reconciliation memory — grouped partitions no longer accumulate unbounded row sets.
+- Optimized partitioned duplicate pre-scan — reduces redundant work when deduplicating rows across partition boundaries.
+
+### Fixed
+
+- Preserved partitioned grouped reconciliation semantics — grouping logic is now correctly applied within each partition boundary.
+- Hardened resource-aware index selection — stabilized the probing heuristic and fixed a lint warning in the selection path.
+- Hardened telemetry output and lifecycle events — telemetry events are flushed and reported correctly even on early cancellation.
+- Hardened reconciliation correctness — addressed correctness risks around match scoring and aggregate accounting.
+- Propagate cancellation signals and close sort cursors cleanly to avoid resource leaks on early exit.
+- Report telemetry lifecycle failures consistently instead of silently swallowing errors.
+- Hardened reconciliation diagnostics and aggregate computation for edge cases in large datasets.
+
+### Refactored
+
+- Split engine and CLI responsibilities — engine packages no longer import CLI concerns, making the library surface cleaner.
+- Extracted acyclic packages from the engine to remove import cycles and improve testability.
+
 ## [0.3.0] - 2026-06-21
 
 ### Added
