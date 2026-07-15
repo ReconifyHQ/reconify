@@ -103,10 +103,6 @@ Formats:
 			if len(counterparts) == 0 {
 				return configErrf("pair %q has no right or rights configured", pairName)
 			}
-			if cfg.Index.Backend == "partitioned" && len(counterparts) != 1 {
-				return configErr("index.backend=partitioned currently supports one left source and one counterpart; multi-source pairs use memory or disk")
-			}
-
 			// Resolve left file path: explicit flag overrides the glob pattern.
 			leftPath, err := resolveFile(leftFile, leftSrc.FilePattern, configDir)
 			if err != nil {
@@ -216,6 +212,58 @@ Formats:
 			}
 
 			jobStart := time.Now()
+			var multiDecisions []indexSelectionDecision
+			if len(counterparts) > 1 {
+				multiDecisions, err = chooseMultiIndexBackends(cfg.Index, leftPath, leftSrc.Parser, counterparts, rightPaths, cfg.Sources, pair)
+				if err != nil {
+					return fmt.Errorf("select index backends: %w", err)
+				}
+				allPartitioned := len(multiDecisions) == len(counterparts)
+				for _, decision := range multiDecisions {
+					if !decision.Partitioned {
+						allPartitioned = false
+						break
+					}
+				}
+				if allPartitioned {
+					if err := reportIndexSelection(w, multiDecisions[0].Selection); err != nil {
+						return err
+					}
+					partitionedCounterparts := make([]engine.PartitionedCounterpartInput, 0, len(counterparts))
+					for _, name := range counterparts {
+						src := cfg.Sources[name]
+						partitionedCounterparts = append(partitionedCounterparts, engine.PartitionedCounterpartInput{
+							SourceName: name,
+							RightPath:  rightPaths[name],
+							ParserCfg:  src.Parser,
+						})
+					}
+					options := engine.PartitionedOptions{
+						MaxTokenBuffer: maxTokenBuffer,
+						Partitions:     cfg.Index.PartitionCount,
+						SpillDir:       cfg.Index.SpillDir,
+					}
+					var runErr error
+					if telemetryEnabled {
+						runErr = engine.ReconcilePartitionedMultiSourceWithOptionsAndTelemetry(context.Background(), pairName, pair.Left, leftPath, leftSrc.Parser, partitionedCounterparts, pair, w, options, telemetry)
+					} else {
+						runErr = engine.ReconcilePartitionedMultiSourceWithOptions(context.Background(), pairName, pair.Left, leftPath, leftSrc.Parser, partitionedCounterparts, pair, w, options)
+					}
+					if runErr != nil {
+						return fmt.Errorf("reconciliation failed: %w", runErr)
+					}
+					if err := output.Commit(); err != nil {
+						return err
+					}
+					if progress {
+						fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
+					}
+					if failIfUnmatched && sc != nil && (sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 {
+						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+					}
+					return nil
+				}
+			}
 
 			// Grouped passes with multiple counterparts always go to the batch path.
 			// Single-counterpart grouped pairs may use the partitioned backend when
@@ -420,18 +468,14 @@ Formats:
 					}
 				}()
 
-				decisions, err := chooseMultiIndexBackends(cfg.Index, leftPath, leftSrc.Parser, counterparts, rightPaths, cfg.Sources, pair)
-				if err != nil {
-					return fmt.Errorf("select index backends: %w", err)
-				}
 				for i, name := range counterparts {
 					src := cfg.Sources[name]
 					path := rightPaths[name]
-					idx, err := openSelectedIndex(cfg.Index, decisions[i])
+					idx, err := openSelectedIndex(cfg.Index, multiDecisions[i])
 					if err != nil {
 						return fmt.Errorf("init index for counterpart %q: %w", name, err)
 					}
-					fmt.Fprintf(os.Stderr, "index: counterpart=%s %s\n", name, decisions[i].Selection.String())
+					fmt.Fprintf(os.Stderr, "index: counterpart=%s %s\n", name, multiDecisions[i].Selection.String())
 					indexes = append(indexes, idx)
 					cps = append(cps, engine.CounterpartStream{
 						SourceName: name,

@@ -96,6 +96,62 @@ func TestChooseIndexBackend_PartitionedAcceptsCaseInsensitiveReferenceHeader(t *
 	}
 }
 
+func TestChooseMultiIndexBackends_PartitionedAcceptsEligibleCounterparts(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	first := filepath.Join(dir, "first.csv")
+	second := filepath.Join(dir, "second.csv")
+	writeSelectionCSV(t, left)
+	writeSelectionCSV(t, first)
+	writeSelectionCSV(t, second)
+	withFreeDisk(t, 1<<40, nil)
+	sources := map[string]config.Source{
+		"first":  {FilePattern: first, Parser: selectionParser()},
+		"second": {FilePattern: second, Parser: selectionParser()},
+	}
+	decisions, err := chooseMultiIndexBackends(config.IndexCfg{Backend: "partitioned", MaxMemoryMB: 1024, MaxTempDiskMB: 1024}, left, selectionParser(), []string{"first", "second"}, map[string]string{"first": first, "second": second}, sources, config.Pair{})
+	if err != nil {
+		t.Fatalf("chooseMultiIndexBackends: %v", err)
+	}
+	if len(decisions) != 2 || !decisions[0].Partitioned || !decisions[1].Partitioned {
+		t.Fatalf("decisions=%+v, want two partitioned decisions", decisions)
+	}
+}
+
+func TestChooseMultiIndexBackends_PartitionedReportsAggregatePeak(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	first := filepath.Join(dir, "first.csv")
+	second := filepath.Join(dir, "second.csv")
+	writeSelectionCSV(t, left)
+	writeSelectionCSV(t, first)
+	writeSelectionCSV(t, second,
+		"2026-01-01,100,REF-1",
+		"2026-01-01,200,REF-2",
+		"2026-01-01,300,REF-3",
+	)
+	withFreeDisk(t, 1<<40, nil)
+	sources := map[string]config.Source{
+		"first":  {FilePattern: first, Parser: selectionParser()},
+		"second": {FilePattern: second, Parser: selectionParser()},
+	}
+	decisions, err := chooseMultiIndexBackends(config.IndexCfg{Backend: "partitioned", MaxMemoryMB: 1024, MaxTempDiskMB: 1024}, left, selectionParser(), []string{"first", "second"}, map[string]string{"first": first, "second": second}, sources, config.Pair{})
+	if err != nil {
+		t.Fatalf("chooseMultiIndexBackends: %v", err)
+	}
+	if decisions[0].Selection.EstimatedMemoryBytes != decisions[1].Selection.EstimatedMemoryBytes ||
+		decisions[0].Selection.EstimatedTempDiskBytes != decisions[1].Selection.EstimatedTempDiskBytes {
+		t.Fatalf("partitioned decisions do not share aggregate peak: %+v", decisions)
+	}
+	firstEstimate, err := estimateIndexResources(left, first, selectionParser(), selectionParser(), config.Pair{}, 0, 2, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decisions[0].Selection.EstimatedTempDiskBytes <= firstEstimate.PartitionTempDiskBytes {
+		t.Fatalf("reported temp disk=%d, want aggregate peak above first counterpart estimate=%d", decisions[0].Selection.EstimatedTempDiskBytes, firstEstimate.PartitionTempDiskBytes)
+	}
+}
+
 func TestChooseIndexBackend_AutoAggregatesResourceFailures(t *testing.T) {
 	dir := t.TempDir()
 	left := filepath.Join(dir, "left.csv")
@@ -214,5 +270,20 @@ func TestEstimateIndexResourcesIncludesGroupedWorkingSet(t *testing.T) {
 	}
 	if grouped.PartitionMemoryBytes <= plain.PartitionMemoryBytes || grouped.MemoryIndexBytes <= plain.MemoryIndexBytes {
 		t.Fatalf("plain=%+v grouped=%+v, want grouped working-set overhead", plain, grouped)
+	}
+}
+
+func TestEstimateIndexResourcesMultiPartitionedIncludesGlobalDisposition(t *testing.T) {
+	left := inputShape{bytes: 512 << 20, rows: 2_000_000, fieldBytes: 256 << 20}
+	right := inputShape{bytes: 256 << 20, rows: 1_000_000, fieldBytes: 128 << 20}
+	cfg := selectionParser()
+	estimate := estimateIndexResourcesFromShapes(left, right, cfg, cfg, config.Pair{}, 32, 2)
+	globalDisposition := estimatePartitionDispositionMemory(left, cfg) + estimatePartitionDispositionMemory(right, cfg)
+	if estimate.PartitionMemoryBytes <= globalDisposition {
+		t.Fatalf("partition memory=%d, want global disposition=%d plus active partition working set", estimate.PartitionMemoryBytes, globalDisposition)
+	}
+	minimumTempDisk := 2*left.bytes + right.bytes + resourceHeadroomBytes
+	if estimate.PartitionTempDiskBytes < minimumTempDisk {
+		t.Fatalf("partition temp disk=%d, want at least carry-forward peak=%d", estimate.PartitionTempDiskBytes, minimumTempDisk)
 	}
 }
