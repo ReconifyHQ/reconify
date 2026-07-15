@@ -117,6 +117,57 @@ func TestReconcileProgressOutPreservesResultOutput(t *testing.T) {
 	}
 }
 
+func TestReconcilePartitionedMultiSourceCLI(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.csv")
+	firstPath := filepath.Join(dir, "first.csv")
+	secondPath := filepath.Join(dir, "second.csv")
+	configPath := filepath.Join(dir, "reconify.yaml")
+	resultPath := filepath.Join(dir, "result.json")
+	spillPath := filepath.Join(dir, "spill")
+	csv := func(row string) []byte {
+		return []byte("date,amount,reference\n" + row + "\n")
+	}
+	if err := os.WriteFile(leftPath, []byte("date,amount,reference\n2024-01-01,100,REF-1\n2024-01-01,200,REF-2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(firstPath, csv("2024-01-01,100,REF-1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondPath, csv("2024-01-01,200,REF-2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "version: 1\nindex:\n  backend: partitioned\n  partition_count: 2\n  spill_dir: " + spillPath + "\nsources:\n  left:\n    file_pattern: " + leftPath + "\n    parser: &parser\n      type: csv\n      date_col: date\n      date_layout: \"2006-01-02\"\n      amount_col: amount\n      multiplier: 1\n      ref_col: reference\n  first:\n    file_pattern: " + firstPath + "\n    parser: *parser\n  second:\n    file_pattern: " + secondPath + "\n    parser: *parser\npairs:\n  pair:\n    left: left\n    rights: [first, second]\n    date_window: 0d\n"
+	if err := os.WriteFile(configPath, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G204 -- test invokes the local Go toolchain with fixed program arguments and t.TempDir paths.
+	command := exec.Command("go", "run", "./cmd/reconify", "reconcile", "--config", configPath, "--pair", "pair", "--format", "json", "--out", resultPath)
+	command.Dir = root
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("partitioned multi-source reconcile failed: %v\n%s", err, output)
+	}
+	result, err := os.ReadFile(resultPath) // #nosec G304 -- t.TempDir test file.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(result), `"matched": 2`) || !strings.Contains(string(result), `"by_source"`) {
+		t.Fatalf("partitioned multi-source result is missing expected summaries: %s", result)
+	}
+	entries, err := os.ReadDir(spillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("partitioned spill artifacts remain: %v", entries)
+	}
+}
+
 func TestReconcileRejectsInvalidTelemetryIntervals(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {

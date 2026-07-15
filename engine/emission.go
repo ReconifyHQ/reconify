@@ -13,14 +13,23 @@ import (
 // (reference, name, or group_key); mixed selectors or an empty key column
 // return ok=false with a descriptive reason.
 func PartitionKeyColumns(pair config.Pair, leftCfg, rightCfg config.ParserCfg) (leftCol, rightCol string, ok bool, reason string) {
+	leftCol, rightCol, _, ok, reason = partitionKeyColumns(pair, leftCfg, rightCfg)
+	return leftCol, rightCol, ok, reason
+}
+
+// partitionKeyColumns resolves the common logical selector as well as the
+// concrete input columns. The selector is useful to multi-source callers,
+// where each counterpart may use a different physical header for the same
+// matching key.
+func partitionKeyColumns(pair config.Pair, leftCfg, rightCfg config.ParserCfg) (leftCol, rightCol, selector string, ok bool, reason string) {
 	if pair.NameMode == "tokens" {
-		return "", "", false, "partitioned backend does not support name-token matching"
+		return "", "", "", false, "partitioned backend does not support name-token matching"
 	}
 	if len(pair.Passes) == 0 {
 		if leftCfg.RefCol == "" || rightCfg.RefCol == "" {
-			return "", "", false, "partitioned backend requires ref_col on both sources"
+			return "", "", "", false, "partitioned backend requires ref_col on both sources"
 		}
-		return leftCfg.RefCol, rightCfg.RefCol, true, ""
+		return leftCfg.RefCol, rightCfg.RefCol, "reference", true, ""
 	}
 
 	var resolvedLeft, resolvedRight, resolvedSelector string
@@ -38,24 +47,24 @@ func PartitionKeyColumns(pair config.Pair, leftCfg, rightCfg config.ParserCfg) (
 			case config.GroupByGroupKey:
 				lc, rc, sel = leftCfg.GroupCol, rightCfg.GroupCol, "group_key"
 			default:
-				return "", "", false, fmt.Sprintf("unknown group_by %q", pass.ResolvedGroupBy())
+				return "", "", "", false, fmt.Sprintf("unknown group_by %q", pass.ResolvedGroupBy())
 			}
 		default:
-			return "", "", false, fmt.Sprintf("pass type %q is not supported by the partitioned backend", pass.Type)
+			return "", "", "", false, fmt.Sprintf("pass type %q is not supported by the partitioned backend", pass.Type)
 		}
 		if lc == "" || rc == "" {
-			return "", "", false, fmt.Sprintf("partition key column for selector %q is empty", sel)
+			return "", "", "", false, fmt.Sprintf("partition key column for selector %q is empty", sel)
 		}
 		if resolvedSelector == "" {
 			resolvedLeft, resolvedRight, resolvedSelector = lc, rc, sel
 		} else if resolvedLeft != lc || resolvedRight != rc {
-			return "", "", false, fmt.Sprintf("passes resolve to different partition key columns (%q vs %q)", resolvedSelector, sel)
+			return "", "", "", false, fmt.Sprintf("passes resolve to different partition key columns (%q vs %q)", resolvedSelector, sel)
 		}
 	}
 	if resolvedSelector == "" {
-		return "", "", false, "no passes configured"
+		return "", "", "", false, "no passes configured"
 	}
-	return resolvedLeft, resolvedRight, true, ""
+	return resolvedLeft, resolvedRight, resolvedSelector, true, ""
 }
 
 // containsGroupedPass reports whether any pass requires grouped matching.

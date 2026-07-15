@@ -117,13 +117,20 @@ sorted outputs coexist briefly with the staged partitions.
 More partitions reduce memory but increase partition-file overhead and disk
 passes. Use `ndjson` or `csv` output so results do not accumulate in memory.
 
-The partitioned backend applies to single-counterpart CSV pairs using a
-consistent reference, name, or group-key selector across all passes. Duplicate
-policies are supported when each duplicate group is co-located with the
-partition key; otherwise the CLI rejects partitioning to preserve global
-duplicate semantics. Grouped passes are batch operations within each partition,
-not whole-file batch operations. Multi-source pairs should use `memory` or
-`disk`.
+The partitioned backend applies to CSV pairs using a consistent reference,
+name, or group-key selector across all passes. Duplicate policies are supported
+when each duplicate group is co-located with the partition key; otherwise the
+CLI rejects partitioning to preserve global duplicate semantics. Grouped passes
+are batch operations within each partition, not whole-file batch operations.
+
+For `rights` pairs, the coordinator partitions the left file once, partitions
+one counterpart at a time, and writes unmatched left rows to carry-forward
+manifests before advancing to the next configured counterpart. Only one left
+partition and one counterpart partition are active in memory. Right duplicate
+and left disposition tracking preserve duplicate policies and annotations;
+the private spill tree is removed on success and on failure. Multi-source
+partitioning rejects non-CSV inputs, token-name matching, incompatible
+selectors, and duplicate layouts that cannot be safely co-located.
 
 ### Resource-aware selection
 
@@ -138,10 +145,17 @@ index:
 ```
 
 The selector estimates parsed index memory, SQLite storage, and partition
-staging from streamed CSV row shape and file statistics. With a budget set,
-`auto` tries memory, then disk, then partitioned indexing. It also checks actual
-free space in `spill_dir`. The selected backend and rejected fallback reasons
-are included in JSON-style metadata and reported on stderr for CSV/table runs.
+staging from streamed CSV row shape and file statistics. For a multi-source
+partitioned run, the peak estimate includes full-file duplicate disposition
+state, one active left and counterpart partition, and the carry-forward copy
+being written. Consumed left/right partitions and grouped sort outputs are
+removed during each pass, so completed counterparts do not accumulate in the
+spill directory. With a budget set, `auto` tries memory, then disk, then
+partitioned indexing when every counterpart is eligible. Without a budget,
+multi-source `auto` keeps its existing memory/disk selection. It also checks
+actual free space in `spill_dir`. The selected backend and rejected fallback
+reasons are included in JSON-style metadata and reported on stderr for
+CSV/table runs.
 Budgets are resource safeguards, not throughput guarantees. If no candidate can
 meet its estimate, the run fails explicitly and does not publish final output.
 
@@ -188,6 +202,17 @@ the balanced case, and one 20,000-row group for the skewed case. It was run with
 ```bash
 go test -run '^$' -bench='Benchmark(ReconcilePartitioned|ReconcileBatch)_OneToMany(Balanced|Skewed)$' -benchtime=1x -benchmem ./engine
 ```
+
+For ordered multi-source measurements, use the dedicated balanced and skewed
+fixtures and record the same wall time and allocation columns:
+
+```bash
+go test -run '^$' -bench='BenchmarkReconcilePartitionedMultiSource_OneToMany(Balanced|Skewed)$' -benchtime=1x -benchmem ./engine
+```
+
+To capture peak RSS and temporary-disk usage, wrap that command with the host's
+resource monitor (for example `/usr/bin/time -l` on macOS), and record the Go
+version, partition count, output format, and fixture shape with the result.
 
 Results from one warm-cache run:
 

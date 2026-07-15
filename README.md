@@ -48,6 +48,7 @@ index:
   auto_max_right_file_mb: 2048   # optional legacy auto threshold
   max_memory_mb: 8192            # optional resource safeguard; 0 is uncapped
   max_temp_disk_mb: 16384        # optional resource safeguard; 0 is uncapped
+  partition_count: 32            # partitioned backend; 0 uses the default
 
 sources:
   bank:
@@ -133,7 +134,7 @@ Reconify supports multiple right-side index backends for `reconcile`:
 - `disk`: lower RAM usage, slower lookups, uses SQLite temp files
 - `auto`: preserves the file-size threshold without resource budgets, and uses
   memory, disk, then partitioned fallbacks when budgets are configured
-- `partitioned`: bounded-memory single-counterpart CSV reconciliation, including grouped passes, with extra disk passes
+- `partitioned`: bounded-memory CSV reconciliation for one counterpart or eligible ordered `rights` pairs, including grouped passes, with extra disk passes
 
 Use this for large files where in-memory indexing causes GC pressure or OOM risk.
 
@@ -142,6 +143,16 @@ guarantees. Auto selection reports the chosen backend, reason, estimates, and
 rejected fallback reasons in JSON-style output and on stderr for CSV/table.
 Runs fail before completion when the selected budget or available temporary
 storage cannot satisfy the estimate.
+
+For a multi-counterpart pair, configure `rights: [stripe, paypal]`. The
+partitioned backend hashes the common matching/grouping key once on the left
+and once per counterpart, then carries unmatched left rows forward on disk.
+Counterparts remain ordered, so an earlier source always consumes an eligible
+left row first. This mode requires CSV inputs, a non-token matching pipeline,
+compatible partition selectors, and duplicate groups that are safe to route
+with that selector. Temporary partitions and carry-forward manifests are
+removed on both successful and failed runs. Use `--format ndjson` or `--format
+csv` for bounded output memory.
 
 ## Result emission modes
 

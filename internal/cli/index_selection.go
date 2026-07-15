@@ -57,10 +57,6 @@ func chooseIndexBackend(indexCfg config.IndexCfg, leftPath, rightPath string, le
 		requested = "memory"
 	}
 
-	if requested == "partitioned" && counterpartCount != 1 {
-		return indexSelectionDecision{}, fmt.Errorf("partitioned backend requires exactly one counterpart")
-	}
-
 	selection := engine.IndexSelection{
 		RequestedBackend: requested,
 	}
@@ -168,8 +164,8 @@ func diskFits(indexCfg config.IndexCfg, path string, required int64) (string, bo
 }
 
 func partitionedEligible(leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, counterpartCount int) (string, bool) {
-	if counterpartCount != 1 {
-		return "partitioned backend supports one counterpart only", false
+	if counterpartCount < 1 {
+		return "partitioned backend requires at least one counterpart", false
 	}
 	if !isCSVPath(leftPath, leftCfg) || !isCSVPath(rightPath, rightCfg) {
 		return "partitioned backend supports CSV inputs only", false
@@ -246,6 +242,13 @@ func estimateIndexResourcesFromShapes(left, right inputShape, leftCfg, rightCfg 
 	partitionFieldBytes := (right.fieldBytes + int64(partitionCount) - 1) / int64(partitionCount)
 	partitionTrackingBytes := estimateReferenceTracking(partitionRows, rightCfg.ResolvedDuplicatePolicy(), partitionFieldBytes, partitionRows)
 	estimate.PartitionMemoryBytes = resourceHeadroomBytes + partitionIndexBytes + partitionTrackingBytes + leftTrackingBytes
+	if counterpartCount > 1 && !containsBatchOnlyGroupedPass(pair.Passes) {
+		partitionLeftRows := (left.rows + int64(partitionCount) - 1) / int64(partitionCount)
+		partitionLeftFieldBytes := (left.fieldBytes + int64(partitionCount) - 1) / int64(partitionCount)
+		partitionLeftTracking := estimateReferenceTracking(partitionLeftRows, leftCfg.ResolvedDuplicatePolicy(), partitionLeftFieldBytes, partitionLeftRows)
+		estimate.PartitionMemoryBytes = resourceHeadroomBytes + partitionIndexBytes + partitionTrackingBytes + partitionLeftTracking +
+			estimatePartitionDispositionMemory(left, leftCfg) + estimatePartitionDispositionMemory(right, rightCfg)
+	}
 	if containsBatchOnlyGroupedPass(pair.Passes) {
 		partitionLeftRows := (left.rows + int64(partitionCount) - 1) / int64(partitionCount)
 		partitionLeftFieldBytes := (left.fieldBytes + int64(partitionCount) - 1) / int64(partitionCount)
@@ -255,8 +258,16 @@ func estimateIndexResourcesFromShapes(left, right inputShape, leftCfg, rightCfg 
 		partitionResultBytes := (partitionLeftRows + partitionRows) * resourceGroupedResultBytes
 		estimate.PartitionMemoryBytes = resourceHeadroomBytes + partitionIndexBytes + partitionTrackingBytes +
 			partitionLeftTracking + partitionLeftPayload + partitionRightPayload + partitionResultBytes + resourceGroupedSortBufferBytes
+		if counterpartCount > 1 {
+			estimate.PartitionMemoryBytes += estimatePartitionDispositionMemory(left, leftCfg) + estimatePartitionDispositionMemory(right, rightCfg)
+		}
 	}
 	estimate.PartitionTempDiskBytes = estimate.LeftBytes + estimate.RightBytes + resourceHeadroomBytes
+	if counterpartCount > 1 {
+		// Carry-forward replaces the active left partitions incrementally. Reserve
+		// one extra left-sized generation for the partition currently being copied.
+		estimate.PartitionTempDiskBytes += estimate.LeftBytes
+	}
 	if containsBatchOnlyGroupedPass(pair.Passes) {
 		// Staging retains the original partitions while external sort runs and
 		// sorted outputs are created. Reserve two additional input-sized copies for
@@ -264,6 +275,16 @@ func estimateIndexResourcesFromShapes(left, right inputShape, leftCfg, rightCfg 
 		estimate.PartitionTempDiskBytes += 2 * (estimate.LeftBytes + estimate.RightBytes)
 	}
 	return estimate
+}
+
+func estimatePartitionDispositionMemory(shape inputShape, cfg config.ParserCfg) int64 {
+	bytes := estimateReferenceTracking(shape.rows, cfg.ResolvedDuplicatePolicy(), shape.fieldBytes, shape.rows)
+	if cfg.ResolvedDuplicatePolicy() == config.DuplicatePolicyFlag {
+		// Duplicate annotation retains every duplicated transaction until its
+		// group is emitted. Budget the worst case where every input row is a duplicate.
+		bytes += estimateRowPayload(shape.rows, shape.fieldBytes)
+	}
+	return bytes
 }
 
 func inspectInputShape(path string, cfg config.ParserCfg, detailed bool) (inputShape, error) {
@@ -411,10 +432,6 @@ func chooseMultiIndexBackends(indexCfg config.IndexCfg, leftPath string, leftCfg
 	if len(counterparts) == 0 {
 		return nil, fmt.Errorf("at least one counterpart source is required")
 	}
-	if indexCfg.Backend == "partitioned" {
-		return nil, fmt.Errorf("partitioned backend requires exactly one counterpart")
-	}
-
 	resourcePolicy := indexCfg.MaxMemoryMB > 0 || indexCfg.MaxTempDiskMB > 0
 	if !resourcePolicy {
 		decisions := make([]indexSelectionDecision, 0, len(counterparts))
@@ -451,15 +468,30 @@ func chooseMultiIndexBackends(indexCfg config.IndexCfg, leftPath string, leftCfg
 	}
 	candidates := []string{requested}
 	if requested == "auto" {
-		candidates = []string{"memory", "disk"}
+		candidates = []string{"memory", "disk", "partitioned"}
 	}
 	var failures []engine.IndexFallback
 	for _, candidate := range candidates {
+		if candidate == "partitioned" {
+			eligible := true
+			for _, name := range counterparts {
+				src := sources[name]
+				if partitionReason, ok := partitionedEligible(leftPath, rightPaths[name], leftCfg, src.Parser, pair, len(counterparts)); !ok {
+					failures = append(failures, engine.IndexFallback{Backend: candidate, Reason: fmt.Sprintf("counterpart %q: %s", name, partitionReason)})
+					eligible = false
+					break
+				}
+			}
+			if !eligible {
+				continue
+			}
+		}
 		reason, ok := aggregateBackendFits(candidate, indexCfg, estimates)
 		if !ok {
 			failures = append(failures, engine.IndexFallback{Backend: candidate, Reason: reason})
 			continue
 		}
+		aggregateMemory, aggregateTempDisk := aggregateBackendResources(candidate, estimates)
 		decisions := make([]indexSelectionDecision, 0, len(estimates))
 		for _, estimate := range estimates {
 			selection := engine.IndexSelection{
@@ -469,7 +501,11 @@ func chooseMultiIndexBackends(indexCfg config.IndexCfg, leftPath string, leftCfg
 				Fallbacks:        append([]engine.IndexFallback(nil), failures...),
 			}
 			applySelectedEstimate(&selection, candidate, estimate)
-			decisions = append(decisions, indexSelectionDecision{Selection: selection})
+			if candidate == "partitioned" {
+				selection.EstimatedMemoryBytes = aggregateMemory
+				selection.EstimatedTempDiskBytes = aggregateTempDisk
+			}
+			decisions = append(decisions, indexSelectionDecision{Selection: selection, Partitioned: candidate == "partitioned"})
 		}
 		return decisions, nil
 	}
@@ -477,30 +513,42 @@ func chooseMultiIndexBackends(indexCfg config.IndexCfg, leftPath string, leftCfg
 }
 
 func aggregateBackendFits(backend string, indexCfg config.IndexCfg, estimates []indexResourceEstimate) (string, bool) {
-	if backend != "memory" && backend != "disk" {
+	if backend != "memory" && backend != "disk" && backend != "partitioned" {
 		return fmt.Sprintf("unsupported backend %q for multi-counterpart streaming", backend), false
 	}
-	var memory, tempDisk int64
-	for _, estimate := range estimates {
-		if backend == "memory" {
-			memory += estimate.PerIndexMemoryBytes
-		} else {
-			memory += estimate.PerIndexDiskMemoryBytes
-			tempDisk += estimate.DiskIndexBytes
-		}
-	}
-	if len(estimates) > 0 {
-		memory += estimates[0].SharedMemoryBytes
-	}
+	memory, tempDisk := aggregateBackendResources(backend, estimates)
 	if indexCfg.MaxMemoryMB > 0 && memory > mbToBytes(indexCfg.MaxMemoryMB) {
 		return fmt.Sprintf("estimated aggregate memory %s exceeds max_memory_mb=%d", formatBytes(memory), indexCfg.MaxMemoryMB), false
 	}
-	if backend == "disk" {
+	if backend == "disk" || backend == "partitioned" {
 		if reason, ok := diskFits(indexCfg, indexCfg.SpillDir, tempDisk); !ok {
 			return fmt.Sprintf("aggregate temporary disk: %s", reason), false
 		}
 	}
 	return fmt.Sprintf("aggregate %s estimate fits configured policy", backend), true
+}
+
+func aggregateBackendResources(backend string, estimates []indexResourceEstimate) (memory, tempDisk int64) {
+	for _, estimate := range estimates {
+		switch backend {
+		case "memory":
+			memory += estimate.PerIndexMemoryBytes
+		case "disk":
+			memory += estimate.PerIndexDiskMemoryBytes
+			tempDisk += estimate.DiskIndexBytes
+		case "partitioned":
+			if estimate.PartitionMemoryBytes > memory {
+				memory = estimate.PartitionMemoryBytes
+			}
+			if estimate.PartitionTempDiskBytes > tempDisk {
+				tempDisk = estimate.PartitionTempDiskBytes
+			}
+		}
+	}
+	if backend != "partitioned" && len(estimates) > 0 {
+		memory += estimates[0].SharedMemoryBytes
+	}
+	return memory, tempDisk
 }
 
 func openSelectedIndex(indexCfg config.IndexCfg, selection indexSelectionDecision) (engine.RightIndex, error) {

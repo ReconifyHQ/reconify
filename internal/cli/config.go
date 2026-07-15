@@ -188,7 +188,7 @@ Agents can call this once to self-bootstrap context without reading the source c
 						"fields": map[string]interface{}{
 							"backend": map[string]interface{}{
 								"type": "string", "enum": []string{"memory", "disk", "auto", "partitioned"}, "default": "memory",
-								"description": "memory (fastest), disk (lower RAM via SQLite), auto (resource-aware selection), partitioned (bounded memory for CSV one-to-one runs).",
+								"description": "memory (fastest), disk (lower RAM via SQLite), auto (resource-aware selection), partitioned (bounded-memory CSV reconciliation for one-to-one and eligible multi-counterpart runs).",
 							},
 							"spill_dir": map[string]interface{}{
 								"type": "string", "required": false,
