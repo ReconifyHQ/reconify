@@ -225,7 +225,11 @@ func ReconcileStreamingMultiSourceWithTelemetry(
 	if reporter != nil {
 		defer reporter.close()
 	}
-	return reconcileStreamingMultiSource(ctx, pairName, leftSource, leftPath, leftCfg, counterparts, pair, w, maxLeftBuffer, reporter)
+	err := reconcileStreamingMultiSource(ctx, pairName, leftSource, leftPath, leftCfg, counterparts, pair, w, maxLeftBuffer, reporter)
+	if err != nil {
+		reporter.fail(0)
+	}
+	return err
 }
 
 func reconcileStreamingMultiSource(
@@ -370,6 +374,7 @@ func reconcileStreamingMultiSource(
 	}
 
 	reporter.start("finalization", leftSource, strings.Join(names, ","), nil)
+	reporter.progress(totalLeft + totalRight)
 	if err := w.WriteSummary(aggregate); err != nil {
 		return err
 	}
@@ -485,6 +490,7 @@ func runStreamingPass(
 		}
 		for _, g := range groups {
 			dupTxnCount += len(g.Transactions)
+			reporter.progress(dupTxnCount)
 			if werr := w.WriteDuplicate(g); werr != nil {
 				return nil, Summary{}, nil, werr
 			}
