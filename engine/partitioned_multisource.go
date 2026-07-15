@@ -121,6 +121,9 @@ func reconcilePartitionedMultiSource(
 	if len(counterparts) == 0 {
 		return fmt.Errorf("at least one counterpart source is required")
 	}
+	if err := validateCounterpartNames(counterpartNames(counterparts)); err != nil {
+		return err
+	}
 	if err := validatePartitionedMultiSourceInputs(leftPath, leftCfg, counterparts, pair); err != nil {
 		return err
 	}

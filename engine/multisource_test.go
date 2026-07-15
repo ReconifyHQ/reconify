@@ -102,6 +102,17 @@ func TestReconcileMultiSource_RequiresAtLeastOneCounterpart(t *testing.T) {
 	}
 }
 
+func TestReconcileMultiSource_RejectsInvalidCounterpartNames(t *testing.T) {
+	for _, counterparts := range [][]CounterpartInput{
+		{{SourceName: "same"}, {SourceName: "same"}},
+		{{SourceName: ""}},
+	} {
+		if _, err := ReconcileMultiSource("p", "left", nil, counterparts, config.Pair{}); err == nil {
+			t.Fatalf("expected invalid counterpart error for %+v", counterparts)
+		}
+	}
+}
+
 func TestReconcileMultiSource_DuplicatesAnnotatedOncePerLeftRow(t *testing.T) {
 	// l1/l2 share a GroupKey but have distinct references; l1 matches in pass 1,
 	// l2 only matches in pass 2 — the left duplicate group must still be reported
@@ -259,6 +270,114 @@ func TestReconcileStreamingMultiSource_RequiresAtLeastOneCounterpart(t *testing.
 	err := ReconcileStreamingMultiSource(context.Background(), "p", "left", "left.csv", config.CSVParserCfg{}, nil, config.Pair{}, w, 0)
 	if err == nil {
 		t.Fatal("expected an error when no counterparts are given")
+	}
+}
+
+func TestReconcileStreamingMultiSource_RejectsInvalidInputsBeforeProcessing(t *testing.T) {
+	var out bytes.Buffer
+	w := newJSONWriter(&out)
+
+	duplicate := []CounterpartStream{
+		{SourceName: "same", Index: NewMemoryIndex()},
+		{SourceName: "same", Index: NewMemoryIndex()},
+	}
+	if err := ReconcileStreamingMultiSource(context.Background(), "p", "left", "missing.csv", config.CSVParserCfg{}, duplicate, config.Pair{}, w, 0); err == nil {
+		t.Fatal("expected duplicate counterpart error")
+	}
+
+	if err := ReconcileStreamingMultiSource(context.Background(), "p", "left", "missing.csv", config.CSVParserCfg{}, []CounterpartStream{{SourceName: "nil-index"}}, config.Pair{}, w, 0); err == nil {
+		t.Fatal("expected nil index error")
+	}
+}
+
+func TestReconcileStreamingMultiSource_LatestReplaysRepresentativeOnce(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.csv")
+	firstPath := filepath.Join(dir, "first.csv")
+	secondPath := filepath.Join(dir, "second.csv")
+
+	leftCSV := "id,date,amount,currency,reference,name,group\n" +
+		"old-first,2024-01-01,1.00,USD,OLD-FIRST,Old first,G1\n" +
+		"latest-first,2024-01-01,2.00,USD,REF-FIRST,Latest first,G1\n" +
+		"old-later,2024-01-01,1.00,USD,OLD-LATER,Old later,G2\n" +
+		"latest-later,2024-01-01,3.00,USD,REF-LATER,Latest later,G2\n" +
+		"old-unmatched,2024-01-01,1.00,USD,OLD-UNMATCHED,Old unmatched,G3\n" +
+		"latest-unmatched,2024-01-01,4.00,USD,REF-UNMATCHED,Latest unmatched,G3\n" +
+		"empty-group,2024-01-01,5.00,USD,REF-EMPTY,Empty group,\n"
+	firstCSV := "id,date,amount,currency,reference,name\n" +
+		"first-match,2024-01-01,2.00,USD,REF-FIRST,First\n" +
+		"empty-match,2024-01-01,5.00,USD,REF-EMPTY,Empty\n"
+	secondCSV := "id,date,amount,currency,reference,name\n" +
+		"later-match,2024-01-01,3.00,USD,REF-LATER,Later\n"
+	for path, content := range map[string]string{
+		leftPath: leftCSV, firstPath: firstCSV, secondPath: secondCSV,
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	leftCfg := config.CSVParserCfg{
+		Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount",
+		Decimal: ".", Multiplier: 100, CurrencyCol: "currency", RefCol: "reference",
+		NameCol: "name", GroupCol: "group", DuplicatePolicy: config.DuplicatePolicyLatest,
+	}
+	rightCfg := leftCfg
+	rightCfg.GroupCol = ""
+	rightCfg.DuplicatePolicy = config.DuplicatePolicyFlag
+	indexes := []RightIndex{NewMemoryIndex(), NewMemoryIndex()}
+	for _, index := range indexes {
+		defer index.Close()
+	}
+	var out bytes.Buffer
+	w := newJSONWriter(&out)
+	w.SetMeta("p", "left", "first,second")
+
+	err := ReconcileStreamingMultiSource(context.Background(), "p", "left", leftPath, leftCfg, []CounterpartStream{
+		{SourceName: "first", RightPath: firstPath, RightCfg: rightCfg, Index: indexes[0]},
+		{SourceName: "second", RightPath: secondPath, RightCfg: rightCfg, Index: indexes[1]},
+	}, config.Pair{DateWindow: "0d"}, w, 0)
+	if err != nil {
+		t.Fatalf("ReconcileStreamingMultiSource error: %v", err)
+	}
+
+	var result Result
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if result.Summary.TotalLeft != 7 || result.Summary.MatchedCount != 3 || result.Summary.UnmatchedLeft != 1 {
+		t.Fatalf("summary=%+v, want total_left=7 matched=3 unmatched_left=1", result.Summary)
+	}
+	if result.Summary.MatchedAmountLeft != 1000 || result.Summary.UnmatchedAmountLeft != 400 {
+		t.Fatalf("amount totals=%+v, want matched_left=1000 unmatched_left=400", result.Summary)
+	}
+	if len(result.Matched) != 3 {
+		t.Fatalf("matched=%d, want 3", len(result.Matched))
+	}
+	wantMatchedReferences := map[string]bool{
+		"REF-FIRST": true,
+		"REF-LATER": true,
+		"REF-EMPTY": true,
+	}
+	for _, pair := range result.Matched {
+		if !wantMatchedReferences[pair.Left.Reference] {
+			t.Errorf("unexpected matched left reference: %q", pair.Left.Reference)
+		}
+	}
+	if len(result.UnmatchedLeft) != 1 || result.UnmatchedLeft[0].Reference != "REF-UNMATCHED" {
+		t.Fatalf("unmatched left=%+v, want REF-UNMATCHED", result.UnmatchedLeft)
+	}
+}
+
+func TestReconcilePartitionedMultiSource_RejectsInvalidCounterpartNames(t *testing.T) {
+	var out bytes.Buffer
+	w := newJSONWriter(&out)
+	inputs := []PartitionedCounterpartInput{
+		{SourceName: "same"},
+		{SourceName: "same"},
+	}
+	if err := ReconcilePartitionedMultiSourceWithOptions(context.Background(), "p", "left", "missing.csv", config.CSVParserCfg{}, inputs, config.Pair{}, w, PartitionedOptions{}); err == nil {
+		t.Fatal("expected duplicate counterpart error")
 	}
 }
 
