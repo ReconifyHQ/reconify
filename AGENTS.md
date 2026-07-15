@@ -71,3 +71,17 @@ Tool-specific files should be thin adapters that point back to these canonical s
 - Do not rewrite public config keys, CLI flags, or output formats unless the task explicitly requires a breaking change.
 - Update README/examples/tests when user-facing CLI or config behavior changes.
 - Do not commit generated benchmark datasets, local CSVs, coverage files, binaries, or private `*.local.yaml` configs.
+
+## Test Organization
+
+Keep tests with the package that owns the behavior. For a narrow unit of
+implementation, prefer an exact file pair: `filename.go` and
+`filename_test.go` in the same directory. This is required when the test needs
+access to unexported implementation details.
+
+Use a behavior-oriented test filename instead when one test deliberately spans
+multiple implementation files or validates a public workflow. For example,
+format, parity, partitioned, multi-source, and telemetry workflow tests should
+remain focused package-level suites rather than being forced into an arbitrary
+one-to-one filename pairing. Shared package-local fixtures belong in a clearly
+named `test_helpers_test.go` file.
