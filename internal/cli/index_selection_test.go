@@ -273,17 +273,45 @@ func TestEstimateIndexResourcesIncludesGroupedWorkingSet(t *testing.T) {
 	}
 }
 
-func TestEstimateIndexResourcesMultiPartitionedIncludesGlobalDisposition(t *testing.T) {
+func TestEstimateIndexResourcesMultiPartitionedUsesActiveDisposition(t *testing.T) {
 	left := inputShape{bytes: 512 << 20, rows: 2_000_000, fieldBytes: 256 << 20}
 	right := inputShape{bytes: 256 << 20, rows: 1_000_000, fieldBytes: 128 << 20}
 	cfg := selectionParser()
 	estimate := estimateIndexResourcesFromShapes(left, right, cfg, cfg, config.Pair{}, 32, 2)
 	globalDisposition := estimatePartitionDispositionMemory(left, cfg) + estimatePartitionDispositionMemory(right, cfg)
-	if estimate.PartitionMemoryBytes <= globalDisposition {
-		t.Fatalf("partition memory=%d, want global disposition=%d plus active partition working set", estimate.PartitionMemoryBytes, globalDisposition)
+	if estimate.PartitionMemoryBytes >= globalDisposition {
+		t.Fatalf("partition memory=%d, want bounded active disposition below global=%d", estimate.PartitionMemoryBytes, globalDisposition)
 	}
 	minimumTempDisk := 2*left.bytes + right.bytes + resourceHeadroomBytes
 	if estimate.PartitionTempDiskBytes < minimumTempDisk {
 		t.Fatalf("partition temp disk=%d, want at least carry-forward peak=%d", estimate.PartitionTempDiskBytes, minimumTempDisk)
+	}
+}
+
+func TestResolvePartitionCountScalesWithInputAndPreservesExplicitCount(t *testing.T) {
+	left := inputShape{rows: 100_000_000, bytes: 10 << 30, fieldBytes: 1 << 30}
+	right := inputShape{rows: 80_000_000, bytes: 8 << 30, fieldBytes: 800 << 20}
+	cfg := selectionParser()
+	if got := resolvePartitionCount(config.IndexCfg{}, left, right, cfg, cfg, config.Pair{}, 1); got != 128 {
+		t.Fatalf("adaptive partition count=%d, want 128", got)
+	}
+	if got := resolvePartitionCount(config.IndexCfg{PartitionCount: 64}, left, right, cfg, cfg, config.Pair{}, 1); got != 64 {
+		t.Fatalf("explicit partition count=%d, want 64", got)
+	}
+}
+
+func TestPartitionedSelectionReportsResolvedPartitionCount(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	writeSelectionCSV(t, left)
+	writeSelectionCSV(t, right)
+	withFreeDisk(t, 1<<40, nil)
+	decision, err := chooseIndexBackend(config.IndexCfg{Backend: "partitioned", PartitionCount: 8, MaxTempDiskMB: 1024}, left, right, selectionParser(), selectionParser(), config.Pair{}, 1)
+	if err != nil {
+		t.Fatalf("chooseIndexBackend: %v", err)
+	}
+	if decision.Selection.PartitionCount != 8 {
+		t.Fatalf("reported partition count=%d, want 8", decision.Selection.PartitionCount)
 	}
 }

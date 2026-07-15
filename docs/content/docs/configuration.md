@@ -281,7 +281,7 @@ group plus fixed sort/merge buffers rather than by the complete input.
 ```yaml
 index:
   backend: partitioned
-  partition_count: 32   # optional; 0 defaults to 32, explicit values must be >= 2
+  partition_count: 32   # optional; 0 selects adaptively, explicit values must be >= 2
 ```
 
 Use a streaming output format for large runs:

@@ -240,7 +240,7 @@ Formats:
 					}
 					options := engine.PartitionedOptions{
 						MaxTokenBuffer: maxTokenBuffer,
-						Partitions:     cfg.Index.PartitionCount,
+						Partitions:     multiDecisions[0].Selection.PartitionCount,
 						SpillDir:       cfg.Index.SpillDir,
 					}
 					var runErr error
@@ -358,7 +358,7 @@ Formats:
 				if decision.Partitioned {
 					options := engine.PartitionedOptions{
 						MaxTokenBuffer: maxTokenBuffer,
-						Partitions:     cfg.Index.PartitionCount,
+						Partitions:     decision.Selection.PartitionCount,
 						SpillDir:       cfg.Index.SpillDir,
 					}
 					var runErr error

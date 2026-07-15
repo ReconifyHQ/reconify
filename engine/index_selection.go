@@ -8,6 +8,7 @@ type IndexSelection struct {
 	RequestedBackend       string          `json:"requested_backend"`
 	Backend                string          `json:"backend"`
 	Reason                 string          `json:"reason"`
+	PartitionCount         int             `json:"partition_count,omitempty"`
 	EstimatedMemoryBytes   int64           `json:"estimated_memory_bytes,omitempty"`
 	EstimatedTempDiskBytes int64           `json:"estimated_temp_disk_bytes,omitempty"`
 	Fallbacks              []IndexFallback `json:"fallbacks,omitempty"`
@@ -20,5 +21,8 @@ type IndexFallback struct {
 }
 
 func (s IndexSelection) String() string {
+	if s.PartitionCount > 0 {
+		return fmt.Sprintf("backend=%s reason=%s partition_count=%d", s.Backend, s.Reason, s.PartitionCount)
+	}
 	return fmt.Sprintf("backend=%s reason=%s", s.Backend, s.Reason)
 }

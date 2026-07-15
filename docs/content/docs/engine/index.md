@@ -127,7 +127,7 @@ index:
   backend: auto                # memory | disk | auto | partitioned
   spill_dir: /tmp/reconify     # optional for disk/auto/partitioned
   auto_max_right_file_mb: 2048 # optional threshold for auto
-  partition_count: 32          # partitioned only; 0 uses the default
+  partition_count: 32          # partitioned only; 0 selects adaptively
   max_memory_mb: 8192           # optional resource safeguard; 0 is uncapped
   max_temp_disk_mb: 16384       # optional resource safeguard; 0 is uncapped
 
