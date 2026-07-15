@@ -175,7 +175,7 @@ Formats:
 				effectiveMode = pair.ResultMode
 			}
 			// Always wrap: adds ResultMode/RunID to Summary and filters events by mode.
-			w = engine.WrapWithResultMode(w, effectiveMode, telemetry.RunID)
+			w = engine.WrapWithResultModeAndWarnings(w, effectiveMode, telemetry.RunID, stderrWarningObserver{})
 
 			// Audit mode: hash both input files and embed run provenance in output.
 			// Not yet supported for multi-counterpart (rights) pairs — BuildRunInfo's
@@ -654,9 +654,21 @@ func validateProgressOutput(progressPath, resultPath string, inputPaths ...strin
 // GroupedEventWriter and SourceBreakdownWriter are forwarded to the inner
 // writer when it supports them, so grouped events and per-source summaries
 // are preserved when --fail-if-unmatched is combined with those formats.
+type stderrWarningObserver struct{}
+
+func (stderrWarningObserver) ObserveWarning(warning engine.Warning) {
+	fmt.Fprintln(os.Stderr, "warning:", warning.Message)
+}
+
 type summaryCapture struct {
 	inner    engine.ResultWriter
 	captured engine.Summary
+}
+
+func (s *summaryCapture) ObserveWarning(warning engine.Warning) {
+	if observer, ok := s.inner.(engine.WarningObserver); ok {
+		observer.ObserveWarning(warning)
+	}
 }
 
 func (s *summaryCapture) WriteMatch(p engine.MatchedPair) error {

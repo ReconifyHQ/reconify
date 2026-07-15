@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/reconifyhq/reconify/config"
@@ -172,9 +171,7 @@ func WriteResultEvents(w ResultWriter, res *Result, suppressWarnings bool) error
 			}
 		}
 	} else if hasGrouped && !suppressWarnings {
-		fmt.Fprintln(os.Stderr,
-			"warning: current output format does not support grouped or ambiguous match events; "+
-				"use --format=json or --format=ndjson to capture all one_to_many output")
+		observeWarning(w, nil, Warning{Code: WarningUnsupportedGroupedEvents, Message: "current output format does not support grouped or ambiguous match events; use --format=json or --format=ndjson to capture all one_to_many output"})
 	}
 	hasManyToMany := len(res.ManyToManyMatched)+len(res.ManyToManyAmountDiff)+
 		len(res.ManyToManyTimingDiff) > 0
@@ -195,12 +192,10 @@ func WriteResultEvents(w ResultWriter, res *Result, suppressWarnings bool) error
 			}
 		}
 	} else if hasManyToMany && !suppressWarnings {
-		fmt.Fprintln(os.Stderr,
-			"warning: current output format does not support many_to_many match events; "+
-				"use --format=json or --format=ndjson to capture all many_to_many output")
+		observeWarning(w, nil, Warning{Code: WarningUnsupportedManyToManyEvents, Message: "current output format does not support many_to_many match events; use --format=json or --format=ndjson to capture all many_to_many output"})
 	}
 	for _, warning := range res.Warnings {
-		fmt.Fprintln(os.Stderr, "warning:", warning)
+		observeWarning(w, nil, Warning{Code: WarningEmptyCurrency, Message: warning})
 	}
 	if sbw, ok := w.(SourceBreakdownWriter); ok {
 		for name, summary := range res.BySource {

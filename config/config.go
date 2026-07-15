@@ -3,7 +3,9 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -237,14 +239,21 @@ func (c *Config) Validate() []error {
 		errs = append(errs, fmt.Errorf("at least one source is required"))
 	}
 
-	for name, source := range c.Sources {
+	for _, name := range getSourceNames(c.Sources) {
+		source := c.Sources[name]
 		if sourceErrs := validateSource(name, source); len(sourceErrs) > 0 {
 			errs = append(errs, sourceErrs...)
 		}
 	}
 
 	// Validate pairs
-	for name, pair := range c.Pairs {
+	pairNames := make([]string, 0, len(c.Pairs))
+	for name := range c.Pairs {
+		pairNames = append(pairNames, name)
+	}
+	sort.Strings(pairNames)
+	for _, name := range pairNames {
+		pair := c.Pairs[name]
 		if pairErrs := validatePair(name, pair, c.Sources); len(pairErrs) > 0 {
 			errs = append(errs, pairErrs...)
 		}
@@ -457,8 +466,14 @@ func validateIndex(index IndexCfg) []error {
 	if index.MaxMemoryMB < 0 {
 		errs = append(errs, fmt.Errorf("index.max_memory_mb: must be >= 0 (got %d)", index.MaxMemoryMB))
 	}
+	if index.MaxMemoryMB > math.MaxInt64/(1024*1024) {
+		errs = append(errs, fmt.Errorf("index.max_memory_mb is too large to convert to bytes (got %d)", index.MaxMemoryMB))
+	}
 	if index.MaxTempDiskMB < 0 {
 		errs = append(errs, fmt.Errorf("index.max_temp_disk_mb: must be >= 0 (got %d)", index.MaxTempDiskMB))
+	}
+	if index.MaxTempDiskMB > math.MaxInt64/(1024*1024) {
+		errs = append(errs, fmt.Errorf("index.max_temp_disk_mb is too large to convert to bytes (got %d)", index.MaxTempDiskMB))
 	}
 	if index.SpillDir != "" && strings.Contains(index.SpillDir, "..") {
 		errs = append(errs, fmt.Errorf("index.spill_dir: must not contain '..' (got %q)", index.SpillDir))
@@ -471,5 +486,6 @@ func getSourceNames(sources map[string]Source) []string {
 	for name := range sources {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }

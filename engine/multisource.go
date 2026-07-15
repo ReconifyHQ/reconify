@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"strings"
 
 	"github.com/reconifyhq/reconify/config"
@@ -120,7 +119,11 @@ func ReconcileMultiSource(
 			break
 		}
 	}
-	result.Summary = buildSummary(len(left), totalRight, result, currency)
+	summary, err := buildSummary(len(left), totalRight, result, currency)
+	if err != nil {
+		return nil, err
+	}
+	result.Summary = summary
 
 	return result, nil
 }
@@ -244,6 +247,9 @@ func reconcileStreamingMultiSource(
 	maxLeftBuffer int,
 	reporter *telemetryReporter,
 ) error {
+	if err := validateCollaborator("result writer", w); err != nil {
+		return err
+	}
 	if len(counterparts) == 0 {
 		return fmt.Errorf("at least one counterpart source is required")
 	}
@@ -313,9 +319,7 @@ func reconcileStreamingMultiSource(
 
 		leftover = passLeftover
 		if maxLeftBuffer > 0 && len(leftover) > maxLeftBuffer {
-			fmt.Fprintf(os.Stderr,
-				"warning: multi-source carry-forward buffer is %d rows (limit %d) after counterpart %q; memory usage may be high\n",
-				len(leftover), maxLeftBuffer, cp.SourceName)
+			observeWarning(w, reporter, Warning{Code: WarningCarryBufferPressure, Message: fmt.Sprintf("multi-source carry-forward buffer is %d rows (limit %d) after counterpart %q; memory usage may be high", len(leftover), maxLeftBuffer, cp.SourceName)})
 		}
 	}
 
@@ -329,7 +333,7 @@ func reconcileStreamingMultiSource(
 	}
 
 	for _, warning := range cc.Warnings() {
-		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
+		observeWarning(w, reporter, Warning{Code: WarningEmptyCurrency, Message: warning})
 	}
 
 	total := totalLeft

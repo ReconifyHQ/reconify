@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -110,7 +109,11 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 	}
 
 	// 4. Populate summary
-	result.Summary = buildSummary(len(left), len(right), result, cc.base)
+	summary, err := buildSummary(len(left), len(right), result, cc.base)
+	if err != nil {
+		return nil, err
+	}
+	result.Summary = summary
 	if len(opts) > 0 {
 		if opts[0].ResultMode != "" {
 			result.Summary.ResultMode = string(opts[0].ResultMode)
@@ -178,7 +181,7 @@ func ParseWithTelemetry(ctx context.Context, sourceName, filePath string, cfg co
 // callers that aggregate multiple passes (ReconcileMultiSource) pass the true
 // original totals here, not a sum of intermediate per-pass unmatched counts.
 // currency is the base currency for monetary totals, forwarded from currencyTracker.base.
-func buildSummary(totalLeft, totalRight int, result *Result, currency string) Summary {
+func buildSummary(totalLeft, totalRight int, result *Result, currency string) (Summary, error) {
 	total := totalLeft
 	if totalRight > total {
 		total = totalRight
@@ -187,81 +190,129 @@ func buildSummary(totalLeft, totalRight int, result *Result, currency string) Su
 	if total > 0 {
 		matchRate = math.Round(float64(len(result.Matched))/float64(total)*10000) / 100
 	}
-	reconciledCount := len(result.Matched) + len(result.AmountDiff) + len(result.TimingDiff) +
-		len(result.GroupedMatched) + len(result.GroupedAmountDiff) + len(result.GroupedTimingDiff) +
-		len(result.ManyToManyMatched) + len(result.ManyToManyAmountDiff) + len(result.ManyToManyTimingDiff)
+	reconciledCount, err := checkedAddInt("reconciled count", len(result.Matched), len(result.AmountDiff), len(result.TimingDiff), len(result.GroupedMatched), len(result.GroupedAmountDiff), len(result.GroupedTimingDiff), len(result.ManyToManyMatched), len(result.ManyToManyAmountDiff), len(result.ManyToManyTimingDiff))
+	if err != nil {
+		return Summary{}, err
+	}
 	reconciledRate := 0.0
 	if total > 0 {
 		reconciledRate = math.Round(float64(reconciledCount)/float64(total)*10000) / 100
 	}
 	dupTxnCount := 0
 	for _, g := range result.Duplicates {
-		dupTxnCount += len(g.Transactions)
+		var err error
+		dupTxnCount, err = checkedAddInt("duplicate count", dupTxnCount, len(g.Transactions))
+		if err != nil {
+			return Summary{}, err
+		}
 	}
 
 	// Compute monetary totals from accumulated result slices.
 	var matchedAmtLeft, matchedAmtRight int64
 	for _, mp := range result.Matched {
-		matchedAmtLeft += mp.Left.Amount
-		matchedAmtRight += mp.Right.Amount
+		matchedAmtLeft, err = checkedAddInt64("matched left amount", matchedAmtLeft, mp.Left.Amount)
+		if err != nil {
+			return Summary{}, err
+		}
+		matchedAmtRight, err = checkedAddInt64("matched right amount", matchedAmtRight, mp.Right.Amount)
+		if err != nil {
+			return Summary{}, err
+		}
 	}
 	// Grouped matches contribute to the same matched totals.
 	for _, gm := range result.GroupedMatched {
-		matchedAmtLeft += gm.Left.Amount
+		matchedAmtLeft, err = checkedAddInt64("matched left amount", matchedAmtLeft, gm.Left.Amount)
+		if err != nil {
+			return Summary{}, err
+		}
 		for _, r := range gm.Rights {
-			matchedAmtRight += r.Amount
+			matchedAmtRight, err = checkedAddInt64("matched right amount", matchedAmtRight, r.Amount)
+			if err != nil {
+				return Summary{}, err
+			}
 		}
 	}
 	for _, mm := range result.ManyToManyMatched {
 		for _, l := range mm.Lefts {
-			matchedAmtLeft += l.Amount
+			matchedAmtLeft, err = checkedAddInt64("matched left amount", matchedAmtLeft, l.Amount)
+			if err != nil {
+				return Summary{}, err
+			}
 		}
 		for _, r := range mm.Rights {
-			matchedAmtRight += r.Amount
+			matchedAmtRight, err = checkedAddInt64("matched right amount", matchedAmtRight, r.Amount)
+			if err != nil {
+				return Summary{}, err
+			}
 		}
 	}
 	var unmatchedAmtLeft int64
 	for _, tx := range result.UnmatchedLeft {
-		unmatchedAmtLeft += tx.Amount
+		unmatchedAmtLeft, err = checkedAddInt64("unmatched left amount", unmatchedAmtLeft, tx.Amount)
+		if err != nil {
+			return Summary{}, err
+		}
 	}
 	var unmatchedAmtRight int64
 	for _, tx := range result.UnmatchedRight {
-		unmatchedAmtRight += tx.Amount
+		unmatchedAmtRight, err = checkedAddInt64("unmatched right amount", unmatchedAmtRight, tx.Amount)
+		if err != nil {
+			return Summary{}, err
+		}
 	}
 	var amountDiffTotal int64
 	for _, ap := range result.AmountDiff {
-		d := ap.DiffMinor
-		if d < 0 {
-			d = -d
+		d, err := checkedAbsInt64("amount difference", ap.DiffMinor)
+		if err != nil {
+			return Summary{}, err
 		}
-		amountDiffTotal += d
+		amountDiffTotal, err = checkedAddInt64("amount difference total", amountDiffTotal, d)
+		if err != nil {
+			return Summary{}, err
+		}
 	}
 	for _, gd := range result.GroupedAmountDiff {
-		d := gd.DiffMinor
-		if d < 0 {
-			d = -d
+		d, err := checkedAbsInt64("amount difference", gd.DiffMinor)
+		if err != nil {
+			return Summary{}, err
 		}
-		amountDiffTotal += d
+		amountDiffTotal, err = checkedAddInt64("amount difference total", amountDiffTotal, d)
+		if err != nil {
+			return Summary{}, err
+		}
 	}
 	for _, md := range result.ManyToManyAmountDiff {
-		d := md.DiffMinor
-		if d < 0 {
-			d = -d
+		d, err := checkedAbsInt64("amount difference", md.DiffMinor)
+		if err != nil {
+			return Summary{}, err
 		}
-		amountDiffTotal += d
+		amountDiffTotal, err = checkedAddInt64("amount difference total", amountDiffTotal, d)
+		if err != nil {
+			return Summary{}, err
+		}
 	}
 	// Ambiguous groups require manual reconciliation — their amounts count toward
 	// TotalDiscrepancy separately from unmatched rows.
 	var ambiguousAmtLeft, ambiguousAmtRight int64
 	for _, ag := range result.AmbiguousGroups {
 		for _, tx := range ag.LeftRows {
-			ambiguousAmtLeft += tx.Amount
+			ambiguousAmtLeft, err = checkedAddInt64("ambiguous left amount", ambiguousAmtLeft, tx.Amount)
+			if err != nil {
+				return Summary{}, err
+			}
 		}
 		for _, tx := range ag.Rights {
-			ambiguousAmtRight += tx.Amount
+			ambiguousAmtRight, err = checkedAddInt64("ambiguous right amount", ambiguousAmtRight, tx.Amount)
+			if err != nil {
+				return Summary{}, err
+			}
 		}
 	}
 
+	totalDiscrepancy, err := checkedAddInt64("total discrepancy", unmatchedAmtLeft, unmatchedAmtRight, amountDiffTotal, ambiguousAmtLeft, ambiguousAmtRight)
+	if err != nil {
+		return Summary{}, err
+	}
 	return Summary{
 		Currency:                  currency,
 		TotalLeft:                 totalLeft,
@@ -288,8 +339,8 @@ func buildSummary(totalLeft, totalRight int, result *Result, currency string) Su
 		AmountDiffTotal:           amountDiffTotal,
 		AmbiguousAmountLeft:       ambiguousAmtLeft,
 		AmbiguousAmountRight:      ambiguousAmtRight,
-		TotalDiscrepancy:          unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal + ambiguousAmtLeft + ambiguousAmtRight,
-	}
+		TotalDiscrepancy:          totalDiscrepancy,
+	}, nil
 }
 
 // ReconcileStreaming is the canonical streaming reconciliation function.
@@ -466,6 +517,9 @@ func reconcileStreamingWithOptions(
 	reporter *telemetryReporter,
 	duplicateOptions streamingDuplicateOptions,
 ) error {
+	if err := validateStreamingCollaborators(idx, w); err != nil {
+		return err
+	}
 	dateWindowDays, err := parseDateWindow(pair.DateWindow)
 	if err != nil {
 		return fmt.Errorf("invalid date_window: %w", err)
@@ -797,9 +851,7 @@ func reconcileStreamingWithOptions(
 		bufTotal := len(tokenUnmatchedLeft) + len(tokenUnmatchedRight)
 		reporter.progress(bufTotal)
 		if maxTokenBuffer > 0 && bufTotal > maxTokenBuffer {
-			fmt.Fprintf(os.Stderr,
-				"warning: token mode unmatched buffer is %d rows (limit %d); memory usage may be high\n",
-				bufTotal, maxTokenBuffer)
+			observeWarning(w, reporter, Warning{Code: WarningTokenBufferPressure, Message: fmt.Sprintf("token mode unmatched buffer is %d rows (limit %d); memory usage may be high", bufTotal, maxTokenBuffer)})
 		}
 
 		// Run Jaccard secondary matching on the buffered unmatched transactions.
@@ -850,7 +902,7 @@ func reconcileStreamingWithOptions(
 	}
 
 	for _, warning := range cc.Warnings() {
-		fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
+		observeWarning(w, reporter, Warning{Code: WarningEmptyCurrency, Message: warning})
 	}
 
 	reporter.start("finalization", leftSource, rightSource, nil)

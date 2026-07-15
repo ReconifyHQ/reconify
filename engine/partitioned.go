@@ -65,6 +65,9 @@ func ReconcilePartitionedWithOptionsAndTelemetry(ctx context.Context, pairName, 
 }
 
 func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource, leftPath, rightPath string, leftCfg, rightCfg config.ParserCfg, pair config.Pair, w ResultWriter, options PartitionedOptions, reporter *telemetryReporter) error {
+	if err := validateCollaborator("result writer", w); err != nil {
+		return err
+	}
 	partitions := options.Partitions
 	if partitions < 2 {
 		partitions = 32
@@ -307,14 +310,16 @@ func (w *partitionSummaryWriter) WriteSummary(s Summary) error {
 
 func (w *partitionSummaryWriter) Flush() error { return nil }
 
+func (w *partitionSummaryWriter) ObserveWarning(warning Warning) {
+	observeWarning(w.ResultWriter, nil, warning)
+}
+
 func (w *partitionSummaryWriter) warnGroupedEventsUnsupported() {
 	if w.warnedGrouped {
 		return
 	}
 	w.warnedGrouped = true
-	fmt.Fprintln(os.Stderr,
-		"warning: current output format does not support grouped or ambiguous match events; "+
-			"use --format=json or --format=ndjson to capture all one_to_many output")
+	w.ObserveWarning(Warning{Code: WarningUnsupportedGroupedEvents, Message: "current output format does not support grouped or ambiguous match events; use --format=json or --format=ndjson to capture all one_to_many output"})
 }
 
 func (w *partitionSummaryWriter) warnManyToManyEventsUnsupported() {
@@ -322,9 +327,7 @@ func (w *partitionSummaryWriter) warnManyToManyEventsUnsupported() {
 		return
 	}
 	w.warnedMany = true
-	fmt.Fprintln(os.Stderr,
-		"warning: current output format does not support many_to_many match events; "+
-			"use --format=json or --format=ndjson to capture all many_to_many output")
+	w.ObserveWarning(Warning{Code: WarningUnsupportedManyToManyEvents, Message: "current output format does not support many_to_many match events; use --format=json or --format=ndjson to capture all many_to_many output"})
 }
 
 // GroupedEventWriter forwarding — prevents the embedded ResultWriter interface

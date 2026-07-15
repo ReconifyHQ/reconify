@@ -1,11 +1,6 @@
 package engine
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/reconifyhq/reconify/config"
-)
+import "github.com/reconifyhq/reconify/config"
 
 // filteredWriter wraps a ResultWriter and suppresses events based on ResultMode.
 // It implements all optional writer interfaces so the caller can treat it as a
@@ -15,8 +10,16 @@ type filteredWriter struct {
 	inner         ResultWriter
 	mode          config.ResultMode
 	runID         string
+	warnings      WarningObserver
 	warnedNoGroup bool
 	warnedNoM2M   bool
+}
+
+func (f *filteredWriter) ObserveWarning(warning Warning) {
+	if f.warnings != nil {
+		f.warnings.ObserveWarning(warning)
+	}
+	observeWarning(f.inner, nil, warning)
 }
 
 // WrapWithResultMode returns a ResultWriter that filters events according to mode
@@ -24,10 +27,16 @@ type filteredWriter struct {
 // When mode is empty it defaults to ResultModeAll (no filtering, but metadata
 // is still patched into the Summary).
 func WrapWithResultMode(inner ResultWriter, mode config.ResultMode, runID string) ResultWriter {
+	return WrapWithResultModeAndWarnings(inner, mode, runID, nil)
+}
+
+// WrapWithResultModeAndWarnings additionally routes non-fatal engine warnings
+// to an optional caller-owned observer.
+func WrapWithResultModeAndWarnings(inner ResultWriter, mode config.ResultMode, runID string, warnings WarningObserver) ResultWriter {
 	if mode == "" {
 		mode = config.ResultModeAll
 	}
-	return &filteredWriter{inner: inner, mode: mode, runID: runID}
+	return &filteredWriter{inner: inner, mode: mode, runID: runID, warnings: warnings}
 }
 
 // --- ResultWriter (required) ---
@@ -117,8 +126,7 @@ func (f *filteredWriter) WriteGroupedMatch(p GroupedMatchedPair) error {
 	}
 	if !f.warnedNoGroup {
 		f.warnedNoGroup = true
-		fmt.Fprintln(os.Stderr, "warning: current --format does not support grouped or ambiguous match events; "+
-			"use --format=json or --format=ndjson to capture all one_to_many output")
+		f.ObserveWarning(Warning{Code: WarningUnsupportedGroupedEvents, Message: "current output format does not support grouped or ambiguous match events; use --format=json or --format=ndjson to capture all one_to_many output"})
 	}
 	return nil
 }
@@ -132,8 +140,7 @@ func (f *filteredWriter) WriteGroupedAmountDiff(p GroupedAmountDiffPair) error {
 	}
 	if !f.warnedNoGroup {
 		f.warnedNoGroup = true
-		fmt.Fprintln(os.Stderr, "warning: current --format does not support grouped or ambiguous match events; "+
-			"use --format=json or --format=ndjson to capture all one_to_many output")
+		f.ObserveWarning(Warning{Code: WarningUnsupportedGroupedEvents, Message: "current output format does not support grouped or ambiguous match events; use --format=json or --format=ndjson to capture all one_to_many output"})
 	}
 	return nil
 }
@@ -147,8 +154,7 @@ func (f *filteredWriter) WriteGroupedTimingDiff(p GroupedTimingDiffPair) error {
 	}
 	if !f.warnedNoGroup {
 		f.warnedNoGroup = true
-		fmt.Fprintln(os.Stderr, "warning: current --format does not support grouped or ambiguous match events; "+
-			"use --format=json or --format=ndjson to capture all one_to_many output")
+		f.ObserveWarning(Warning{Code: WarningUnsupportedGroupedEvents, Message: "current output format does not support grouped or ambiguous match events; use --format=json or --format=ndjson to capture all one_to_many output"})
 	}
 	return nil
 }
@@ -162,8 +168,7 @@ func (f *filteredWriter) WriteAmbiguousGroup(p AmbiguousGroupPair) error {
 	}
 	if !f.warnedNoGroup {
 		f.warnedNoGroup = true
-		fmt.Fprintln(os.Stderr, "warning: current --format does not support grouped or ambiguous match events; "+
-			"use --format=json or --format=ndjson to capture all one_to_many output")
+		f.ObserveWarning(Warning{Code: WarningUnsupportedGroupedEvents, Message: "current output format does not support grouped or ambiguous match events; use --format=json or --format=ndjson to capture all one_to_many output"})
 	}
 	return nil
 }
@@ -179,8 +184,7 @@ func (f *filteredWriter) WriteManyToManyMatch(p ManyToManyMatchedPair) error {
 	}
 	if !f.warnedNoM2M {
 		f.warnedNoM2M = true
-		fmt.Fprintln(os.Stderr, "warning: current --format does not support many_to_many match events; "+
-			"use --format=json or --format=ndjson to capture all many_to_many output")
+		f.ObserveWarning(Warning{Code: WarningUnsupportedManyToManyEvents, Message: "current output format does not support many_to_many match events; use --format=json or --format=ndjson to capture all many_to_many output"})
 	}
 	return nil
 }
@@ -194,8 +198,7 @@ func (f *filteredWriter) WriteManyToManyAmountDiff(p ManyToManyAmountDiffPair) e
 	}
 	if !f.warnedNoM2M {
 		f.warnedNoM2M = true
-		fmt.Fprintln(os.Stderr, "warning: current --format does not support many_to_many match events; "+
-			"use --format=json or --format=ndjson to capture all many_to_many output")
+		f.ObserveWarning(Warning{Code: WarningUnsupportedManyToManyEvents, Message: "current output format does not support many_to_many match events; use --format=json or --format=ndjson to capture all many_to_many output"})
 	}
 	return nil
 }
@@ -209,8 +212,7 @@ func (f *filteredWriter) WriteManyToManyTimingDiff(p ManyToManyTimingDiffPair) e
 	}
 	if !f.warnedNoM2M {
 		f.warnedNoM2M = true
-		fmt.Fprintln(os.Stderr, "warning: current --format does not support many_to_many match events; "+
-			"use --format=json or --format=ndjson to capture all many_to_many output")
+		f.ObserveWarning(Warning{Code: WarningUnsupportedManyToManyEvents, Message: "current output format does not support many_to_many match events; use --format=json or --format=ndjson to capture all many_to_many output"})
 	}
 	return nil
 }

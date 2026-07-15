@@ -27,6 +27,35 @@ type TelemetryEvent struct {
 	CPUSeconds    *float64  `json:"cpu_seconds,omitempty"`
 	HeapBytes     *uint64   `json:"heap_bytes,omitempty"`
 	GCCycles      *uint32   `json:"gc_cycles,omitempty"`
+	Warning       *Warning  `json:"warning,omitempty"`
+}
+
+func (r *telemetryReporter) warning(warning Warning) {
+	if r == nil {
+		return
+	}
+	var onError func(error)
+	var sinkErr error
+	r.mu.Lock()
+	if r.disabled || r.options.Sink == nil || len(r.stages) == 0 {
+		r.mu.Unlock()
+		return
+	}
+	stage := r.stages[len(r.stages)-1]
+	event := TelemetryEvent{
+		Type: "warning", RunID: r.options.RunID, Timestamp: time.Now().UTC(),
+		Stage: stage.stage, Status: "observed", Source: stage.source,
+		Counterpart: stage.counterpart, Rows: stage.rows, Warning: &warning,
+	}
+	sinkErr = r.options.Sink(event)
+	if sinkErr != nil {
+		r.disabled = true
+		onError = r.options.OnError
+	}
+	r.mu.Unlock()
+	if sinkErr != nil && onError != nil {
+		onError(sinkErr)
+	}
 }
 
 // TelemetrySink receives machine-readable lifecycle records. A sink failure is
