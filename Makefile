@@ -1,4 +1,4 @@
-.PHONY: help build build-all test lint fmt-check mod-check security check preflight clean install bench-smoke bench-deterministic bench-realistic bench-adversarial-smoke bench-adversarial bench-adversarial-cold bench-full
+.PHONY: help build build-all test lint fmt-check mod-check dep-check security check preflight clean install bench-smoke bench-deterministic bench-realistic bench-adversarial-smoke bench-adversarial bench-adversarial-cold bench-full
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
@@ -16,6 +16,7 @@ help: ## Show this help message
 	@echo '  make test       - Run all tests with race detection and coverage'
 	@echo '  make fmt-check  - Fail if Go files need gofmt'
 	@echo '  make mod-check  - Verify modules and fail on go.mod/go.sum drift'
+	@echo '  make dep-check  - Enforce acyclic engine package boundaries'
 	@echo '  make lint       - Run linters'
 	@echo '  make security   - Run govulncheck and gosec'
 	@echo '  make check      - Run the local equivalent of GitHub Actions checks'
@@ -55,6 +56,13 @@ mod-check: ## Verify modules and fail on go.mod/go.sum drift
 	go mod tidy -diff
 	go mod verify
 
+dep-check: ## Enforce acyclic engine package boundaries
+	@for pkg in domain telemetry parser index matching output reconcile; do \
+		if go list -deps "github.com/reconifyhq/reconify/engine/$$pkg" | grep -qE 'github.com/reconifyhq/reconify/(engine$$|internal/cli)'; then \
+			echo "FAIL: engine/$$pkg imports engine or internal/cli"; exit 1; \
+		fi; \
+	done
+
 # Linting
 lint: ## Run linters
 	@if command -v golangci-lint > /dev/null; then \
@@ -80,7 +88,7 @@ security: ## Run vulnerability and security checks
 		exit 1; \
 	fi
 
-check: mod-check fmt-check lint security test build bench-smoke ## Run the local equivalent of GitHub Actions checks
+check: mod-check fmt-check dep-check lint security test build bench-smoke ## Run the local equivalent of GitHub Actions checks
 
 preflight: check ## Alias for make check
 
