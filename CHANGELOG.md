@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-16
+
 ### Added
 
+- **Partition-level parallel reconciliation** — partition workers now process independent partitions concurrently and publish results through a bounded, disk-backed queue while preserving deterministic final-writer ordering.
+- **Partition queue controls** — `--partition-workers`, `--partition-queue-capacity`, and `--partition-max-chunk-mb` configure concurrency and temporary result chunk limits for the partitioned backend.
+- **Partitioned parallelism documentation** — documents worker scheduling, spool cleanup, cancellation, queue bounds, and multi-source ordering guarantees.
 - **`one_to_many` reconciliation pass** — matches one left transaction against N right transactions by summing amounts; includes ambiguous group detection, monetary invariants, and a `GroupedEventWriter` interface for grouped result emission.
 - **`group_by` field for `one_to_many` passes** — defaults to `"reference"`, validated against known built-in keys, and wired into `matchByReferenceOneToMany`.
 - **Many-to-many reconciliation pass** — supports matching left and right sets with arbitrary cardinality.
@@ -24,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Performance
 
+- Partitioned single-source, grouped, and multi-source reconciliation can use bounded parallel workers without sharing the final result writer.
 - Disk index inserts are now batched in transactions, reducing write overhead on large right-side files.
 - Reduced disk index match write amplification — match entries are written more efficiently during the match pass.
 - Bounded grouped partition reconciliation memory — grouped partitions no longer accumulate unbounded row sets.
@@ -31,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Grouped partition sort failures are now propagated instead of producing an empty successful partition result.
+- Partition workers preserve per-partition telemetry reporting for single-source and multi-source runs.
 - Preserved partitioned grouped reconciliation semantics — grouping logic is now correctly applied within each partition boundary.
 - Hardened resource-aware index selection — stabilized the probing heuristic and fixed a lint warning in the selection path.
 - Hardened telemetry output and lifecycle events — telemetry events are flushed and reported correctly even on early cancellation.

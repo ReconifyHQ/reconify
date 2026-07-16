@@ -1,6 +1,6 @@
 {
   "name": "@reconifyhq/skills",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "Install Reconify agent skill files for Claude Code, Codex, and other AI coding assistants",
   "bin": {
     "reconify-skills": "./scripts/install-skills.js"
