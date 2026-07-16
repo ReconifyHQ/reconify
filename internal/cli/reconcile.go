@@ -12,6 +12,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	partitionWorkersFlag       = "partition-workers"
+	partitionQueueCapacityFlag = "partition-queue-capacity"
+	partitionMaxChunkMBFlag    = "partition-max-chunk-mb"
+
+	partitionWorkersDefault             = 0
+	partitionQueueCapacityDefault       = 0
+	partitionMaxChunkMBDefault    int64 = 0
+	partitionMaxChunkMBLimit      int64 = 1 << 40
+	bytesPerMiB                   int64 = 1 << 20
+)
+
 func newReconcileCmd() *cobra.Command {
 	var pairName string
 	var outputPath string
@@ -19,6 +31,9 @@ func newReconcileCmd() *cobra.Command {
 	var rightFile string
 	var format string
 	var maxTokenBuffer int
+	var partitionWorkers int
+	var partitionQueueCapacity int
+	var partitionMaxChunkMB int64
 	var auditMode bool
 	var auditFixedTimestamp string
 	var deterministic bool
@@ -56,6 +71,16 @@ Formats:
 			if progressEvery <= 0 {
 				return configErr("--progress-every must be greater than zero")
 			}
+			if partitionWorkers < 0 {
+				return configErrf("--%s must be >= 0 (0 = serial)", partitionWorkersFlag)
+			}
+			if partitionQueueCapacity < 0 {
+				return configErrf("--%s must be >= 0 (0 = derived from workers)", partitionQueueCapacityFlag)
+			}
+			if partitionMaxChunkMB < partitionMaxChunkMBDefault || partitionMaxChunkMB > partitionMaxChunkMBLimit {
+				return configErrf("--%s must be between %d and %d", partitionMaxChunkMBFlag, partitionMaxChunkMBDefault, partitionMaxChunkMBLimit)
+			}
+			partitionMaxChunkBytes := partitionMaxChunkMB * bytesPerMiB
 			switch config.ResultMode(resultModeFlag) {
 			case "", config.ResultModeAll, config.ResultModeExceptionsOnly, config.ResultModeSummaryOnly:
 				// valid
@@ -239,6 +264,9 @@ Formats:
 						MaxTokenBuffer: maxTokenBuffer,
 						Partitions:     multiDecisions[0].Selection.PartitionCount,
 						SpillDir:       cfg.Index.SpillDir,
+						Workers:        partitionWorkers,
+						QueueCapacity:  partitionQueueCapacity,
+						MaxChunkBytes:  partitionMaxChunkBytes,
 					}
 					var runErr error
 					if telemetryEnabled {
@@ -357,6 +385,9 @@ Formats:
 						MaxTokenBuffer: maxTokenBuffer,
 						Partitions:     decision.Selection.PartitionCount,
 						SpillDir:       cfg.Index.SpillDir,
+						Workers:        partitionWorkers,
+						QueueCapacity:  partitionQueueCapacity,
+						MaxChunkBytes:  partitionMaxChunkBytes,
 					}
 					var runErr error
 					if telemetryEnabled {
@@ -526,6 +557,12 @@ Formats:
 		`Output format: json (default), json-stream, ndjson, csv, table`)
 	cmd.Flags().IntVar(&maxTokenBuffer, "max-token-buffer", 100_000,
 		"Advisory row limit for token-mode unmatched buffer (0 = unlimited)")
+	cmd.Flags().IntVar(&partitionWorkers, partitionWorkersFlag, partitionWorkersDefault,
+		"Concurrent partition workers for the partitioned backend (0 = serial; 1 = serial)")
+	cmd.Flags().IntVar(&partitionQueueCapacity, partitionQueueCapacityFlag, partitionQueueCapacityDefault,
+		"Maximum completed partition descriptors waiting for the final writer (0 = derived from workers)")
+	cmd.Flags().Int64Var(&partitionMaxChunkMB, partitionMaxChunkMBFlag, partitionMaxChunkMBDefault,
+		"Maximum size of one disk-backed partition result chunk in MiB (0 = unlimited)")
 	cmd.Flags().BoolVar(&auditMode, "audit", false,
 		"Embed run provenance in output: SHA-256 file hashes, timestamp, tool version, pair config snapshot")
 	cmd.Flags().StringVar(&auditFixedTimestamp, "audit-fixed-timestamp", "",

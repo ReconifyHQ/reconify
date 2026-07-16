@@ -146,7 +146,7 @@ func TestReconcilePartitionedMultiSourceCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	// #nosec G204 -- test invokes the local Go toolchain with fixed program arguments and t.TempDir paths.
-	command := exec.Command("go", "run", "./cmd/reconify", "reconcile", "--config", configPath, "--pair", "pair", "--format", "json", "--out", resultPath)
+	command := exec.Command("go", "run", "./cmd/reconify", "reconcile", "--config", configPath, "--pair", "pair", "--format", "json", "--partition-workers", "2", "--partition-queue-capacity", "1", "--out", resultPath)
 	command.Dir = root
 	output, err := command.CombinedOutput()
 	if err != nil {

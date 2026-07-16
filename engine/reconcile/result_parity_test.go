@@ -81,6 +81,16 @@ func TestExecutionPathParity_SingleSourceRows(t *testing.T) {
 		assertJSONParity(t, "partitioned", batchJSON, gotJSON)
 		assertExactRowCoverage(t, left, [][]Transaction{right}, &got)
 	})
+	t.Run("partitioned_parallel_chunk_queue", func(t *testing.T) {
+		gotJSON := runParityWriter(t, "left", "right", func(w *output.JSONWriter) error {
+			return ReconcilePartitionedWithOptions(context.Background(), "parity", "left", "right", leftPath, rightPath, cfg, cfg, pair, w, PartitionedOptions{
+				Partitions: 3, Workers: 3, QueueCapacity: 1, SpillDir: filepath.Join(dir, "parallel-spill"),
+			})
+		})
+		got := decodeParityResult(t, gotJSON)
+		assertJSONParity(t, "partitioned parallel", batchJSON, gotJSON)
+		assertExactRowCoverage(t, left, [][]Transaction{right}, &got)
+	})
 }
 
 func TestExecutionPathParity_GroupedRows(t *testing.T) {
@@ -214,6 +224,17 @@ func TestExecutionPathParity_MultiSourceRows(t *testing.T) {
 		assertJSONParity(t, "multi-source partitioned", batchJSON, gotJSON)
 		assertExactRowCoverage(t, left, [][]Transaction{first, second}, &got)
 	})
+	t.Run("partitioned_parallel_chunks", func(t *testing.T) {
+		gotJSON := runParityWriter(t, "left", "first,second", func(w *output.JSONWriter) error {
+			return ReconcilePartitionedMultiSourceWithOptions(context.Background(), "parity", "left", leftPath, cfg, []PartitionedCounterpartInput{
+				{SourceName: "first", RightPath: firstPath, ParserCfg: cfg},
+				{SourceName: "second", RightPath: secondPath, ParserCfg: cfg},
+			}, pair, w, PartitionedOptions{Partitions: 3, Workers: 3, QueueCapacity: 1, SpillDir: filepath.Join(dir, "parallel-multi-spill")})
+		})
+		got := decodeParityResult(t, gotJSON)
+		assertJSONParity(t, "multi-source partitioned parallel", batchJSON, gotJSON)
+		assertExactRowCoverage(t, left, [][]Transaction{first, second}, &got)
+	})
 }
 
 func assertGroupedParity(t *testing.T, leftPath, rightPath string, cfg config.ParserCfg, pair config.Pair) {
@@ -231,7 +252,7 @@ func assertGroupedParity(t *testing.T, leftPath, rightPath string, cfg config.Pa
 	assertExactRowCoverage(t, left, [][]Transaction{right}, batch)
 
 	gotJSON := runParityWriter(t, "left", "right", func(w *output.JSONWriter) error {
-		return ReconcilePartitioned(context.Background(), "parity", "left", "right", leftPath, rightPath, cfg, cfg, pair, w, 0, 3)
+		return ReconcilePartitionedWithOptions(context.Background(), "parity", "left", "right", leftPath, rightPath, cfg, cfg, pair, w, PartitionedOptions{Partitions: 3, Workers: 3, QueueCapacity: 1})
 	})
 	got := decodeParityResult(t, gotJSON)
 	assertJSONParity(t, "grouped partitioned", batchJSON, gotJSON)

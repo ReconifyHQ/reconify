@@ -28,6 +28,9 @@ graph TD
 `make dep-check` prevents implementation sub-packages from importing the
 facade or CLI, preserving the one-way graph.
 
+For the partitioned worker queue, chunk lifecycle, concurrency controls, and
+correctness invariants, see [Partitioned parallel reconciliation](./partitioned-parallelism.md).
+
 ## Test ownership and filenames
 
 Tests live beside the package that owns the behavior. For a narrow

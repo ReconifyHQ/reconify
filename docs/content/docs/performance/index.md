@@ -129,6 +129,26 @@ uses additional temporary disk, which is included in resource estimates.
 
 Use `ndjson` or `csv` output so results do not accumulate in memory.
 
+Partition work can be enabled explicitly once row-level parity has been checked:
+
+See the contributor-level [partitioned parallelism design guide](../../../architecture/partitioned-parallelism.md)
+for the chunk lifecycle, invariants, metrics, and test workflow.
+
+```bash
+reconify reconcile --config reconify.yaml --pair bank_vs_stripe \
+  --format ndjson --partition-workers 4 --partition-queue-capacity 2 \
+  --partition-max-chunk-mb 256 --out results.ndjson
+```
+
+Workers never call the final `ResultWriter`. Each worker writes typed events to a
+private, disk-backed chunk and places only its partition number, chunk path, and
+summary in a bounded descriptor queue. A single writer replays chunks in partition
+order and removes them after successful publication. A worker count of `0` (the
+default) preserves serial processing; start with a small value and compare the
+row-level output with serial partitioning before increasing it. Multi-source
+counterpart passes remain ordered, while partitions inside each pass may run in
+parallel.
+
 The partitioned backend applies to CSV pairs using a consistent reference,
 name, or group-key selector across all passes. Duplicate policies are supported
 when each duplicate group is co-located with the partition key; otherwise the
