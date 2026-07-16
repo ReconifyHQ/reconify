@@ -192,6 +192,22 @@ func TestOpenGroupedRunCursorsClosesEarlierRunsOnOpenFailure(t *testing.T) {
 	}
 }
 
+func TestSortGroupedPartitionReturnsSidecarError(t *testing.T) {
+	dir := t.TempDir()
+	dataPath := filepath.Join(dir, "partition.csv")
+	rowsPath := filepath.Join(dir, "partition.rows")
+	if err := os.WriteFile(dataPath, []byte("date,amount,reference\n2026-01-01,100,REF-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rowsPath, []byte("not-a-row-number\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := sortGroupedPartition(context.Background(), dataPath, rowsPath, filepath.Join(dir, "sorted"), "reference")
+	if err == nil || !strings.Contains(err.Error(), "invalid partition row number") {
+		t.Fatalf("error=%v, want sidecar sort error", err)
+	}
+}
+
 func TestOpenGroupedRunCursorsClosesEarlierRunsOnPrimeFailure(t *testing.T) {
 	dir := t.TempDir()
 	paths := []string{filepath.Join(dir, "run-0.gob"), filepath.Join(dir, "run-1.gob")}
@@ -266,6 +282,48 @@ func TestReconcilePartitionedCancellationCleansConfiguredSpillDir(t *testing.T) 
 	}
 	if len(entries) != 0 {
 		t.Fatalf("spill entries=%d, want cleanup", len(entries))
+	}
+}
+
+func TestReconcilePartitionedParallelTelemetryIncludesPartitionMatchStages(t *testing.T) {
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	content := "date,amount,reference\n2026-01-01,100,REF-1\n2026-01-01,200,REF-2\n"
+	if err := os.WriteFile(left, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference"}
+	w, err := NewResultWriter("ndjson", &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []TelemetryEvent
+	err = ReconcilePartitionedWithOptionsAndTelemetry(context.Background(), "p", "left", "right", left, right, cfg, cfg, config.Pair{DateWindow: "0d"}, w, PartitionedOptions{
+		Partitions: 2, Workers: 2, QueueCapacity: 1, SpillDir: filepath.Join(dir, "spill"),
+	}, TelemetryOptions{
+		ProgressEvery: 1,
+		Sink: func(event TelemetryEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed := map[string]int{}
+	for _, event := range events {
+		if event.Status == "completed" {
+			completed[event.Stage]++
+		}
+	}
+	for _, stage := range []string{"right_index", "left_match", "finalization"} {
+		if completed[stage] == 0 {
+			t.Fatalf("missing completed %s telemetry event: %#v", stage, events)
+		}
 	}
 }
 

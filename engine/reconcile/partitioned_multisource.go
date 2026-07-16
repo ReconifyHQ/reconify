@@ -436,7 +436,7 @@ func reconcilePartitionedCounterpartPass(
 								idx := NewMemoryIndex()
 								runErr = reconcileStreamingWithOptions(workCtx, pairName, leftSource, rightSource,
 									leftParts.data[i], rightParts.data[i], leftCfgForPass, rightCfgForPass, pair, idx, partWriter,
-									options.MaxTokenBuffer, nil, streamingDuplicateOptions{
+									options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
 										rightRepresentativeRows: rightRepresentatives, leftRepresentativeRows: leftRepresentatives,
 										rightPartitionOriginalRows: rightRows, leftPartitionOriginalRows: leftRows,
 									})

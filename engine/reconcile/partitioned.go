@@ -176,12 +176,10 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 				leftData, leftRowsPath, err := sortGroupedPartition(workCtx, leftGrouped.data[i], leftGrouped.rows[i], filepath.Join(dir, fmt.Sprintf("sorted-left-%03d", i)), leftKeyCol)
 				if err == nil {
 					rightData, rightRowsPath, sortErr := sortGroupedPartition(workCtx, rightGrouped.data[i], rightGrouped.rows[i], filepath.Join(dir, fmt.Sprintf("sorted-right-%03d", i)), rightKeyCol)
-					if sortErr == nil {
+					if sortErr != nil {
+						err = sortErr
+					} else {
 						err = reconcileGroupedPartition(workCtx, pairName, leftSource, rightSource, leftData, leftRowsPath, rightData, rightRowsPath, leftCfg, rightCfg, pair, partWriter)
-					}
-					if err == nil {
-						_ = rightData
-						_ = rightRowsPath
 					}
 				}
 				closeErr := chunk.close()
@@ -231,7 +229,7 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 							rightRepresentatives, err = rightDisposition.Representatives(i)
 							if err == nil {
 								idx := NewMemoryIndex()
-								err = reconcileStreamingWithOptions(workCtx, pairName, leftSource, rightSource, leftParts.data[i], rightParts.data[i], partitionedPolicyConfig(leftCfg), partitionedPolicyConfig(rightCfg), pair, idx, partWriter, options.MaxTokenBuffer, nil, streamingDuplicateOptions{
+								err = reconcileStreamingWithOptions(workCtx, pairName, leftSource, rightSource, leftParts.data[i], rightParts.data[i], partitionedPolicyConfig(leftCfg), partitionedPolicyConfig(rightCfg), pair, idx, partWriter, options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
 									rightRepresentativeRows: rightRepresentatives, leftRepresentativeRows: leftRepresentatives,
 									rightPartitionOriginalRows: rightOriginalRows, leftPartitionOriginalRows: leftOriginalRows,
 								})
