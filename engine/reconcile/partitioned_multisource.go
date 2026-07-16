@@ -397,81 +397,29 @@ func reconcilePartitionedCounterpartPass(
 
 	leftCfgForPass := partitionedPolicyConfig(leftCfg)
 	rightCfgForPass := partitionedPolicyConfig(rightCfg)
+	worker := partitionedCounterpartWorker{
+		pairName:         pairName,
+		leftSource:       leftSource,
+		rightSource:      rightSource,
+		leftCfg:          leftCfg,
+		rightCfg:         rightCfg,
+		leftCfgForPass:   leftCfgForPass,
+		rightCfgForPass:  rightCfgForPass,
+		leftParts:        leftParts,
+		rightParts:       rightParts,
+		leftKey:          leftKey,
+		rightKey:         rightKey,
+		pair:             pair,
+		options:          options,
+		passIndex:        passIndex,
+		spillDir:         spillDir,
+		nextPrefix:       nextPrefix,
+		leftDisposition:  leftDisposition,
+		rightDisposition: rightDisposition,
+		reporter:         reporter,
+	}
 	queueErr := processPartitionQueue(ctx, partitions, options.Workers, options.QueueCapacity, options.Metrics,
-		func(workCtx context.Context, i int) (partitionChunkDescriptor, error) {
-			chunkPath := filepath.Join(spillDir, fmt.Sprintf("result-%02d-%03d.gob", passIndex, i))
-			chunk, err := newPartitionChunkWriter(chunkPath, options.MaxChunkBytes)
-			if err != nil {
-				return partitionChunkDescriptor{}, err
-			}
-			manifestPath := filepath.Join(spillDir, fmt.Sprintf("carry-%02d-%03d.ids", passIndex, i))
-			carry, err := newPartitionCarryWriter(chunk, manifestPath, leftSource)
-			if err != nil {
-				_ = chunk.close()
-				return partitionChunkDescriptor{}, err
-			}
-			partWriter := &partitionSummaryWriter{ResultWriter: carry}
-			var runErr error
-			var sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows string
-			leftRows, readErr := readPartitionRows(leftParts.rows[i])
-			if readErr == nil {
-				var rightRows []int
-				rightRows, readErr = readPartitionRows(rightParts.rows[i])
-				if readErr == nil {
-					if containsGroupedPass(pair.Passes) {
-						sortedLeftData, sortedLeftRows, runErr = sortGroupedPartition(workCtx, leftParts.data[i], leftParts.rows[i], filepath.Join(spillDir, fmt.Sprintf("sorted-left-%02d-%03d", passIndex, i)), leftKey)
-						if runErr == nil {
-							sortedRightData, sortedRightRows, runErr = sortGroupedPartition(workCtx, rightParts.data[i], rightParts.rows[i], filepath.Join(spillDir, fmt.Sprintf("sorted-right-%02d-%03d", passIndex, i)), rightKey)
-						}
-						if runErr == nil {
-							runErr = reconcileGroupedPartition(workCtx, pairName, leftSource, rightSource, sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows, leftCfg, rightCfg, pair, partWriter)
-						}
-					} else {
-						leftRepresentatives, repErr := leftDisposition.Representatives(i)
-						if repErr == nil {
-							rightRepresentatives, rightRepErr := rightDisposition.Representatives(i)
-							if rightRepErr != nil {
-								readErr = rightRepErr
-							} else {
-								idx := NewMemoryIndex()
-								runErr = reconcileStreamingWithOptions(workCtx, pairName, leftSource, rightSource,
-									leftParts.data[i], rightParts.data[i], leftCfgForPass, rightCfgForPass, pair, idx, partWriter,
-									options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
-										rightRepresentativeRows: rightRepresentatives, leftRepresentativeRows: leftRepresentatives,
-										rightPartitionOriginalRows: rightRows, leftPartitionOriginalRows: leftRows,
-									})
-								if closeErr := idx.Close(); runErr == nil {
-									runErr = closeErr
-								}
-							}
-						} else {
-							readErr = repErr
-						}
-					}
-				}
-			}
-			if runErr == nil {
-				runErr = readErr
-			}
-			if closeErr := carry.Close(); runErr == nil {
-				runErr = closeErr
-			}
-			if closeErr := chunk.close(); runErr == nil {
-				runErr = closeErr
-			}
-			if runErr == nil {
-				runErr = chunk.warningErr
-			}
-			if runErr != nil {
-				_ = os.Remove(chunkPath)
-				return partitionChunkDescriptor{}, fmt.Errorf("partition %d: %w", i, runErr)
-			}
-			return partitionChunkDescriptor{
-				partition: i, path: chunkPath, summary: partWriter.summary, manifest: manifestPath,
-				nextData: fmt.Sprintf("%s-%03d.csv", nextPrefix, i), nextRows: fmt.Sprintf("%s-%03d.rows", nextPrefix, i),
-				sorted: []string{sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows},
-			}, nil
-		},
+		worker.process,
 		func(descriptor partitionChunkDescriptor) error {
 			partWriter := &partitionSummaryWriter{ResultWriter: w}
 			if err := replayPartitionChunk(ctx, descriptor.path, partWriter); err != nil {
@@ -497,6 +445,113 @@ func reconcilePartitionedCounterpartPass(
 		return groupedPartitionFiles{}, Summary{}, queueErr
 	}
 	return next, passSummary, nil
+}
+
+// partitionedCounterpartWorker owns the inputs and policy for one ordered
+// counterpart pass. Keeping worker setup here leaves the queue coordinator
+// responsible only for scheduling and replaying completed chunks.
+type partitionedCounterpartWorker struct {
+	pairName, leftSource, rightSource string
+	leftCfg, rightCfg                 config.ParserCfg
+	leftCfgForPass, rightCfgForPass   config.ParserCfg
+	leftParts, rightParts             groupedPartitionFiles
+	leftKey, rightKey                 string
+	pair                              config.Pair
+	options                           PartitionedOptions
+	passIndex                         int
+	spillDir, nextPrefix              string
+	leftDisposition, rightDisposition *partitionedDuplicateDisposition
+	reporter                          *engineTelemetry.Reporter
+}
+
+func (p partitionedCounterpartWorker) process(workCtx context.Context, i int) (partitionChunkDescriptor, error) {
+	chunkPath := filepath.Join(p.spillDir, fmt.Sprintf("result-%02d-%03d.gob", p.passIndex, i))
+	chunk, err := newPartitionChunkWriter(chunkPath, p.options.MaxChunkBytes)
+	if err != nil {
+		return partitionChunkDescriptor{}, err
+	}
+	manifestPath := filepath.Join(p.spillDir, fmt.Sprintf("carry-%02d-%03d.ids", p.passIndex, i))
+	carry, err := newPartitionCarryWriter(chunk, manifestPath, p.leftSource)
+	if err != nil {
+		_ = chunk.close()
+		return partitionChunkDescriptor{}, err
+	}
+	partWriter := &partitionSummaryWriter{ResultWriter: carry}
+	sorted, runErr := p.reconcile(workCtx, i, partWriter)
+	if closeErr := carry.Close(); runErr == nil {
+		runErr = closeErr
+	}
+	if closeErr := chunk.close(); runErr == nil {
+		runErr = closeErr
+	}
+	if runErr == nil {
+		runErr = chunk.warningErr
+	}
+	if runErr != nil {
+		_ = os.Remove(chunkPath)
+		return partitionChunkDescriptor{}, fmt.Errorf("partition %d: %w", i, runErr)
+	}
+	return partitionChunkDescriptor{
+		partition: i, path: chunkPath, summary: partWriter.summary, manifest: manifestPath,
+		nextData: fmt.Sprintf("%s-%03d.csv", p.nextPrefix, i), nextRows: fmt.Sprintf("%s-%03d.rows", p.nextPrefix, i),
+		sorted: sorted,
+	}, nil
+}
+
+func (p partitionedCounterpartWorker) reconcile(workCtx context.Context, i int, w *partitionSummaryWriter) ([]string, error) {
+	leftRows, err := readPartitionRows(p.leftParts.rows[i])
+	if err != nil {
+		return nil, err
+	}
+	rightRows, err := readPartitionRows(p.rightParts.rows[i])
+	if err != nil {
+		return nil, err
+	}
+
+	// Grouped passes require external sorting so whole groups can be merged
+	// without retaining an entire partition. Streaming passes can match the
+	// staged CSV files directly using their duplicate representatives.
+	switch {
+	case containsGroupedPass(p.pair.Passes):
+		return p.reconcileGrouped(workCtx, i, w)
+	default:
+		return nil, p.reconcileStreaming(workCtx, i, leftRows, rightRows, w)
+	}
+}
+
+func (p partitionedCounterpartWorker) reconcileGrouped(workCtx context.Context, i int, w *partitionSummaryWriter) ([]string, error) {
+	sortedLeftData, sortedLeftRows, err := sortGroupedPartition(workCtx, p.leftParts.data[i], p.leftParts.rows[i], filepath.Join(p.spillDir, fmt.Sprintf("sorted-left-%02d-%03d", p.passIndex, i)), p.leftKey)
+	if err != nil {
+		return nil, err
+	}
+	sortedRightData, sortedRightRows, err := sortGroupedPartition(workCtx, p.rightParts.data[i], p.rightParts.rows[i], filepath.Join(p.spillDir, fmt.Sprintf("sorted-right-%02d-%03d", p.passIndex, i)), p.rightKey)
+	if err != nil {
+		return []string{sortedLeftData, sortedLeftRows}, err
+	}
+	err = reconcileGroupedPartition(workCtx, p.pairName, p.leftSource, p.rightSource, sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows, p.leftCfg, p.rightCfg, p.pair, w)
+	return []string{sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows}, err
+}
+
+func (p partitionedCounterpartWorker) reconcileStreaming(workCtx context.Context, i int, leftRows, rightRows []int, w *partitionSummaryWriter) error {
+	leftRepresentatives, err := p.leftDisposition.Representatives(i)
+	if err != nil {
+		return err
+	}
+	rightRepresentatives, err := p.rightDisposition.Representatives(i)
+	if err != nil {
+		return err
+	}
+	idx := NewMemoryIndex()
+	runErr := reconcileStreamingWithOptions(workCtx, p.pairName, p.leftSource, p.rightSource,
+		p.leftParts.data[i], p.rightParts.data[i], p.leftCfgForPass, p.rightCfgForPass, p.pair, idx, w,
+		p.options.MaxTokenBuffer, p.reporter, streamingDuplicateOptions{
+			rightRepresentativeRows: rightRepresentatives, leftRepresentativeRows: leftRepresentatives,
+			rightPartitionOriginalRows: rightRows, leftPartitionOriginalRows: leftRows,
+		})
+	if closeErr := idx.Close(); runErr == nil {
+		runErr = closeErr
+	}
+	return runErr
 }
 
 func removePartitionPassFiles(paths ...string) error {

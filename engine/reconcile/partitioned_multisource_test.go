@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/reconifyhq/reconify/config"
@@ -305,6 +306,38 @@ func TestReconcilePartitionedGroupedCounterpartPassRemovesSortOutputs(t *testing
 	}
 	if len(sorted) != 0 {
 		t.Fatalf("grouped sort outputs remain after pass: %v", sorted)
+	}
+}
+
+func TestReconcilePartitionedCounterpartPassPropagatesGroupedSortError(t *testing.T) {
+	dir := t.TempDir()
+	leftData := filepath.Join(dir, "left.csv")
+	rightData := filepath.Join(dir, "right.csv")
+	leftRows := filepath.Join(dir, "left.rows")
+	rightRows := filepath.Join(dir, "right.rows")
+	writePartitionedMultiCSV(t, leftData, "l1,2026-01-01,300,G1\n")
+	writePartitionedMultiCSV(t, rightData, "r1,2026-01-01,300,G1\n")
+	if err := os.WriteFile(leftRows, []byte("not-a-row-number\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rightRows, []byte("2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w, err := NewResultWriter("ndjson", io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair := config.Pair{Passes: []config.PassConfig{{Type: config.PassTypeOneToMany}}}
+	cfg := partitionedMultiCSVConfig()
+	_, _, err = reconcilePartitionedCounterpartPass(
+		context.Background(), "p", "left", cfg,
+		groupedPartitionFiles{data: []string{leftData}, rows: []string{leftRows}, count: 1},
+		"right", cfg,
+		groupedPartitionFiles{data: []string{rightData}, rows: []string{rightRows}, count: 1},
+		pair, w, PartitionedOptions{}, 0, dir, nil, nil, nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "invalid partition row number") {
+		t.Fatalf("error=%v, want grouped sort error to reach pass caller", err)
 	}
 }
 
