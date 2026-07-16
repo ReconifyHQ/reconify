@@ -22,6 +22,18 @@ type PartitionedOptions struct {
 	MaxTokenBuffer int
 	Partitions     int
 	SpillDir       string
+	// Workers controls the number of independent partitions processed at once.
+	// A value below two keeps the historical serial execution path.
+	Workers int
+	// QueueCapacity bounds completed chunk descriptors waiting for the writer.
+	// Zero selects a small capacity derived from Workers.
+	QueueCapacity int
+	// MaxChunkBytes bounds an individual temporary result chunk. Zero disables
+	// this optional safeguard. Chunks contain events, not full in-memory results.
+	MaxChunkBytes int64
+	// Metrics receives best-effort queue and spool observations. It may be
+	// called by worker goroutines and must be safe for concurrent use.
+	Metrics func(PartitionQueueMetrics)
 }
 
 // ReconcilePartitioned reconciles supported passes using bounded memory. Grouped
@@ -153,63 +165,110 @@ func reconcilePartitioned(ctx context.Context, pairName, leftSource, rightSource
 		// Sort each partition externally by the configured group key and merge one
 		// key-group at a time so a skewed distribution does not retain every group
 		// in memory simultaneously.
-		for i := 0; i < partitions; i++ {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			leftData, leftRowsPath, err := sortGroupedPartition(ctx, leftGrouped.data[i], leftGrouped.rows[i], filepath.Join(dir, fmt.Sprintf("sorted-left-%03d", i)), leftKeyCol)
-			if err != nil {
-				return fmt.Errorf("sort left partition %d: %w", i, err)
-			}
-			if err := removeGroupedPartitionInputs(leftGrouped.data[i], leftGrouped.rows[i]); err != nil {
-				return fmt.Errorf("remove left partition %d staging files: %w", i, err)
-			}
-			rightData, rightRowsPath, err := sortGroupedPartition(ctx, rightGrouped.data[i], rightGrouped.rows[i], filepath.Join(dir, fmt.Sprintf("sorted-right-%03d", i)), rightKeyCol)
-			if err != nil {
-				return fmt.Errorf("sort right partition %d: %w", i, err)
-			}
-			if err := removeGroupedPartitionInputs(rightGrouped.data[i], rightGrouped.rows[i]); err != nil {
-				return fmt.Errorf("remove right partition %d staging files: %w", i, err)
-			}
-			if err := reconcileGroupedPartition(ctx, pairName, leftSource, rightSource, leftData, leftRowsPath, rightData, rightRowsPath, leftCfg, rightCfg, pair, agg); err != nil {
-				return fmt.Errorf("reconcile partition %d: %w", i, err)
-			}
+		err := processPartitionQueue(ctx, partitions, options.Workers, options.QueueCapacity, options.Metrics,
+			func(workCtx context.Context, i int) (partitionChunkDescriptor, error) {
+				chunkPath := filepath.Join(dir, fmt.Sprintf("result-%03d.gob", i))
+				chunk, err := newPartitionChunkWriter(chunkPath, options.MaxChunkBytes)
+				if err != nil {
+					return partitionChunkDescriptor{}, err
+				}
+				partWriter := &partitionSummaryWriter{ResultWriter: chunk}
+				leftData, leftRowsPath, err := sortGroupedPartition(workCtx, leftGrouped.data[i], leftGrouped.rows[i], filepath.Join(dir, fmt.Sprintf("sorted-left-%03d", i)), leftKeyCol)
+				if err == nil {
+					rightData, rightRowsPath, sortErr := sortGroupedPartition(workCtx, rightGrouped.data[i], rightGrouped.rows[i], filepath.Join(dir, fmt.Sprintf("sorted-right-%03d", i)), rightKeyCol)
+					if sortErr == nil {
+						err = reconcileGroupedPartition(workCtx, pairName, leftSource, rightSource, leftData, leftRowsPath, rightData, rightRowsPath, leftCfg, rightCfg, pair, partWriter)
+					}
+					if err == nil {
+						_ = rightData
+						_ = rightRowsPath
+					}
+				}
+				closeErr := chunk.close()
+				if err == nil {
+					err = closeErr
+				}
+				if err == nil {
+					err = chunk.warningErr
+				}
+				if err != nil {
+					_ = os.Remove(chunkPath)
+					return partitionChunkDescriptor{}, fmt.Errorf("reconcile partition %d: %w", i, err)
+				}
+				return partitionChunkDescriptor{partition: i, path: chunkPath, summary: partWriter.summary}, nil
+			},
+			func(descriptor partitionChunkDescriptor) error {
+				if err := replayPartitionChunk(ctx, descriptor.path, agg); err != nil {
+					return fmt.Errorf("write partition %d: %w", descriptor.partition, err)
+				}
+				agg.summary = addSummaries(agg.summary, descriptor.summary)
+				agg.seen = true
+				if err := os.Remove(descriptor.path); err != nil && !os.IsNotExist(err) {
+					return fmt.Errorf("remove partition %d result chunk: %w", descriptor.partition, err)
+				}
+				return nil
+			})
+		if err != nil {
+			return err
 		}
 	} else {
-		for i := 0; i < partitions; i++ {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			leftOriginalRows, err := readPartitionRows(leftParts.rows[i])
-			if err != nil {
-				return fmt.Errorf("read left partition %d rows: %w", i, err)
-			}
-			rightOriginalRows, err := readPartitionRows(rightParts.rows[i])
-			if err != nil {
-				return fmt.Errorf("read right partition %d rows: %w", i, err)
-			}
-			leftRepresentatives, err := leftDisposition.Representatives(i)
-			if err != nil {
-				return fmt.Errorf("read left representatives for partition %d: %w", i, err)
-			}
-			rightRepresentatives, err := rightDisposition.Representatives(i)
-			if err != nil {
-				return fmt.Errorf("read right representatives for partition %d: %w", i, err)
-			}
-			idx := NewMemoryIndex()
-			err = reconcileStreamingWithOptions(ctx, pairName, leftSource, rightSource, leftParts.data[i], rightParts.data[i], partitionedPolicyConfig(leftCfg), partitionedPolicyConfig(rightCfg), pair, idx, agg, options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
-				rightRepresentativeRows:    rightRepresentatives,
-				leftRepresentativeRows:     leftRepresentatives,
-				rightPartitionOriginalRows: rightOriginalRows,
-				leftPartitionOriginalRows:  leftOriginalRows,
+		err := processPartitionQueue(ctx, partitions, options.Workers, options.QueueCapacity, options.Metrics,
+			func(workCtx context.Context, i int) (partitionChunkDescriptor, error) {
+				chunkPath := filepath.Join(dir, fmt.Sprintf("result-%03d.gob", i))
+				chunk, err := newPartitionChunkWriter(chunkPath, options.MaxChunkBytes)
+				if err != nil {
+					return partitionChunkDescriptor{}, err
+				}
+				partWriter := &partitionSummaryWriter{ResultWriter: chunk}
+				leftOriginalRows, err := readPartitionRows(leftParts.rows[i])
+				if err == nil {
+					var rightOriginalRows []int
+					rightOriginalRows, err = readPartitionRows(rightParts.rows[i])
+					if err == nil {
+						var leftRepresentatives, rightRepresentatives map[int]struct{}
+						leftRepresentatives, err = leftDisposition.Representatives(i)
+						if err == nil {
+							rightRepresentatives, err = rightDisposition.Representatives(i)
+							if err == nil {
+								idx := NewMemoryIndex()
+								err = reconcileStreamingWithOptions(workCtx, pairName, leftSource, rightSource, leftParts.data[i], rightParts.data[i], partitionedPolicyConfig(leftCfg), partitionedPolicyConfig(rightCfg), pair, idx, partWriter, options.MaxTokenBuffer, nil, streamingDuplicateOptions{
+									rightRepresentativeRows: rightRepresentatives, leftRepresentativeRows: leftRepresentatives,
+									rightPartitionOriginalRows: rightOriginalRows, leftPartitionOriginalRows: leftOriginalRows,
+								})
+								closeErr := idx.Close()
+								if err == nil {
+									err = closeErr
+								}
+							}
+						}
+					}
+				}
+				closeErr := chunk.close()
+				if err == nil {
+					err = closeErr
+				}
+				if err == nil {
+					err = chunk.warningErr
+				}
+				if err != nil {
+					_ = os.Remove(chunkPath)
+					return partitionChunkDescriptor{}, fmt.Errorf("reconcile partition %d: %w", i, err)
+				}
+				return partitionChunkDescriptor{partition: i, path: chunkPath, summary: partWriter.summary}, nil
+			},
+			func(descriptor partitionChunkDescriptor) error {
+				if err := replayPartitionChunk(ctx, descriptor.path, agg); err != nil {
+					return fmt.Errorf("write partition %d: %w", descriptor.partition, err)
+				}
+				agg.summary = addSummaries(agg.summary, descriptor.summary)
+				agg.seen = true
+				if err := os.Remove(descriptor.path); err != nil && !os.IsNotExist(err) {
+					return fmt.Errorf("remove partition %d result chunk: %w", descriptor.partition, err)
+				}
+				return nil
 			})
-			closeErr := idx.Close()
-			if err != nil {
-				return err
-			}
-			if closeErr != nil {
-				return closeErr
-			}
+		if err != nil {
+			return err
 		}
 	}
 	if !isGrouped {

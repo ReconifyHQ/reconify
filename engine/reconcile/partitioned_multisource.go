@@ -397,80 +397,104 @@ func reconcilePartitionedCounterpartPass(
 
 	leftCfgForPass := partitionedPolicyConfig(leftCfg)
 	rightCfgForPass := partitionedPolicyConfig(rightCfg)
-	for i := 0; i < partitions; i++ {
-		if err := ctx.Err(); err != nil {
-			return groupedPartitionFiles{}, Summary{}, err
-		}
-		leftRows, err := readPartitionRows(leftParts.rows[i])
-		if err != nil {
-			return groupedPartitionFiles{}, Summary{}, fmt.Errorf("read left partition %d rows: %w", i, err)
-		}
-		rightRows, err := readPartitionRows(rightParts.rows[i])
-		if err != nil {
-			return groupedPartitionFiles{}, Summary{}, fmt.Errorf("read right partition %d rows: %w", i, err)
-		}
-		manifestPath := filepath.Join(spillDir, fmt.Sprintf("carry-%02d-%03d.ids", passIndex, i))
-		carry, err := newPartitionCarryWriter(w, manifestPath, leftSource)
-		if err != nil {
-			return groupedPartitionFiles{}, Summary{}, err
-		}
-		partWriter := &partitionSummaryWriter{ResultWriter: carry}
-
-		var runErr, sortErr, rightSortErr error
-		var sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows string
-		if containsGroupedPass(pair.Passes) {
-			sortedLeftData, sortedLeftRows, sortErr = sortGroupedPartition(ctx, leftParts.data[i], leftParts.rows[i], filepath.Join(spillDir, fmt.Sprintf("sorted-left-%02d-%03d", passIndex, i)), leftKey)
-			if sortErr == nil {
-				sortedRightData, sortedRightRows, rightSortErr = sortGroupedPartition(ctx, rightParts.data[i], rightParts.rows[i], filepath.Join(spillDir, fmt.Sprintf("sorted-right-%02d-%03d", passIndex, i)), rightKey)
-				if rightSortErr != nil {
-					sortErr = rightSortErr
-				} else {
-					runErr = reconcileGroupedPartition(ctx, pairName, leftSource, rightSource, sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows, leftCfg, rightCfg, pair, partWriter)
+	queueErr := processPartitionQueue(ctx, partitions, options.Workers, options.QueueCapacity, options.Metrics,
+		func(workCtx context.Context, i int) (partitionChunkDescriptor, error) {
+			chunkPath := filepath.Join(spillDir, fmt.Sprintf("result-%02d-%03d.gob", passIndex, i))
+			chunk, err := newPartitionChunkWriter(chunkPath, options.MaxChunkBytes)
+			if err != nil {
+				return partitionChunkDescriptor{}, err
+			}
+			manifestPath := filepath.Join(spillDir, fmt.Sprintf("carry-%02d-%03d.ids", passIndex, i))
+			carry, err := newPartitionCarryWriter(chunk, manifestPath, leftSource)
+			if err != nil {
+				_ = chunk.close()
+				return partitionChunkDescriptor{}, err
+			}
+			partWriter := &partitionSummaryWriter{ResultWriter: carry}
+			var runErr error
+			var sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows string
+			leftRows, readErr := readPartitionRows(leftParts.rows[i])
+			if readErr == nil {
+				var rightRows []int
+				rightRows, readErr = readPartitionRows(rightParts.rows[i])
+				if readErr == nil {
+					if containsGroupedPass(pair.Passes) {
+						sortedLeftData, sortedLeftRows, runErr = sortGroupedPartition(workCtx, leftParts.data[i], leftParts.rows[i], filepath.Join(spillDir, fmt.Sprintf("sorted-left-%02d-%03d", passIndex, i)), leftKey)
+						if runErr == nil {
+							sortedRightData, sortedRightRows, runErr = sortGroupedPartition(workCtx, rightParts.data[i], rightParts.rows[i], filepath.Join(spillDir, fmt.Sprintf("sorted-right-%02d-%03d", passIndex, i)), rightKey)
+						}
+						if runErr == nil {
+							runErr = reconcileGroupedPartition(workCtx, pairName, leftSource, rightSource, sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows, leftCfg, rightCfg, pair, partWriter)
+						}
+					} else {
+						leftRepresentatives, repErr := leftDisposition.Representatives(i)
+						if repErr == nil {
+							rightRepresentatives, rightRepErr := rightDisposition.Representatives(i)
+							if rightRepErr != nil {
+								readErr = rightRepErr
+							} else {
+								idx := NewMemoryIndex()
+								runErr = reconcileStreamingWithOptions(workCtx, pairName, leftSource, rightSource,
+									leftParts.data[i], rightParts.data[i], leftCfgForPass, rightCfgForPass, pair, idx, partWriter,
+									options.MaxTokenBuffer, nil, streamingDuplicateOptions{
+										rightRepresentativeRows: rightRepresentatives, leftRepresentativeRows: leftRepresentatives,
+										rightPartitionOriginalRows: rightRows, leftPartitionOriginalRows: leftRows,
+									})
+								if closeErr := idx.Close(); runErr == nil {
+									runErr = closeErr
+								}
+							}
+						} else {
+							readErr = repErr
+						}
+					}
 				}
 			}
-			runErr = firstPartitionError(runErr, sortErr)
-		} else {
-			idx := NewMemoryIndex()
-			leftRepresentatives, repErr := leftDisposition.Representatives(i)
-			if repErr != nil {
-				return groupedPartitionFiles{}, Summary{}, fmt.Errorf("read left representatives for partition %d: %w", i, repErr)
+			if runErr == nil {
+				runErr = readErr
 			}
-			rightRepresentatives, repErr := rightDisposition.Representatives(i)
-			if repErr != nil {
-				return groupedPartitionFiles{}, Summary{}, fmt.Errorf("read right representatives for partition %d: %w", i, repErr)
+			if closeErr := carry.Close(); runErr == nil {
+				runErr = closeErr
 			}
-			runErr = reconcileStreamingWithOptions(ctx, pairName, leftSource, rightSource,
-				leftParts.data[i], rightParts.data[i], leftCfgForPass, rightCfgForPass, pair, idx, partWriter,
-				options.MaxTokenBuffer, reporter, streamingDuplicateOptions{
-					rightRepresentativeRows:    rightRepresentatives,
-					leftRepresentativeRows:     leftRepresentatives,
-					rightPartitionOriginalRows: rightRows,
-					leftPartitionOriginalRows:  leftRows,
-				})
-			closeErr := idx.Close()
-			runErr = firstPartitionError(runErr, closeErr)
-		}
-		closeErr := carry.Close()
-		runErr = firstPartitionError(runErr, closeErr)
-		if runErr != nil {
-			return groupedPartitionFiles{}, Summary{}, fmt.Errorf("partition %d: %w", i, runErr)
-		}
-		passSummary = addSummaries(passSummary, partWriter.summary)
-
-		next.data[i] = fmt.Sprintf("%s-%03d.csv", nextPrefix, i)
-		next.rows[i] = fmt.Sprintf("%s-%03d.rows", nextPrefix, i)
-		nextCount, err := filterPartitionByManifest(ctx, leftSource, leftParts.data[i], leftParts.rows[i], next.data[i], next.rows[i], manifestPath)
-		if err != nil {
-			return groupedPartitionFiles{}, Summary{}, fmt.Errorf("stage carry-forward partition %d: %w", i, err)
-		}
-		next.count += nextCount
-		_ = os.Remove(manifestPath)
-		if err := removePartitionPassFiles(
-			leftParts.data[i], leftParts.rows[i], rightParts.data[i], rightParts.rows[i],
-			sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows,
-		); err != nil {
-			return groupedPartitionFiles{}, Summary{}, fmt.Errorf("remove consumed partition %d files: %w", i, err)
-		}
+			if closeErr := chunk.close(); runErr == nil {
+				runErr = closeErr
+			}
+			if runErr == nil {
+				runErr = chunk.warningErr
+			}
+			if runErr != nil {
+				_ = os.Remove(chunkPath)
+				return partitionChunkDescriptor{}, fmt.Errorf("partition %d: %w", i, runErr)
+			}
+			return partitionChunkDescriptor{
+				partition: i, path: chunkPath, summary: partWriter.summary, manifest: manifestPath,
+				nextData: fmt.Sprintf("%s-%03d.csv", nextPrefix, i), nextRows: fmt.Sprintf("%s-%03d.rows", nextPrefix, i),
+				sorted: []string{sortedLeftData, sortedLeftRows, sortedRightData, sortedRightRows},
+			}, nil
+		},
+		func(descriptor partitionChunkDescriptor) error {
+			partWriter := &partitionSummaryWriter{ResultWriter: w}
+			if err := replayPartitionChunk(ctx, descriptor.path, partWriter); err != nil {
+				return fmt.Errorf("write partition %d: %w", descriptor.partition, err)
+			}
+			passSummary = addSummaries(passSummary, descriptor.summary)
+			next.data[descriptor.partition], next.rows[descriptor.partition] = descriptor.nextData, descriptor.nextRows
+			nextCount, err := filterPartitionByManifest(ctx, leftSource, leftParts.data[descriptor.partition], leftParts.rows[descriptor.partition], descriptor.nextData, descriptor.nextRows, descriptor.manifest)
+			if err != nil {
+				return fmt.Errorf("stage carry-forward partition %d: %w", descriptor.partition, err)
+			}
+			next.count += nextCount
+			if err := os.Remove(descriptor.manifest); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove carry manifest for partition %d: %w", descriptor.partition, err)
+			}
+			paths := append([]string{leftParts.data[descriptor.partition], leftParts.rows[descriptor.partition], rightParts.data[descriptor.partition], rightParts.rows[descriptor.partition], descriptor.path}, descriptor.sorted...)
+			if err := removePartitionPassFiles(paths...); err != nil {
+				return fmt.Errorf("remove consumed partition %d files: %w", descriptor.partition, err)
+			}
+			return nil
+		})
+	if queueErr != nil {
+		return groupedPartitionFiles{}, Summary{}, queueErr
 	}
 	return next, passSummary, nil
 }
@@ -485,13 +509,6 @@ func removePartitionPassFiles(paths ...string) error {
 		}
 	}
 	return nil
-}
-
-func firstPartitionError(first, second error) error {
-	if first != nil {
-		return first
-	}
-	return second
 }
 
 func readPartitionRows(path string) ([]int, error) {

@@ -126,6 +126,39 @@ func TestReconcilePartitionedWithOptionsCleansConfiguredSpillDir(t *testing.T) {
 	}
 }
 
+func TestReconcilePartitionedChunkLimitFailsAndCleansSpill(t *testing.T) {
+	dir := t.TempDir()
+	spill := filepath.Join(dir, "spill")
+	left := filepath.Join(dir, "left.csv")
+	right := filepath.Join(dir, "right.csv")
+	content := "date,amount,reference\n2026-01-01,100,REF-1\n"
+	if err := os.WriteFile(left, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(right, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", RefCol: "reference"}
+	var output bytes.Buffer
+	w, err := NewResultWriter("ndjson", &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ReconcilePartitionedWithOptions(context.Background(), "p", "left", "right", left, right, cfg, cfg, config.Pair{}, w, PartitionedOptions{
+		Partitions: 2, Workers: 2, QueueCapacity: 1, MaxChunkBytes: 1, SpillDir: spill,
+	})
+	if err == nil || !strings.Contains(err.Error(), "exceeds configured max bytes") {
+		t.Fatalf("error=%v, want chunk size safeguard", err)
+	}
+	entries, readErr := os.ReadDir(spill)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("spill entries=%d, want cleanup", len(entries))
+	}
+}
+
 func TestOpenGroupedRunCursorsClosesEarlierRunsOnOpenFailure(t *testing.T) {
 	dir := t.TempDir()
 	paths := []string{filepath.Join(dir, "run-0.gob"), filepath.Join(dir, "run-1.gob")}

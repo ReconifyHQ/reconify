@@ -19,6 +19,9 @@ func newReconcileCmd() *cobra.Command {
 	var rightFile string
 	var format string
 	var maxTokenBuffer int
+	var partitionWorkers int
+	var partitionQueueCapacity int
+	var partitionMaxChunkMB int64
 	var auditMode bool
 	var auditFixedTimestamp string
 	var deterministic bool
@@ -56,6 +59,16 @@ Formats:
 			if progressEvery <= 0 {
 				return configErr("--progress-every must be greater than zero")
 			}
+			if partitionWorkers < 0 {
+				return configErr("--partition-workers must be >= 0 (0 = serial)")
+			}
+			if partitionQueueCapacity < 0 {
+				return configErr("--partition-queue-capacity must be >= 0 (0 = derived from workers)")
+			}
+			if partitionMaxChunkMB < 0 || partitionMaxChunkMB > 1<<40 {
+				return configErr("--partition-max-chunk-mb must be between 0 and 1099511627776")
+			}
+			partitionMaxChunkBytes := partitionMaxChunkMB * (1 << 20)
 			switch config.ResultMode(resultModeFlag) {
 			case "", config.ResultModeAll, config.ResultModeExceptionsOnly, config.ResultModeSummaryOnly:
 				// valid
@@ -239,6 +252,9 @@ Formats:
 						MaxTokenBuffer: maxTokenBuffer,
 						Partitions:     multiDecisions[0].Selection.PartitionCount,
 						SpillDir:       cfg.Index.SpillDir,
+						Workers:        partitionWorkers,
+						QueueCapacity:  partitionQueueCapacity,
+						MaxChunkBytes:  partitionMaxChunkBytes,
 					}
 					var runErr error
 					if telemetryEnabled {
@@ -357,6 +373,9 @@ Formats:
 						MaxTokenBuffer: maxTokenBuffer,
 						Partitions:     decision.Selection.PartitionCount,
 						SpillDir:       cfg.Index.SpillDir,
+						Workers:        partitionWorkers,
+						QueueCapacity:  partitionQueueCapacity,
+						MaxChunkBytes:  partitionMaxChunkBytes,
 					}
 					var runErr error
 					if telemetryEnabled {
@@ -526,6 +545,12 @@ Formats:
 		`Output format: json (default), json-stream, ndjson, csv, table`)
 	cmd.Flags().IntVar(&maxTokenBuffer, "max-token-buffer", 100_000,
 		"Advisory row limit for token-mode unmatched buffer (0 = unlimited)")
+	cmd.Flags().IntVar(&partitionWorkers, "partition-workers", 0,
+		"Concurrent partition workers for the partitioned backend (0 = serial; 1 = serial)")
+	cmd.Flags().IntVar(&partitionQueueCapacity, "partition-queue-capacity", 0,
+		"Maximum completed partition descriptors waiting for the final writer (0 = derived from workers)")
+	cmd.Flags().Int64Var(&partitionMaxChunkMB, "partition-max-chunk-mb", 0,
+		"Maximum size of one disk-backed partition result chunk in MiB (0 = unlimited)")
 	cmd.Flags().BoolVar(&auditMode, "audit", false,
 		"Embed run provenance in output: SHA-256 file hashes, timestamp, tool version, pair config snapshot")
 	cmd.Flags().StringVar(&auditFixedTimestamp, "audit-fixed-timestamp", "",

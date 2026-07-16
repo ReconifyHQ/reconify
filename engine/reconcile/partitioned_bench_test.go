@@ -129,6 +129,24 @@ func BenchmarkReconcilePartitioned_OneToManyBalanced(b *testing.B) {
 	}
 }
 
+func BenchmarkReconcilePartitioned_OneToManyBalancedParallel(b *testing.B) {
+	dir := b.TempDir()
+	leftPath, rightPath := writeGroupedBenchmarkCSV(b, dir, 5_000, 3, false)
+	cfg := groupedBenchmarkConfig()
+	pair := groupedBenchmarkPair()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		writer, err := NewResultWriter("ndjson", io.Discard)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := ReconcilePartitionedWithOptions(context.Background(), "bench", "left", "right", leftPath, rightPath, cfg, cfg, pair, writer, PartitionedOptions{Partitions: 8, Workers: 4, QueueCapacity: 2}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkReconcileBatch_OneToManyBalanced(b *testing.B) {
 	dir := b.TempDir()
 	leftPath, rightPath := writeGroupedBenchmarkCSV(b, dir, 5_000, 3, false)
@@ -204,6 +222,24 @@ func BenchmarkReconcilePartitionedMultiSource_OneToManyBalanced(b *testing.B) {
 			b.Fatal(err)
 		}
 		if err := ReconcilePartitionedMultiSource(context.Background(), "bench", "left", leftPath, cfg, counterparts, pair, writer, 0, 8); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkReconcilePartitionedMultiSource_OneToManyBalancedParallel(b *testing.B) {
+	dir := b.TempDir()
+	leftPath, counterparts := writeMultiGroupedBenchmarkCSV(b, dir, 5_000, 3, false)
+	cfg := groupedBenchmarkConfig()
+	pair := groupedBenchmarkPair()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		writer, err := NewResultWriter("ndjson", io.Discard)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := ReconcilePartitionedMultiSourceWithOptions(context.Background(), "bench", "left", leftPath, cfg, counterparts, pair, writer, PartitionedOptions{Partitions: 8, Workers: 4, QueueCapacity: 2}); err != nil {
 			b.Fatal(err)
 		}
 	}
