@@ -131,6 +131,9 @@ Use `ndjson` or `csv` output so results do not accumulate in memory.
 
 Partition work can be enabled explicitly once row-level parity has been checked:
 
+See the contributor-level [partitioned parallelism design guide](../../../architecture/partitioned-parallelism.md)
+for the chunk lifecycle, invariants, metrics, and test workflow.
+
 ```bash
 reconify reconcile --config reconify.yaml --pair bank_vs_stripe \
   --format ndjson --partition-workers 4 --partition-queue-capacity 2 \
