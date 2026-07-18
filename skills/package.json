@@ -1,24 +1,17 @@
 {
   "name": "@reconifyhq/skills",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Install Reconify agent skill files for Claude Code, Codex, and other AI coding assistants",
   "bin": {
     "reconify-skills": "scripts/install-skills.js"
   },
   "files": [
     "scripts/install-skills.js",
-    ".agents/skills/",
-    ".claude/skills/",
-    ".codex/skills/"
+    ".agents/",
+    ".claude/",
+    ".codex/"
   ],
-  "keywords": [
-    "reconify",
-    "agent-skills",
-    "claude",
-    "codex",
-    "ai-agent",
-    "llm"
-  ],
+  "keywords": ["reconify", "agent-skills", "claude", "codex", "ai-agent", "llm"],
   "license": "MIT",
   "engines": {
     "node": ">=16"
