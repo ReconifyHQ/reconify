@@ -1,0 +1,45 @@
+---
+title: Upcoming
+description: Planned or unreleased behavior from the changelog.
+---
+
+This page intentionally separates planned behavior from implemented command reference.
+
+## Standalone validation command
+
+The changelog mentions:
+
+```bash
+reconify validate
+```
+
+Planned behavior includes record-level checks, source-level checks, and cross-source checks.
+
+## Validation flags
+
+The changelog mentions:
+
+```bash
+--fail-on-warning
+--skip-validation
+```
+
+These flags are not included in the current implemented CLI reference until the command surface exists in code.
+
+## Planned validation categories
+
+Planned validation checks include:
+
+- parseable dates and amounts
+- valid currency format
+- source currency consistency
+- duplicate references
+- empty sources
+- high empty-reference rates
+- currency compatibility across sources
+- date range overlap
+- row count ratio disparity
+
+## Documentation rule
+
+When these features are implemented, move them from this page into the relevant CLI and guide pages.

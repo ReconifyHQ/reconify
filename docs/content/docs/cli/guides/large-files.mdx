@@ -1,0 +1,136 @@
+---
+title: Large Files
+description: Tune Reconify's output format, index backend, and memory settings for high-volume reconciliation runs.
+---
+
+Reconify is built around streaming: it indexes the right source, then streams the left source row by row and emits events incrementally. That design handles large files well, but the default settings (full JSON output, memory index) can become bottlenecks past a certain scale. This guide covers the specific flags to reach for when a run is slow, consuming too much memory, or producing output files too large to open comfortably.
+
+## What you'll learn
+
+By the end of this guide, you know:
+
+- which output format to choose for files with hundreds of thousands of rows,
+- how the index backend affects memory usage and when to switch modes,
+- and how to enable progress logging and tune token-match buffering for large unmatched sets.
+
+## How it works
+
+The right source is fully indexed before the left source is streamed. For the `memory` backend,
+the entire right-side index lives in RAM. For the `disk` backend, it spills to a SQLite-backed
+file. `auto` switches automatically based on right-file size. See
+[Overview](/docs/cli/concepts/overview) for the pipeline and [Config Reference](/docs/cli/reference/config)
+for the full `index` schema.
+
+## Command
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_ledger \
+  --format ndjson \
+  --progress \
+  --out results.ndjson
+```
+
+## Steps
+
+<Steps>
+<Step>
+
+### Switch to a streaming output format
+
+For files above roughly 500k rows, avoid `json` and `table`. Use one of:
+
+| Format | Best for |
+|---|---|
+| `ndjson` | Piping through `jq`, streaming to downstream tools. |
+| `csv` | Loading into spreadsheets or databases row by row. |
+| `json-stream` | Section-by-section JSON without one massive object. |
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_ledger \
+  --format ndjson \
+  --out results.ndjson
+```
+
+</Step>
+<Step>
+
+### Configure the index backend
+
+Add an `index` block to your config:
+
+```yaml
+index:
+  backend: auto
+  spill_dir: "/tmp/reconify"
+  auto_max_right_file_mb: 2048
+```
+
+- `memory` — fastest. Use when the right-side index fits comfortably in RAM.
+- `disk` — lower memory. Lookups are slower but the process doesn't balloon in size.
+- `auto` — switches to `disk` when the right-side file exceeds `auto_max_right_file_mb`. Start here.
+
+</Step>
+<Step>
+
+### Enable progress logging
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_ledger \
+  --format ndjson \
+  --progress \
+  --progress-every 1000000 \
+  --out results.ndjson
+```
+
+Progress logs go to stderr, separate from the output file, so they don't corrupt NDJSON output or
+interfere with piped commands.
+
+</Step>
+<Step>
+
+### Skip raw fields to reduce allocation pressure
+
+In each source's parser config:
+
+```yaml
+parser:
+  skip_raw: true
+```
+
+By default, every parsed transaction carries its original row fields in `raw`. For large sources
+where you don't need those original fields in output, `skip_raw: true` cuts allocation
+significantly per row.
+
+</Step>
+<Step>
+
+### Tune token-match buffering
+
+If `name_mode: "tokens"` is set, Reconify buffers unmatched rows after reference matching to run
+a second token-similarity pass. For large datasets, that buffer can become substantial:
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_ledger \
+  --max-token-buffer 100000
+```
+
+If you don't need fallback name matching, set `name_mode: "none"` in the pair config to disable
+the buffer entirely.
+
+</Step>
+</Steps>
+
+## Verify it worked
+
+Check the summary section of the output for row counts and match rate, and confirm memory usage
+stayed within expected bounds during the run (use `--progress` output to track row throughput). If
+the process still exhausts memory after switching to `disk` index, the most likely culprit is a
+very large token-match buffer — reduce `--max-token-buffer` or disable token mode.

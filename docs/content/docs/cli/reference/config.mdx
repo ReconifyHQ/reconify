@@ -200,7 +200,7 @@ Caveats:
 
 ### `one_to_many` pass (installment payments)
 
-The `one_to_many` pass handles the case where one left transaction (e.g. an invoice) is settled by N right transactions sharing the same reference (e.g. installment payments). See the [engine documentation](/docs/engine/) for full semantics and configuration.
+The `one_to_many` pass handles the case where one left transaction (e.g. an invoice) is settled by N right transactions sharing the same reference (e.g. installment payments). See the [engine documentation](/docs/cli/engine/) for full semantics and configuration.
 
 This pass is separate from the ordered `rights` multi-counterpart reconciliation. `rights` selects which counterpart *sources* to reconcile against in sequence; `one_to_many` is a matching *strategy* within a single counterpart.
 

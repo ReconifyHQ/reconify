@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "content": {
+    "source": "docs/content/docs/cli",
+    "destination": "packages/developer-docs/content/docs/cli"
+  },
+  "assets": {
+    "source": "docs/public/cli",
+    "destination": "packages/developer-docs/public/cli",
+    "optional": true
+  },
+  "metadata": "packages/developer-docs/cli-content-sync.json"
+}

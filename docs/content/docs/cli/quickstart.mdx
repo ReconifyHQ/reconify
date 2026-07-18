@@ -1,0 +1,176 @@
+---
+title: Quickstart
+description: Install Reconify, create a config, validate it, parse a file, and run reconciliation.
+---
+
+This guide runs a bank export against a Stripe-style export.
+
+## Install
+
+```bash
+go install github.com/reconifyhq/reconify/cmd/reconify@latest
+```
+
+You can also build from source:
+
+```bash
+git clone https://github.com/ReconifyHQ/reconify.git
+cd reconify
+make build
+```
+
+## Create `reconify.yaml`
+
+You can generate this file interactively or write it by hand.
+
+### Option A: interactive wizard
+
+```bash
+reconify config init --out reconify.yaml
+```
+
+The wizard reads headers from your sample files, lets you map columns, and writes a validated config. Here's what a typical session looks like:
+
+```text
+Output path [reconify.yaml]: reconify.yaml
+Timezone [UTC]: UTC
+
+Left source name: bank
+Left sample file: data/bank/january.csv
+  Detected headers: Date, Amount, Currency, Reference, Details
+  Date column [Date]: Date
+  Date layout [2006-01-02]: 2006-01-02
+  Amount column [Amount]: Amount
+  Currency column (optional) [Currency]: Currency
+  Reference column (optional) [Reference]: Reference
+  Name column (optional) [Details]: Details
+
+Right source name: stripe
+Right sample file: data/stripe/january.csv
+  Detected headers: created, amount, currency, id, description
+  Date column [created]: created
+  Date layout [2006-01-02]: 2006-01-02
+  Amount column [amount]: amount
+  Currency column (optional) [currency]: currency
+  Reference column (optional) [id]: id
+  Name column (optional) [description]: description
+
+Pair name [bank_vs_stripe]: bank_vs_stripe
+Date window [1d]: 1d
+Amount tolerance in minor units [0]: 0
+Name matching mode (tokens/none) [none]: none
+
+Write reconify.yaml? [y/N]: y
+[OK] wrote reconify.yaml
+[OK] reconify.yaml is valid
+```
+
+See [`reconify config init`](/docs/cli/reference/cli#reconify-config-init) for the full list of prompts.
+
+### Option B: write it by hand
+
+```yaml
+version: 1
+timezone: "UTC"
+
+index:
+  backend: auto
+  spill_dir: "/tmp/reconify"
+  auto_max_right_file_mb: 2048
+
+sources:
+  bank:
+    file_pattern: "data/bank/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      tz: "UTC"
+      amount_col: "Amount"
+      decimal: "."
+      thousands: ","
+      multiplier: 100
+      currency_col: "Currency"
+      name_col: "Details"
+      ref_col: "Reference"
+
+  stripe:
+    file_pattern: "data/stripe/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      tz: "UTC"
+      amount_col: "Amount"
+      decimal: "."
+      thousands: ","
+      multiplier: 100
+      currency_col: "Currency"
+      name_col: "Description"
+      ref_col: "Reference"
+
+pairs:
+  bank_vs_stripe:
+    left: bank
+    right: stripe
+    date_window: "1d"
+    amount_tolerance_minor: 0
+    name_mode: "tokens"
+```
+
+## Validate the config
+
+```bash
+reconify config validate --config reconify.yaml
+```
+
+## Check source columns
+
+```bash
+reconify config check-source \
+  --config reconify.yaml \
+  --source bank \
+  --file data/bank/january.csv
+```
+
+## Parse one file
+
+```bash
+reconify parse \
+  --config reconify.yaml \
+  --source bank \
+  --file data/bank/january.csv \
+  --format table
+```
+
+Use this before reconciling if dates, amounts, references, or currency values look wrong.
+
+## Run reconciliation
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --out results.json
+```
+
+For large files, prefer streaming output:
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --format ndjson \
+  --progress \
+  --out results.ndjson
+```
+
+## Read the result
+
+Start with `summary`. Then inspect:
+
+- `matched` for clean matches.
+- `unmatched_left` and `unmatched_right` for missing records.
+- `amount_diff` for same-reference records whose amounts exceed tolerance.
+- `timing_diff` for same-reference records outside the date window.
+- `duplicates` for repeated references inside one source.

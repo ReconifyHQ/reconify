@@ -1,0 +1,165 @@
+---
+title: Ingestion
+description: Configure how Reconify parses CSV, JSON, NDJSON, and XLSX source files into its normalized transaction model.
+---
+
+Reconify can't match transactions until it understands what your source files look like. The `parser` block in each source definition is where you map your file's column names and number formats to Reconify's normalized transaction model. Getting this right means Reconify reads your amounts, dates, and references correctly. Mistakes here show up as timing differences or unmatched rows, not parse errors.
+
+## What you'll learn
+
+By the end of this guide, you know:
+
+- which file types Reconify supports and how to configure each,
+- how `multiplier`, `decimal`, and `thousands` convert your amounts to minor units,
+- and when to use optional fields and what you lose by omitting them.
+
+## How it works
+
+Every source row becomes a `Transaction` with a fixed set of fields: `Date`, `Amount` (in minor
+units), `Currency`, `Reference`, and `Name`. The `parser` block maps your source-specific column
+names and number formats to those fields. See [Transactions](/docs/cli/concepts/transactions) for the
+full model.
+
+## Command
+
+```bash
+reconify parse \
+  --config reconify.yaml \
+  --source bank \
+  --file data/bank/january.csv \
+  --format table
+```
+
+Run this to preview how rows are normalized before committing to a full reconciliation.
+
+## Steps
+
+<Steps>
+<Step>
+
+### Choose the parser type
+
+Set `type` in the parser block. The `auto` value infers the parser from the file extension and is the safe default.
+
+```yaml
+parser:
+  type: auto
+```
+
+| Type | When to use |
+|---|---|
+| `auto` | Infer from file extension. Safe default for most cases. |
+| `csv` | Explicit CSV. |
+| `json` | JSON array of objects. |
+| `ndjson` | One JSON object per line. |
+| `xlsx` | Excel workbook (`.xlsx` or `.xlsm`). |
+
+`auto` infers from extension: `.csv`, `.json`, `.ndjson`, `.xlsx`, `.xlsm`. Legacy `.xls` files are not supported. Save them as `.xlsx` or `.csv` first.
+
+</Step>
+<Step>
+
+### Map required columns
+
+Every parser needs `date_col`, `date_layout`, and `amount_col`:
+
+```yaml
+parser:
+  type: csv
+  date_col: "Date"
+  date_layout: "2006-01-02"
+  amount_col: "Amount"
+```
+
+`date_layout` uses Go's reference time: the reference date is `2006-01-02 15:04:05 MST`. Common
+patterns:
+
+| Source format | Layout string |
+|---|---|
+| `2024-01-15` | `2006-01-02` |
+| `01/15/2024` | `01/02/2006` |
+| `15 Jan 2024` | `02 Jan 2006` |
+
+</Step>
+<Step>
+
+### Configure amount parsing
+
+```yaml
+decimal: "."
+thousands: ","
+multiplier: 100
+```
+
+`multiplier` converts source amounts to minor units:
+
+- Use `100` when the file contains `1234.56` (major units).
+- Use `1` when the file already contains `123456` (minor units, like Stripe's `amount` field).
+
+Parenthetical negatives like `(1,234.56)` are supported automatically.
+
+</Step>
+<Step>
+
+### Add optional columns
+
+Three optional fields control matching behavior. Omitting them is valid but reduces what Reconify can match.
+
+```yaml
+currency_col: "Currency"
+name_col: "Description"
+ref_col: "Reference"
+```
+
+`ref_col` is the most consequential optional field. Without it, all rows have empty references and reference matching is disabled entirely. `name_col` enables name-token matching when `name_mode: "tokens"` is set on the pair.
+
+</Step>
+<Step>
+
+### Configure XLSX-specific settings
+
+```yaml
+parser:
+  type: xlsx
+  sheet: "Transactions"
+  date_col: "Date"
+  amount_col: "Amount"
+```
+
+If `sheet` is omitted, Reconify reads the first sheet. CSV and XLSX both use the first row as headers. Column lookup is case-insensitive and trims whitespace.
+
+</Step>
+<Step>
+
+### Skip raw fields for large sources
+
+```yaml
+parser:
+  skip_raw: true
+```
+
+By default, parsed transactions include `raw`, the original row/object fields. Set `skip_raw: true` when processing large files and you don't need the original fields in output. This reduces allocation pressure significantly.
+
+</Step>
+</Steps>
+
+## Verify it worked
+
+Parse a sample file with `--format table` to confirm dates, amounts, and references look correct:
+
+```bash
+reconify parse \
+  --config reconify.yaml \
+  --source bank \
+  --file data/bank/january.csv \
+  --format table
+```
+
+Check that:
+
+- `Date` values match the dates in your file (not shifted by a day or timezone).
+- `Amount` is in minor units (`15000` for `150.00 USD`).
+- `Reference` is populated if you configured `ref_col`. Empty references disable matching.
+
+If something looks wrong, verify `date_layout`, `multiplier`, and `decimal` before running a full
+reconciliation. A single wrong multiplier means every amount is off by a factor of 100.

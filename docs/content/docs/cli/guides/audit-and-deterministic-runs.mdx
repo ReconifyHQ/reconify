@@ -1,0 +1,132 @@
+---
+title: Audit and Deterministic Runs
+description: Embed run provenance in output and produce byte-identical results for audit workflows.
+---
+
+Finance and compliance teams often need to prove not just what a reconciliation found but when it ran, which files it used, and whether the result is reproducible. Reconify's audit and deterministic flags address both. `--audit` embeds run metadata directly in the output file, and `--deterministic` with `--audit-fixed-timestamp` makes two runs on the same inputs produce byte-identical output.
+
+## What you'll learn
+
+By the end of this guide, you know:
+
+- what `--audit` adds to structured output and which formats support it,
+- how to produce stable, reproducible output for audit workflows,
+- and how to run the same reconciliation twice and get the same file hash.
+
+## How it works
+
+Audit mode injects a `run_info` object into the output containing a run ID, timestamp, tool
+version, input file paths, SHA-256 file hashes, and a snapshot of the pair config. Deterministic
+mode (`--deterministic`) sorts JSON output sections so key order is stable across runs. Combined
+with `--audit-fixed-timestamp`, you can fix the run ID and timestamp to make the output
+content-addressable. See [Reconcile](/docs/cli/guides/reconcile) for the base command.
+
+## Command
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --format json \
+  --audit \
+  --out results.audit.json
+```
+
+## Steps
+
+<Steps>
+<Step>
+
+### Add audit metadata to a run
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --format json \
+  --audit \
+  --out results.audit.json
+```
+
+`--audit` is supported for `json`, `json-stream`, and `ndjson`. It is not available for `csv` or
+`table`.
+
+The `run_info` object in the output includes:
+
+- `run_id` — a unique identifier for this run.
+- `timestamp` — UTC timestamp when the run started.
+- `tool_version` — the Reconify binary version.
+- `left_file` / `right_file` — resolved input file paths.
+- `left_sha256` / `right_sha256` — SHA-256 hashes of the input files.
+- `pair_config` — a snapshot of the pair definition from your config.
+
+</Step>
+<Step>
+
+### Produce deterministic output
+
+Add `--deterministic` to sort JSON output sections for stable key ordering, then fix the timestamp
+and run ID with `--audit-fixed-timestamp`:
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --format json \
+  --audit \
+  --deterministic \
+  --audit-fixed-timestamp "2026-01-01T00:00:00Z" \
+  --out results.audit.json
+```
+
+Without `--audit-fixed-timestamp`, the `run_id` and `timestamp` change on every run. With it,
+two runs on the same input files produce the same output bytes — and the same SHA-256 of the
+output file itself.
+
+</Step>
+<Step>
+
+### Use NDJSON audit output for streaming
+
+For large files, combine `--audit` with `--format ndjson`. Reconify emits `run_info` as the first
+line:
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --format ndjson \
+  --audit \
+  --out results.audit.ndjson
+```
+
+The first line of the output file is always the `run_info` event when `--audit` is set for NDJSON.
+
+</Step>
+</Steps>
+
+## Verify it worked
+
+Open `results.audit.json` and confirm the `run_info` section is present:
+
+```json
+{
+  "run_id": "01HZ...",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "tool_version": "v0.1.0",
+  "left_file": "data/bank/january.csv",
+  "left_sha256": "a3f1...",
+  "right_file": "data/stripe/january.csv",
+  "right_sha256": "7bc2..."
+}
+```
+
+To confirm deterministic output, run the same command twice and compare SHA-256 hashes of the two
+output files:
+
+```bash
+shasum -a 256 results.audit.json
+```
+
+Both hashes should match when `--deterministic` and `--audit-fixed-timestamp` are both set and
+the input files are unchanged.

@@ -1,0 +1,123 @@
+---
+title: Read Results
+description: Navigate the output sections, interpret monetary totals, and prioritize what to investigate first.
+---
+
+A reconciliation run produces several distinct outcome sections. Reading them in the right order saves time, because some sections, particularly duplicates and amount differences, can mask or explain what appears in others. This guide explains what each section means and how to work through the output systematically.
+
+## What you'll learn
+
+By the end of this guide, you know:
+
+- what each output section contains and when it's non-empty,
+- how monetary totals are expressed and how `total_discrepancy` is calculated,
+- and a practical order for investigating an unexpected result.
+
+## How it works
+
+Reconify classifies every row in one of six outcome buckets during matching. See
+[Matching](/docs/cli/concepts/matching) for the full tier logic. The results file contains one entry
+per bucket, plus a `summary` object with counts and totals across all buckets.
+
+## Command
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --format json \
+  --out results.json
+```
+
+## Steps
+
+<Steps>
+<Step>
+
+### Start with `summary`
+
+The `summary` section is always present and gives you counts and monetary totals for the entire run:
+
+```json
+{
+  "type": "summary",
+  "matched": 842,
+  "unmatched_left": 3,
+  "unmatched_right": 1,
+  "amount_diff_count": 0,
+  "timing_diff_count": 2,
+  "duplicate_count": 4,
+  "matched_amount_left": 184230000,
+  "matched_amount_right": 184231000,
+  "unmatched_amount_left": 15000,
+  "unmatched_amount_right": 0,
+  "amount_diff_total": 0,
+  "total_discrepancy": 15000
+}
+```
+
+All monetary values are in minor units. `184230000` means `1,842,300.00` for a two-decimal currency.
+
+</Step>
+<Step>
+
+### Check `duplicate_count` first
+
+Duplicate references in the same source are detected before matching. A non-zero `duplicate_count` means some rows were excluded from matching entirely, and their duplicates do not appear in `matched` or `unmatched`.
+
+```json
+{
+  "type": "duplicates",
+  "source": "bank",
+  "reference": "TXN-001",
+  "rows": [...]
+}
+```
+
+Fix duplicate references in your source data before drawing conclusions about unmatched counts.
+
+</Step>
+<Step>
+
+### Inspect `amount_diff` and `timing_diff`
+
+These sections contain rows where a reference was found on both sides but the amounts or dates do not align.
+
+- `amount_diff`: same reference, date within window, amount outside tolerance.
+- `timing_diff`: same reference, amount within tolerance, date outside window.
+
+`timing_diff` rows often indicate a timezone or date format mismatch in the parser config rather than a genuine reconciling item.
+
+</Step>
+<Step>
+
+### Review unmatched rows
+
+`unmatched_left` contains rows present on the left source but not reconciled to the right.
+`unmatched_right` is the mirror.
+
+```json
+{
+  "type": "unmatched_left",
+  "transaction": {
+    "reference": "TXN-099",
+    "date": "2024-01-15T00:00:00Z",
+    "amount": 15000
+  }
+}
+```
+
+The most common causes are a reference format difference between sources (`TXN-099` vs `099`), a missing row on one side, or a date outside the configured `date_window`.
+
+</Step>
+</Steps>
+
+## Verify it worked
+
+Calculate `total_discrepancy` manually to cross-check the summary:
+
+```text
+total_discrepancy = unmatched_amount_left + unmatched_amount_right + amount_diff_total
+```
+
+If `total_discrepancy` is zero and `matched` equals the row count you expect, the reconciliation is clean. If it's non-zero, the amount in `total_discrepancy` is what remains unexplained. Investigate the unmatched and amount-diff rows to account for it.

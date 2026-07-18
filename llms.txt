@@ -147,11 +147,10 @@ pairs:
 
 ## Docs
 
-- [Engine internals](docs/engine/README.md): matching passes, index backends, streaming model
-- [Performance notes](docs/performance/README.md): memory, benchmarks, large-file recommendations
+- [Engine internals](docs/content/docs/cli/engine/index.md): matching passes, index backends, streaming model
+- [Performance notes](docs/content/docs/cli/performance/index.md): memory, benchmarks, large-file recommendations
 
 ## Optional
 
 - [Contributing guide](CONTRIBUTING.md)
 - [Benchmark scripts](scripts/): `bench_full.sh`, `bench_rss.sh`
-- [Production readiness report](docs/content/docs/performance/production-readiness-report.md)

@@ -1,0 +1,63 @@
+---
+title: Output Formats
+description: JSON, JSON stream, NDJSON, CSV, and table output behavior.
+---
+
+## `json`
+
+Indented JSON object. Best for smaller files and integrations that need one complete result document.
+
+It buffers the full result before writing.
+
+## `json-stream`
+
+Streaming JSON object with the same general structure as `json`, but it encodes events as they are processed.
+
+Use it for lower memory pressure when consumers still expect JSON-like structure. If the process is interrupted, output may be invalid JSON.
+
+## `ndjson`
+
+One tagged JSON event per line.
+
+```json
+{"type":"match","data":{}}
+{"type":"summary","data":{}}
+```
+
+NDJSON is streaming, O(1) for result writing, and crash-safe for already-written lines.
+
+## `csv`
+
+Fixed-schema CSV-style output suitable for spreadsheet inspection or downstream processing.
+
+## `table`
+
+Aligned ASCII table for interactive inspection. It buffers rows and is not intended for large outputs.
+
+## Audit support
+
+`--audit` works with:
+
+- `json`
+- `json-stream`
+- `ndjson`
+
+It is not supported for `csv` or `table`.
+
+## Event filtering
+
+Use `--result-mode` to control item events without changing summary totals:
+
+| Mode | Output |
+|---|---|
+| `all` | Every event, including clean matches. Default. |
+| `exceptions_only` | Unmatched rows, diffs, duplicates, and ambiguous groups. |
+| `summary_only` | Only the final summary. |
+
+The mode can also be set as `result_mode` on a pair in `reconify.yaml`; an
+explicit CLI flag overrides that value. Telemetry written by `--progress-out`
+is independent of this filtering.
+
+For `rights` multi-counterpart runs, `json`, `json-stream`, and `ndjson` include
+per-counterpart summaries (`by_source` or `source_summary`). CSV and table output
+contain only the aggregate reconciliation result.

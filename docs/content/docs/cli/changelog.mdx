@@ -1,0 +1,37 @@
+---
+title: Changelog
+description: Current notable Reconify changes, separated from planned upcoming behavior.
+---
+
+## Unreleased
+
+The Reconify repository currently tracks changes under an `Unreleased` heading.
+
+## Implemented docs surface
+
+The docs site treats the following as implemented because the current CLI code contains them:
+
+- `reconify config init`
+- `reconify config validate`
+- `reconify config check-source`
+- `reconify parse`
+- `reconify reconcile`
+- Parser support for CSV, JSON, NDJSON, XLSX, and XLSM.
+- Output formats `json`, `json-stream`, `ndjson`, `csv`, and `table`.
+- Audit output through `--audit`.
+- Deterministic JSON ordering through `--deterministic`.
+- Progress logging through `--progress`.
+- Memory, disk, and auto right-side index backends.
+
+## Planned or not yet documented as implemented
+
+Some changelog entries describe behavior that is not present in the inspected CLI implementation. These are kept in [Upcoming](/docs/cli/upcoming) until implemented:
+
+- standalone `reconify validate`
+- default validation before reconciliation
+- `--skip-validation`
+- `--fail-on-warning`
+
+## Source of truth
+
+For implemented behavior, these docs follow the current Reconify source code and public README. The changelog can describe intended direction, but command references only list commands present in the CLI.

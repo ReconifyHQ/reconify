@@ -1,0 +1,165 @@
+---
+title: Reconcile
+description: Run a configured pair and understand the output flags that control format, streaming, and audit behavior.
+---
+
+Running a reconciliation is a single command once your config is valid. The command streams the left
+source against an indexed right source and emits every match, difference, and unmatched row to a
+file or stdout. The flags you choose here determine how the output is structured, how much memory
+the run uses, and whether the result is reproducible.
+
+## What you'll learn
+
+By the end of this guide, you know:
+
+- how to run a basic reconciliation and write results to a file,
+- when to use streaming formats and why they matter for large files,
+- and how to override input files per run without editing your config.
+
+## How it works
+
+Reconify indexes the right source first, then streams the left source row by row and emits events
+as it goes. See [Overview](/docs/cli/concepts/overview) for the full pipeline and
+[Matching](/docs/cli/concepts/matching) for how individual rows are classified.
+
+## Command
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --out results.json
+```
+
+## Steps
+
+<Steps>
+<Step>
+
+### Run a basic reconciliation
+
+`--pair` matches a key under `pairs` in your config. `--out` writes to a file. Omit it or use `-o -` to write to stdout.
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --out results.json
+```
+
+</Step>
+<Step>
+
+### Choose an output format
+
+Pass `--format` to control how results are structured. The default is `json`.
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --format ndjson \
+  --out results.ndjson
+```
+
+| Format | When to use |
+|---|---|
+| `json` | Default. Full result as a single JSON object. Good for files under ~500k rows. |
+| `json-stream` | Each section emitted as a separate JSON object. Lower peak memory. |
+| `ndjson` | One event per line. Best for piping into `jq` or downstream tools. |
+| `csv` | Flat row-per-event. Best for loading into spreadsheets or databases. |
+| `table` | Human-readable terminal output. Not suitable for machine consumption. |
+
+For files above roughly 500k rows, prefer `json-stream`, `ndjson`, or `csv`.
+
+</Step>
+<Step>
+
+### Override input files without editing the config
+
+When you need to run a specific pair of files rather than the glob from your config:
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --left-file data/bank/january.csv \
+  --right-file data/stripe/january.csv \
+  --out results.json
+```
+
+This is useful in CI pipelines where filenames include a date or run ID.
+
+</Step>
+<Step>
+
+### Enable progress logging for large runs
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --format ndjson \
+  --progress \
+  --progress-every 1000000 \
+  --out results.ndjson
+```
+
+Progress logs go to stderr, not the output file, so they don't interfere with piped output.
+
+</Step>
+<Step>
+
+### Control the token-match buffer
+
+When `name_mode: "tokens"` is set in your pair config, unmatched rows are buffered for token
+matching after reference matching completes.
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --max-token-buffer 100000
+```
+
+Set `--max-token-buffer 0` for unlimited buffering, but only when you have enough memory for the
+full unmatched set.
+
+</Step>
+<Step>
+
+### Emit only exceptions or fail CI on unmatched rows
+
+Suppress clean match events when a downstream process only needs exceptions:
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --format ndjson \
+  --result-mode exceptions_only \
+  --out exceptions.ndjson
+```
+
+Use `--fail-if-unmatched` in automation when any unmatched row should fail the
+job. Reconify exits with code `3` after completing the output.
+
+</Step>
+</Steps>
+
+## Verify it worked
+
+Open `results.json` (or pipe NDJSON through `jq`) and check the `summary` section first:
+
+```json
+{
+  "type": "summary",
+  "matched": 842,
+  "unmatched_left": 3,
+  "unmatched_right": 1,
+  "amount_diff_count": 0,
+  "timing_diff_count": 2
+}
+```
+
+A healthy run has high `matched` and low unmatched/diff counts. If `unmatched_left` or `unmatched_right` is unexpectedly high, read the unmatched rows and check for reference format mismatches, the most common cause. See [Read Results](/docs/cli/guides/read-results) for the full investigation workflow.

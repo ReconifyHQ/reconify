@@ -1,0 +1,95 @@
+---
+title: Bank statement vs PSP settlement
+description: Build a repeatable reconciliation between bank activity and a payment-service-provider export.
+---
+
+Use this workflow when your application takes payments through a PSP and you need to prove which processor transactions reached the bank. It is especially useful when settlement timing, fees, refunds, or missing payouts make a spreadsheet comparison unreliable.
+
+## What to prepare
+
+Before writing a config, decide what a row represents on each side:
+
+- **Bank side:** posted cash movement from a statement or bank export.
+- **PSP side:** the processor record that should explain that movement—normally a payout or settlement export, rather than every individual charge.
+- **Match key:** a shared payout, settlement, or transfer identifier. Use it as `ref_col` when both exports contain it.
+
+If one bank settlement represents many PSP charges, do not reconcile the bank row directly against individual charges. Export or calculate a PSP settlement-level source first so that one row represents the same economic event on both sides.
+
+## Configure the sources
+
+Bank exports often contain major units such as `123.45`; PSP exports often contain minor units such as `12345`. Normalize both to minor units with `multiplier`.
+
+```yaml
+sources:
+  bank:
+    file_pattern: "data/bank/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      amount_col: "Amount"
+      decimal: "."
+      thousands: ","
+      multiplier: 100
+      currency_col: "Currency"
+      ref_col: "Settlement reference"
+      name_col: "Details"
+
+  psp_settlements:
+    file_pattern: "data/psp/*.csv"
+    parser:
+      type: csv
+      date_col: "payout_date"
+      date_layout: "2006-01-02"
+      amount_col: "net_amount"
+      multiplier: 1
+      currency_col: "currency"
+      ref_col: "payout_id"
+      name_col: "description"
+
+pairs:
+  bank_vs_psp:
+    left: bank
+    right: psp_settlements
+    date_window: "2d"
+    amount_tolerance_minor: 0
+    name_mode: "none"
+```
+
+Start with exact reference matching and a zero tolerance. Increase the date window only for a known settlement delay; do not use a wider window to hide an incorrect mapping.
+
+## Validate before you reconcile
+
+```bash
+reconify config validate --config reconify.yaml
+reconify config check-source --config reconify.yaml --source bank --file data/bank/january.csv
+reconify config check-source --config reconify.yaml --source psp_settlements --file data/psp/january.csv
+```
+
+Use `reconify parse` on either source if a date, amount, reference, or currency looks unexpected. This catches column and minor-unit errors before they become a large exception report.
+
+## Run and automate
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_psp \
+  --format ndjson \
+  --audit \
+  --out results/bank-vs-psp-2026-01.ndjson
+```
+
+NDJSON is a practical choice for scheduled jobs because consumers can process one event at a time. `--audit` records run provenance in structured output; use `--deterministic` as well when you need stable JSON output for repeatable comparisons.
+
+## Investigate the result
+
+| Outcome | What it usually means | First check |
+|---|---|---|
+| `timing_diff` | Settlement and bank posting dates differ. | Confirm the PSP payout date versus the bank value date. |
+| `amount_diff` | A shared reference exists, but values do not agree. | Check whether one source is gross while the other is net of fees, refunds, or reserves. |
+| `unmatched_left` | A bank movement has no PSP settlement counterpart. | Check bank fees, chargebacks, manual transfers, or an incomplete PSP export. |
+| `unmatched_right` | A PSP settlement has not appeared in the bank source. | Check the settlement date, bank period, and payout status. |
+
+## Why use Reconify for this workflow
+
+Reconify is a strong fit when you need the comparison to be repeatable and inspectable: the mapping and matching rules live in versionable YAML, the engine normalizes unlike exports into one transaction model, and it classifies exceptions instead of silently forcing a fuzzy match. It is not a replacement for a PSP's reporting product or your accounting system; it provides the deterministic reconciliation layer between them.

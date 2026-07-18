@@ -1,0 +1,42 @@
+---
+title: Minor Units and Tolerances
+description: Configure amount multipliers and tolerances without hiding real differences.
+---
+
+Reconify stores all amounts as minor units internally, regardless of how the source file represents them. The `multiplier` field controls the conversion.
+
+## Major-unit input
+
+When the source file contains decimal amounts like `1,234.56`, set `multiplier: 100` to convert to minor units.
+
+```yaml
+amount_col: "Amount"
+decimal: "."
+thousands: ","
+multiplier: 100
+```
+
+`1,234.56` becomes `123456`.
+
+## Minor-unit input
+
+When the source file already contains minor units like `123456`, set `multiplier: 1`.
+
+```yaml
+amount_col: "amount_minor"
+multiplier: 1
+```
+
+`123456` remains `123456`.
+
+## Tolerance
+
+`amount_tolerance_minor` sets the maximum difference, in minor units, that still counts as a match.
+
+```yaml
+amount_tolerance_minor: 5
+```
+
+This permits a five-minor-unit difference (for example, `0.05` in a two-decimal currency).
+
+Keep tolerance at `0` unless you know the source systems introduce rounding differences. A tolerance that is too wide hides real reconciliation problems.

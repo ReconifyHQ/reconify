@@ -1,0 +1,67 @@
+---
+title: Bank statement vs internal ledger
+description: Reconcile posted bank activity with application or accounting-ledger exports.
+---
+
+Use this workflow to find records your system expected to settle but the bank does not show, and bank movements your ledger has not recorded. It fits daily cash controls, payout verification, and a close process that needs a reproducible exception file.
+
+## Decide the comparison boundary
+
+Choose the same business period and the same level of aggregation on both sides. A bank statement is normally one row per posted cash movement; the ledger export should represent the corresponding posting or settlement, not a mixture of pending authorizations and completed movements.
+
+Before running, confirm:
+
+- credits and debits use the same sign convention;
+- reversals and refunds have the same treatment on both sides;
+- pending ledger rows are excluded or kept in a separate source;
+- a stable payment, journal, or transfer identifier is available as `ref_col`.
+
+## Configure exact matching first
+
+```yaml
+pairs:
+  bank_vs_ledger:
+    left: bank
+    right: ledger
+    date_window: "2d"
+    amount_tolerance_minor: 0
+    name_mode: "none"
+```
+
+Two days accommodates common posting delays. Keep `name_mode: "none"` while you establish data quality; it makes every accepted match explainable by the shared reference plus amount and date rules.
+
+For a ledger already stored in minor units, use:
+
+```yaml
+amount_col: "amount_minor"
+multiplier: 1
+```
+
+For major-unit values such as `123.45`, use `multiplier: 100` with the relevant decimal and thousands separators.
+
+## Build the job
+
+```bash
+reconify config check-source --config reconify.yaml --source ledger --file data/ledger/2026-01.csv
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_ledger \
+  --format json \
+  --audit \
+  --out results/bank-vs-ledger-2026-01.json
+```
+
+Run `config check-source` whenever the upstream export schema changes. Store the config and output alongside the job's period identifier so the same run can be reproduced later.
+
+## Turn exceptions into engineering work
+
+- **Unmatched bank record:** determine whether it is a bank fee, manual transaction, delayed import, or a missing ledger posting.
+- **Unmatched ledger record:** determine whether it is pending, failed to settle, was posted in a different period, or uses a mismatched reference.
+- **Amount difference:** confirm sign, currency, rounding, and whether fees or tax are represented differently.
+- **Timing difference:** compare the ledger event date, posting date, and bank value date before changing `date_window`.
+
+Only test `name_mode: "tokens"` after sampling its output against known records. Token matching can help where references are absent, but it should be an explicit business decision rather than the default.
+
+## Why use Reconify for this workflow
+
+The engine separates parser configuration from matching policy, so an export-column change does not require rewriting a reconciliation program. It also emits matched, unmatched, amount-difference, timing-difference, and duplicate outcomes separately, allowing the downstream workflow to route only genuine exceptions instead of asking people to re-review every row.

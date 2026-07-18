@@ -1,0 +1,129 @@
+---
+title: Create a Config
+description: Build a reconify.yaml that tells Reconify where your files are and how to parse them.
+---
+
+Every Reconify run reads a single `reconify.yaml` file. That file defines your sources (where files
+live and how to parse them), your pairs (which two sources to compare and under what rules), and
+optional index settings for large files. Getting the config right once means every subsequent run
+is a single command.
+
+## What you'll learn
+
+By the end of this guide, you know:
+
+- the minimum fields required to describe a source and a pair,
+- how parsers map source-specific column names to Reconify's normalized transaction model,
+- and how to validate your config before running a reconciliation.
+
+## How it works
+
+Reconify's config is declarative: you describe your data, and Reconify handles parsing, normalization,
+and matching. Each source maps to one `parser` block, and each pair links two sources. See
+[Overview](/docs/cli/concepts/overview) for how those pieces fit into the full pipeline.
+
+## Command
+
+<Callout title="Prefer a faster start?">
+  Run `reconify config init` to generate this file interactively from your sample data instead of writing it by hand. See [`reconify config init`](/docs/cli/reference/cli#reconify-config-init).
+</Callout>
+
+```bash
+reconify config validate --config reconify.yaml
+```
+
+## Steps
+
+<Steps>
+<Step>
+
+### Create `reconify.yaml`
+
+Start with the minimum shape: two sources and one pair.
+
+```yaml
+version: 1
+timezone: "UTC"
+
+sources:
+  bank:
+    file_pattern: "data/bank.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      amount_col: "Amount"
+      decimal: "."
+      thousands: ","
+      multiplier: 100
+      ref_col: "Reference"
+      name_col: "Description"
+
+  ledger:
+    file_pattern: "data/ledger.csv"
+    parser:
+      type: csv
+      date_col: "posted_at"
+      date_layout: "2006-01-02"
+      amount_col: "amount_minor"
+      multiplier: 1
+      ref_col: "payment_id"
+      name_col: "memo"
+
+pairs:
+  bank_vs_ledger:
+    left: bank
+    right: ledger
+    date_window: "1d"
+    amount_tolerance_minor: 0
+    name_mode: "none"
+```
+
+`multiplier` converts source amounts to minor units. Use `100` when the file contains `123.45` (major units). Use `1` when it already contains `12345` (minor units, as in Stripe's API output).
+
+</Step>
+<Step>
+
+### Add index settings for large files
+
+If your right-side file can exceed a few hundred MB, add an `index` block so Reconify spills to disk
+automatically instead of running out of memory.
+
+```yaml
+index:
+  backend: auto
+  spill_dir: "/tmp/reconify"
+  auto_max_right_file_mb: 2048
+```
+
+</Step>
+<Step>
+
+### Validate the config
+
+Validation catches missing required fields, unknown sources in pairs, invalid parser types, invalid timezones, invalid date window units, and negative tolerances.
+
+```bash
+reconify config validate --config reconify.yaml
+```
+
+Fix any reported errors before proceeding.
+
+</Step>
+</Steps>
+
+## Verify it worked
+
+A passing validate run prints:
+
+```text
+reconify.yaml is valid
+```
+
+If anything is wrong, the error message names the specific field. The most common issues are listed below.
+
+- `multiplier` is `0`, which is not valid. It must be a positive integer.
+- `date_layout` uses the wrong reference date. Reconify uses Go's reference time (`2006-01-02`, not `YYYY-MM-DD`).
+- A pair references a source name that does not exist in `sources`.
+
+Once the config is valid, run [`reconify config check-source`](/docs/cli/guides/check-source) to confirm your actual input files match the parser settings.

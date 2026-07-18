@@ -1,0 +1,65 @@
+---
+title: Stripe-style payout exports
+description: Normalize PSP exports and choose the correct transaction grain before reconciliation.
+---
+
+Use this guide for Stripe-like processor exports whose amount values are already in minor units. The important engineering choice is not the provider name—it is selecting the export whose rows represent the same settlement event as the other source.
+
+## Choose the right export
+
+| Your comparison | PSP export should represent | Avoid comparing directly |
+|---|---|---|
+| Bank statement vs processor | A payout or settlement | One bank payout against individual charges |
+| Internal ledger vs processor | The ledger's recorded charge, refund, or payout | A net settlement against gross charges |
+| Charge-level investigation | Individual balance transactions or charges | Aggregated payout totals |
+
+When the grains differ, aggregate the detailed source upstream or create a source file with one row per settlement before Reconify runs.
+
+## Configure a minor-unit source
+
+```yaml
+sources:
+  stripe_payouts:
+    file_pattern: "data/stripe/*.csv"
+    parser:
+      type: csv
+      date_col: "created"
+      date_layout: "2006-01-02"
+      amount_col: "amount"
+      multiplier: 1
+      currency_col: "currency"
+      ref_col: "id"
+      name_col: "description"
+```
+
+`multiplier: 1` preserves a value such as `1500` as 1,500 minor units. Do not set it to `100` unless the selected export actually contains major-unit decimals.
+
+## Validate real data before scheduling
+
+```bash
+reconify config check-source \
+  --config reconify.yaml \
+  --source stripe_payouts \
+  --file data/stripe/payouts-2026-01.csv
+
+reconify parse \
+  --config reconify.yaml \
+  --source stripe_payouts \
+  --file data/stripe/payouts-2026-01.csv \
+  --format table
+```
+
+Inspect a small sample for these common problems:
+
+- timestamp values require a full Go time layout, not just `2006-01-02`;
+- multiple amount columns may distinguish gross, fee, net, and available balance;
+- a payout may settle after the charge date, so match on the relevant payout reference and date;
+- refunds, disputes, and adjustments can legitimately reverse the sign.
+
+## Reconcile against a bank source
+
+Use a payout or settlement identifier as the reference on both sources whenever it is available. Start with a zero tolerance, then make any fee or rounding policy explicit in the prepared data or pair configuration. See [Bank statement vs PSP settlement](/docs/cli/mini-guides/bank-vs-psp) for the full workflow and exception triage.
+
+## Why Reconify helps
+
+Reconify gives you a configurable normalization step before matching, then produces structured result events suitable for a script or service. That makes it useful when provider exports, bank formats, and ledger fields differ but the reconciliation policy must remain visible, reviewable, and repeatable.

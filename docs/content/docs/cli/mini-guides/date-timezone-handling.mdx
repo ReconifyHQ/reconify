@@ -1,0 +1,38 @@
+---
+title: Date and Timezone Handling
+description: Configure date layouts, source timezones, and date windows.
+---
+
+Reconify uses Go time layouts to parse dates. The reference date is `Mon Jan 2 15:04:05 MST 2006`, and every layout string uses that specific reference time.
+
+ISO format (`2026-06-16`):
+
+```yaml
+date_layout: "2006-01-02"
+```
+
+Day-first format (`16/06/2026`):
+
+```yaml
+date_layout: "02/01/2006"
+```
+
+## Source timezone
+
+Some source files record local dates without a timezone offset. Use `tz` to tell Reconify how to interpret them.
+
+```yaml
+tz: "Africa/Lagos"
+```
+
+The value must be a valid IANA timezone identifier.
+
+## Pair date window
+
+Settlement and posting dates often differ by one or two days between a PSP and a bank statement. The `date_window` setting absorbs that gap.
+
+```yaml
+date_window: "2d"
+```
+
+If `timing_diff` is unexpectedly high, check `date_layout`, `tz`, and whether one source uses settlement dates while the other uses transaction dates.

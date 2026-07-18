@@ -1,0 +1,128 @@
+---
+title: CLI Reference
+description: Implemented Reconify commands and flags.
+---
+
+## Global flags
+
+```bash
+reconify --config reconify.yaml --verbose
+```
+
+| Flag | Default | Description |
+|---|---:|---|
+| `--config`, `-c` | `reconify.yaml` | Path to configuration file. |
+| `--verbose`, `-v` | `false` | Enable verbose output. |
+| `--error-format` | `text` | `text` or `json`; JSON errors are written to stderr with an error code. |
+| `--version` | | Print version and build time. |
+
+If `--config` is not set, Reconify also checks `RECONIFY_CONFIG`.
+
+## `reconify config init`
+
+```bash
+reconify config init --out reconify.yaml
+```
+
+Interactively creates a `reconify.yaml` configuration from sample input files. The wizard reads source headers, asks you to map transaction fields, and writes a validated Reconify configuration file.
+
+| Flag | Default | Description |
+|---|---:|---|
+| `--out` | `reconify.yaml` | Destination config file. |
+| `--force` | `false` | Overwrite destination if it exists. |
+
+The wizard prompts for:
+
+- Output path and timezone.
+- Left and right source names, plus a sample file path for each. Parser type is inferred from the file extension: `.csv` → `csv`, `.json`/`.ndjson` → `json`, `.xlsx`/`.xlsm` → `xlsx`, otherwise `auto`.
+- Column mapping for date, amount, currency, name, and reference per source, with defaults auto-guessed from header names (for example, a header containing "date", "amount", "reference").
+- Pair name (defaults to `<left>_vs_<right>`), date window (default `1d`), amount tolerance in minor units (default `0`), and name matching mode (`tokens` or `none`).
+
+Reconify validates the generated config before writing it and asks for confirmation. On success it prints `[OK] wrote <path>` and `[OK] <path> is valid` to stderr. Cancelling at any prompt prints `Config init cancelled.` and exits cleanly.
+
+## `reconify config validate`
+
+```bash
+reconify config validate --config reconify.yaml
+```
+
+Validates configuration structure, parser fields, pair references, index settings, timezones, date windows, and tolerances.
+
+## `reconify config schema`
+
+```bash
+reconify config schema
+```
+
+Prints a machine-readable JSON description of the YAML configuration, output
+formats, NDJSON event types, and CLI exit codes. This is the preferred bootstrap
+interface for tools and agents that need the current schema.
+
+## `reconify config check-source`
+
+```bash
+reconify config check-source \
+  --config reconify.yaml \
+  --source bank \
+  --file data/bank.csv
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--source` | yes | Source name to check. |
+| `--file` | yes | Input file to validate against the source parser. |
+
+## `reconify parse`
+
+```bash
+reconify parse \
+  --config reconify.yaml \
+  --source bank \
+  --file data/bank.csv \
+  --format ndjson
+```
+
+| Flag | Required | Default | Description |
+|---|---|---:|---|
+| `--source` | yes | | Source parser to use. |
+| `--file` | yes | | Input file path. |
+| `--format` | no | `ndjson` | `ndjson`, `csv`, `table`, or `json`. |
+
+## `reconify reconcile`
+
+```bash
+reconify reconcile \
+  --config reconify.yaml \
+  --pair bank_vs_stripe \
+  --out results.json
+```
+
+| Flag | Required | Default | Description |
+|---|---|---:|---|
+| `--pair` | yes | | Pair name to reconcile. |
+| `--out`, `-o` | no | `-` | Output file path; `-` writes stdout. |
+| `--left-file` | no | | Explicit left input file. |
+| `--right-file` | no | | Explicit right input file. |
+| `--format` | no | `json` | `json`, `json-stream`, `ndjson`, `csv`, or `table`. |
+| `--max-token-buffer` | no | `100000` | Advisory row limit for token-mode unmatched buffer; `0` means unlimited. |
+| `--audit` | no | `false` | Add run provenance to structured output. |
+| `--audit-fixed-timestamp` | no | | RFC3339/RFC3339Nano timestamp for byte-identical audit reruns. |
+| `--deterministic` | no | `false` | Sort JSON output sections for stable diffs. |
+| `--fail-if-unmatched` | no | `false` | Exit with code `3` after a completed run if either side has unmatched rows. |
+| `--heartbeat-every` | no | `30s` | Wall-clock interval for telemetry heartbeat events. |
+| `--partition-workers` | no | `0` | Concurrent workers for the partitioned backend; `0` or `1` is serial. |
+| `--partition-queue-capacity` | no | derived | Maximum completed partition descriptors waiting for the final writer. |
+| `--partition-max-chunk-mb` | no | `0` | Maximum disk-backed partition result chunk size in MiB; `0` is unlimited. |
+| `--progress` | no | `false` | Log progress to stderr. |
+| `--progress-every` | no | `1000000` | Row interval for progress logs. |
+| `--progress-out` | no | | Write machine-readable telemetry NDJSON to a separate file. |
+| `--result-mode` | no | pair config / `all` | `all`, `exceptions_only`, or `summary_only`; overrides the pair setting. |
+
+`--audit` is supported for `json`, `json-stream`, and `ndjson`. `--deterministic`
+only affects buffered `json` output. `--progress-out` must differ from `--out`.
+For multi-counterpart `rights` pairs, `--right-file` does not apply and audit is
+not currently supported; progress telemetry covers each counterpart pass.
+
+## Not implemented yet
+
+The changelog mentions standalone `reconify validate` and validation flags such as `--skip-validation` and `--fail-on-warning`. Those are planned/unreleased until present in the CLI code.

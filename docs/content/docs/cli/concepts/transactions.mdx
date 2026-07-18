@@ -1,0 +1,40 @@
+---
+title: Transactions
+description: The normalized transaction model Reconify uses after parsing.
+---
+
+Every source row becomes a transaction with the same fields:
+
+```go
+type Transaction struct {
+    ID        string
+    Date      time.Time
+    Amount    int64
+    Currency  string
+    Reference string
+    Name      string
+    Source    string
+    Raw       map[string]string
+}
+```
+
+## Minor units
+
+`Amount` is always stored in minor units. For currencies with two decimals, `150000` means `1500.00`.
+
+The parser `multiplier` controls conversion:
+
+- Use `100` when source files contain major units like `123.45`.
+- Use `1` when source files already contain minor units like Stripe amount fields.
+
+## Optional fields
+
+`currency_col`, `name_col`, and `ref_col` are optional. If omitted or missing, the transaction still parses, but matching behavior changes:
+
+- Empty references never participate in reference matching.
+- Empty names are less useful for token matching.
+- Empty currency is allowed, but mixed non-empty currencies fail reconciliation.
+
+## Raw fields
+
+By default, parsed transactions can include `raw`, the original row/object fields. Set `skip_raw: true` on large sources when you do not need original fields in output and want lower allocation pressure.

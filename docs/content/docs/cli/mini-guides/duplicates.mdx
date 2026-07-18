@@ -1,0 +1,27 @@
+---
+title: Duplicates
+description: Understand and investigate duplicate references in reconciliation output.
+---
+
+Reconify groups transactions in the same source that share a non-empty reference. Only the first occurrence participates in matching. The rest of the group is emitted in output for review.
+
+## Why duplicates matter
+
+A non-zero `duplicate_count` means some rows were excluded from matching before reconciliation began, which can make unmatched counts misleading. Common causes include:
+
+- repeated export rows from the source system,
+- reused payment references across separate transactions,
+- partial settlement records for the same reference,
+- refunds or reversals sharing the original transaction ID,
+- or source-system data quality problems.
+
+Empty references are never grouped as duplicates.
+
+## Investigation flow
+
+The steps below walk from detection to resolution.
+
+1. Check `summary.duplicate_count`.
+2. Open the `duplicates` section to see which references are affected.
+3. Confirm whether repeated references are expected in this source.
+4. Fix the source export or adjust upstream reference selection if the reference field is not unique enough.

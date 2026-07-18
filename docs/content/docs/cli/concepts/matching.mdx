@@ -1,0 +1,52 @@
+---
+title: Matching
+description: How Reconify classifies matches, differences, duplicates, and unmatched rows.
+---
+
+Reconify applies matching in tiers. Earlier matches are removed from later consideration.
+
+```mermaid
+flowchart TD
+  A["Parsed transactions\n(left + right)"] --> B["Duplicate detection"]
+  B --> C{"Duplicate refs\nin same source?"}
+  C -- "Yes" --> D["Emit duplicates\n(first occurrence continues)"]
+  C -- "No" --> E["Reference matching"]
+  D --> E
+  E --> F{"Shared\nreference?"}
+  F -- "Match + in window" --> G["matched"]
+  F -- "Match + amount diff" --> H["amount_diff"]
+  F -- "Match + date diff" --> I["timing_diff"]
+  F -- "No match" --> J["Name-token matching\n(if name_mode: tokens)"]
+  J --> K{"Token\nsimilarity?"}
+  K -- "Yes" --> L["matched"]
+  K -- "No" --> M["unmatched_left\nor unmatched_right"]
+```
+
+## Duplicate detection
+
+Transactions in the same source with the same non-empty reference are grouped as duplicates. Only the first occurrence participates in matching.
+
+Empty references are never grouped as duplicates.
+
+## Reference matching
+
+Reference matching is the primary path. When a left and right transaction share the same reference:
+
+- They are `matched` when amount and date are within the configured rules.
+- They are `amount_diff` when the date is acceptable but the amount exceeds tolerance.
+- They are `timing_diff` when the amount is acceptable but the date is outside the date window.
+
+## Name-token matching
+
+Set `name_mode: "tokens"` to compare remaining unmatched transactions by token similarity on `Name`.
+
+Token matching applies only after reference matching. It cannot override a reference match.
+
+## Unmatched rows
+
+Rows that do not match by reference or name tokens are emitted as:
+
+- `unmatched_left`
+- `unmatched_right`
+
+These represent entries present on one side but not reconciled to the other side.
