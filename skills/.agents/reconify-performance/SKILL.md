@@ -16,7 +16,7 @@ Use this skill for performance-sensitive work in the parser, reconciler, output 
 - Output writer memory behavior: `engine/format.go`
 - Right-side indexes: `engine/index.go`, `engine/index_disk.go`
 - Benchmark data and runners: `scripts/gen_bench_data.go`, `scripts/bench_full.sh`, `scripts/bench_rss.sh`
-- Performance docs: `docs/content/docs/performance/index.md`
+- Performance docs: `docs/content/docs/cli/performance/index.md`
 
 ## Quick Verification
 
@@ -37,7 +37,7 @@ go test -run Test -bench=BenchmarkReconcile -benchmem ./engine
 3. Prefer streaming formats for large jobs: `ndjson`, `csv`, or `json-stream`.
 4. Use `index.backend: auto` or `disk` when the right-side file is large enough to risk memory pressure.
 5. Re-run the same benchmark after changes and compare allocations, ns/op, and peak RSS when available.
-6. Update `docs/content/docs/performance/index.md` only with reproducible numbers and the exact command used.
+6. Update `docs/content/docs/cli/performance/index.md` only with reproducible numbers and the exact command used.
 
 ## Large-File CLI Patterns
 

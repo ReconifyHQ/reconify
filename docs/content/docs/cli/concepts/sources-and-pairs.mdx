@@ -1,0 +1,63 @@
+---
+title: Sources and Pairs
+description: How source definitions and reconciliation pairs work together.
+---
+
+## Sources
+
+A source names one family of input files and tells Reconify how to parse them.
+
+```yaml
+sources:
+  bank:
+    file_pattern: "data/bank/*.csv"
+    parser:
+      type: csv
+      date_col: "Date"
+      date_layout: "2006-01-02"
+      amount_col: "Amount"
+      multiplier: 100
+      ref_col: "Reference"
+      name_col: "Description"
+```
+
+`file_pattern` is used by `reconcile` when explicit file flags are not provided.
+
+## Pairs
+
+A pair tells Reconify which two sources to compare.
+
+```yaml
+pairs:
+  bank_vs_psp:
+    left: bank
+    right: psp
+    date_window: "1d"
+    amount_tolerance_minor: 0
+    name_mode: "none"
+```
+
+The right source is indexed first. For large runs, choose the smaller or more index-friendly file as the right side when possible.
+
+## Multiple pairs
+
+You can define multiple pairs in one config:
+
+```yaml
+pairs:
+  bank_vs_stripe:
+    left: bank
+    right: stripe
+    date_window: "1d"
+    amount_tolerance_minor: 0
+    name_mode: "tokens"
+
+  bank_vs_ledger:
+    left: bank
+    right: ledger
+    date_window: "2d"
+    amount_tolerance_minor: 5
+    name_mode: "none"
+```
+
+Run a specific pair with `--pair`.

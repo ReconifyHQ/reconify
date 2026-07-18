@@ -1,0 +1,40 @@
+---
+title: FAQ
+description: Common Reconify setup and reconciliation questions.
+---
+
+## Which file formats are supported?
+
+CSV, JSON, NDJSON, XLSX, and XLSM are supported. Legacy `.xls` files are not supported. See [Excel Workbooks](/docs/cli/mini-guides/excel-workbooks) for XLSX-specific setup.
+
+## Why are amounts large integers?
+
+Reconify stores amounts in minor units. For a two-decimal currency, `12345` means `123.45`. See [Minor Units and Tolerances](/docs/cli/mini-guides/minor-units-and-tolerances) for how to configure the `multiplier` field.
+
+## Which side should be left or right?
+
+The right side is indexed first. For large runs, choose a right file that fits the desired index backend. Behaviorally, left and right also determine which unmatched section a row appears in.
+
+## Why did a row become `amount_diff`?
+
+The reference matched and the date was within the window, but the amount exceeded `amount_tolerance_minor`. See [Read Results](/docs/cli/guides/read-results) for the investigation workflow.
+
+## Why did a row become `timing_diff`?
+
+The reference and amount matched, but the date difference exceeded `date_window`. This often indicates a timezone or date format mismatch in the parser config rather than a genuine discrepancy. See [Date and Timezone Handling](/docs/cli/mini-guides/date-timezone-handling).
+
+## Why do I have many unmatched rows?
+
+Check parser fields first. Wrong date, amount, reference, or name columns can cause expected matches to miss. Run `config check-source` and `parse` before changing matching rules. See [Debug Column Mapping](/docs/cli/mini-guides/debug-column-mapping) for a step-by-step diagnosis workflow.
+
+## Does Reconify support fuzzy matching?
+
+The implemented fallback is token-based name matching with `name_mode: "tokens"`. Reference matching always runs first. See [Matching](/docs/cli/concepts/matching) for how the tiers work.
+
+## Can I run very large files?
+
+Yes. Use streaming output (`ndjson`, `csv`, or `json-stream`), configure `index.backend: auto` or `disk`, and enable `--progress`. See [Large Files](/docs/cli/guides/large-files) for the full tuning guide.
+
+## Can I get audit metadata?
+
+Yes. Use `--audit` with `json`, `json-stream`, or `ndjson`. See [Audit and Deterministic Runs](/docs/cli/guides/audit-and-deterministic-runs).

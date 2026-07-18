@@ -117,7 +117,7 @@ These fields are populated at the writer boundary by `WrapWithResultMode` when a
 
 ## Config file format
 
-The CLI reads a YAML config file. The API generates this automatically from request body params.
+The CLI reads a YAML config file. The engine package exposes the same configuration model to Go callers.
 
 ```yaml
 version: 1

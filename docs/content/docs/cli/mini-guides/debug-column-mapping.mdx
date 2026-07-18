@@ -1,0 +1,41 @@
+---
+title: Debug Column Mapping
+description: Use check-source and parse output to diagnose parser setup.
+---
+
+When a reconciliation returns unexpected results, the most common cause is a column mapping problem. Two commands narrow it down quickly: `check-source` confirms the columns exist, and `parse` shows how rows are normalized.
+
+Header validation:
+
+```bash
+reconify config check-source \
+  --source bank \
+  --file data/bank.csv
+```
+
+Normalized transaction preview:
+
+```bash
+reconify parse \
+  --source bank \
+  --file data/bank.csv \
+  --format table
+```
+
+## What to inspect
+
+The `parse` output table shows exactly what Reconify produces from each row.
+
+- `date` should match the source date.
+- `amount` should be in minor units.
+- `currency` should be consistent across both sources.
+- `reference` should contain the value expected to match the other source.
+- `name` should contain useful text if token matching is enabled.
+
+## Common fixes
+
+Column lookup is case-insensitive, but the field names in your config still need to identify real columns. Use exact source header names when in doubt.
+
+Set `multiplier: 1` for source amounts that are already in minor units.
+
+Set `thousands` and `decimal` when formatted numbers parse incorrectly.

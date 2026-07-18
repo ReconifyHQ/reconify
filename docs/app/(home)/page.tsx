@@ -12,7 +12,7 @@ export default function HomePage() {
       </p>
       <div>
         <Link
-          href="/docs"
+          href="/docs/cli"
           className="inline-flex h-10 items-center rounded-md bg-fd-primary px-4 text-sm font-medium text-fd-primary-foreground"
         >
           Open docs

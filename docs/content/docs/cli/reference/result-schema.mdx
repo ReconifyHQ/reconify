@@ -1,0 +1,98 @@
+---
+title: Result Schema
+description: Reconciliation result fields and event sections.
+---
+
+## Result object
+
+```go
+type Result struct {
+    RunInfo             *RunInfo
+    IndexSelection      *IndexSelection
+    PairName            string
+    LeftSource          string
+    RightSource         string
+    Summary             Summary
+    Matched             []MatchedPair
+    UnmatchedLeft       []Transaction
+    UnmatchedRight      []Transaction
+    AmountDiff          []AmountDiffPair
+    TimingDiff          []TimingDiffPair
+    Duplicates          []DuplicateGroup
+    GroupedMatched      []GroupedMatchedPair
+    GroupedAmountDiff   []GroupedAmountDiffPair
+    GroupedTimingDiff   []GroupedTimingDiffPair
+    ManyToManyMatched   []ManyToManyMatchedPair
+    ManyToManyAmountDiff []ManyToManyAmountDiffPair
+    ManyToManyTimingDiff []ManyToManyTimingDiffPair
+    AmbiguousGroups     []AmbiguousGroupPair
+    Warnings            []string
+    BySource            map[string]Summary
+}
+```
+
+`Grouped*` fields are populated by `one_to_many`, `ManyToMany*` fields by
+`many_to_many`, and `AmbiguousGroups` contains groups that require manual review.
+`BySource` is populated for ordered multi-counterpart (`rights`) runs and is
+omitted for ordinary single-counterpart runs.
+
+## Summary
+
+```go
+type Summary struct {
+    ResultMode                string
+    Currency                  string
+    RunID                     string
+    TotalLeft                 int
+    TotalRight                int
+    MatchedCount              int       // JSON: matched
+    UnmatchedLeft             int       // JSON: unmatched_left
+    UnmatchedRight            int       // JSON: unmatched_right
+    AmountDiffCount           int
+    TimingDiffCount           int
+    DuplicateCount            int
+    MatchRatePct              float64
+    ReconciledRatePct         float64
+    GroupedMatchedCount       int
+    GroupedAmountDiffCount    int
+    GroupedTimingDiffCount    int
+    ManyToManyMatchedCount    int
+    ManyToManyAmountDiffCount int
+    ManyToManyTimingDiffCount int
+    AmbiguousGroupCount       int
+    MatchedAmountLeft         int64
+    MatchedAmountRight        int64
+    UnmatchedAmountLeft       int64
+    UnmatchedAmountRight      int64
+    AmountDiffTotal           int64
+    AmbiguousAmountLeft       int64
+    AmbiguousAmountRight      int64
+    TotalDiscrepancy          int64
+}
+```
+
+All monetary fields are minor units. `match_rate_pct` counts exact one-to-one
+matches; `reconciled_rate_pct` also includes grouped outcomes. The summary is
+computed from the full reconciliation even when `result_mode` suppresses events.
+
+## Audit `run_info`
+
+When `--audit` is enabled:
+
+```go
+type RunInfo struct {
+    RunID       string
+    Timestamp   time.Time
+    ToolVersion string
+    LeftFile    FileInfo
+    RightFile   FileInfo
+    PairConfig  PairConfigSnap
+}
+```
+
+`FileInfo` includes `path`, `sha256`, `size_bytes`, and `mod_time`. `PairConfigSnap`
+records the applied `date_window`, `amount_tolerance_minor`, and `name_mode`.
+
+For NDJSON, the event names include `run_info`, `index_selection`, `match`,
+`amount_diff`, `timing_diff`, `unmatched_left`, `unmatched_right`, `duplicate`,
+grouped event types, `source_summary` for multi-counterpart runs, and `summary`.

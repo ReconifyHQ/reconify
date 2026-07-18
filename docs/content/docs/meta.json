@@ -1,4 +1,4 @@
 {
   "title": "Reconify",
-  "pages": ["index", "getting-started", "configuration", "engine", "performance"]
+  "pages": ["cli"]
 }

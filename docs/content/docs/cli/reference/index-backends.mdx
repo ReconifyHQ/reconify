@@ -1,0 +1,39 @@
+---
+title: Index Backends
+description: Memory, disk, and auto right-side indexes.
+---
+
+Reconify builds an index for the right source before matching the left source.
+
+## `memory`
+
+```yaml
+index:
+  backend: memory
+```
+
+Fastest backend. Use when the right file and index fit comfortably in RAM.
+
+## `disk`
+
+```yaml
+index:
+  backend: disk
+  spill_dir: "/tmp/reconify"
+```
+
+SQLite-backed temporary index. Lower RAM usage, slower lookups.
+
+If `spill_dir` is omitted, Reconify uses a system temp directory.
+
+## `auto`
+
+```yaml
+index:
+  backend: auto
+  auto_max_right_file_mb: 2048
+```
+
+Uses `disk` when the right file size exceeds the threshold; otherwise uses `memory`.
+
+When `auto_max_right_file_mb` is unset or zero, the runtime default threshold is `2048` MB.

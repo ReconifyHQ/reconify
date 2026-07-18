@@ -1,0 +1,33 @@
+---
+title: Excel Workbooks
+description: Read modern Excel workbooks with the XLSX parser.
+---
+
+Reconify supports `.xlsx` and `.xlsm` files through the `xlsx` parser type. The first row of the sheet is treated as headers, and column lookup is case-insensitive.
+
+```yaml
+parser:
+  type: xlsx
+  sheet: "Transactions"
+  date_col: "Date"
+  date_layout: "2006-01-02"
+  amount_col: "Amount"
+  multiplier: 100
+  ref_col: "Reference"
+```
+
+If `sheet` is omitted, the first sheet is used.
+
+## Unsupported `.xls`
+
+Legacy `.xls` files are not supported. Save the workbook as `.xlsx` or export it as `.csv` before running Reconify.
+
+## Debugging
+
+The `parse` command shows how rows are normalized, which is the fastest way to confirm the sheet and columns are read correctly.
+
+```bash
+reconify parse --source bank --file data/bank.xlsx --format table
+```
+
+If the wrong sheet is read, add the `sheet` field. If headers are not found, confirm the first row of the sheet contains column names rather than a title or subtitle row.

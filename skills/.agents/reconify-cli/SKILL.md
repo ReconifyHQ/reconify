@@ -67,3 +67,7 @@ Filtering happens at the writer boundary: classification counts and monetary tot
 - Keep examples copy-pasteable from the repo root.
 - Prefer `go run ./cmd/reconify ...` in contributor docs and `reconify ...` in user docs.
 - If README examples mention imports, use the module path from `go.mod`: `github.com/reconifyhq/reconify`.
+- Canonical public CLI documentation lives under `docs/content/docs/cli`.
+- Keep SaaS API documentation out of this tree; the SaaS repository mirrors the CLI tree separately.
+- Inspect live Cobra help and `reconify config schema` before documenting command or config behavior.
+- After changing CLI docs, validate the docs site with `npm run types:check` and `npm run build` from `docs/`.

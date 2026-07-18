@@ -1,0 +1,68 @@
+---
+title: Installation
+description: Install Reconify from Go, releases, or source.
+---
+
+## Pre-built binaries
+
+Download a release binary if you don't have Go installed. Find the latest release on the
+[Reconify releases page](https://github.com/ReconifyHQ/reconify/releases).
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/ReconifyHQ/reconify/releases/latest/download/reconify_darwin_arm64.tar.gz \
+  | tar xz && sudo mv reconify /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/ReconifyHQ/reconify/releases/latest/download/reconify_darwin_amd64.tar.gz \
+  | tar xz && sudo mv reconify /usr/local/bin/
+
+# Linux (amd64)
+curl -L https://github.com/ReconifyHQ/reconify/releases/latest/download/reconify_linux_amd64.tar.gz \
+  | tar xz && sudo mv reconify /usr/local/bin/
+```
+
+Verify the install:
+
+```bash
+reconify --version
+```
+
+## Go install
+
+```bash
+go install github.com/reconifyhq/reconify/cmd/reconify@latest
+```
+
+Make sure your Go binary directory is on `PATH`.
+
+```bash
+reconify --version
+```
+
+## Build from source
+
+```bash
+git clone https://github.com/ReconifyHQ/reconify.git
+cd reconify
+make build
+./reconify --version
+```
+
+The build uses linker flags for version and build time.
+
+## Developer commands
+
+```bash
+make build       # Build CLI binary
+make build-all   # Cross-compile
+make test        # Run Go tests with race detector and coverage
+make lint        # Run golangci-lint when installed
+make install     # Install to GOPATH/bin
+```
+
+## Runtime files
+
+Reconify reads local files. Your config controls paths through `file_pattern`, `--left-file`, and `--right-file`.
+
+When using the disk index backend, Reconify writes temporary SQLite-backed index files to `index.spill_dir` or the system temp directory.

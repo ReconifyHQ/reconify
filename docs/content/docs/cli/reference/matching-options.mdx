@@ -1,0 +1,46 @@
+---
+title: Matching Options
+description: Configure date windows, amount tolerances, and name matching.
+---
+
+## `date_window`
+
+`date_window` accepts days, such as:
+
+```yaml
+date_window: "1d"
+```
+
+When the date window is set, same-reference rows outside the window become `timing_diff` if the amount is within tolerance.
+
+## `amount_tolerance_minor`
+
+Tolerance is expressed in minor units:
+
+```yaml
+amount_tolerance_minor: 5
+```
+
+For a two-decimal currency, `5` means five cents, kobo, pence, or equivalent minor units.
+
+## `name_mode`
+
+```yaml
+name_mode: "none"
+```
+
+Only reference matching is used.
+
+```yaml
+name_mode: "tokens"
+```
+
+After reference matching, Reconify compares remaining unmatched names using token similarity. Token matches still need amount and date checks to pass.
+
+## Recommended defaults
+
+Use `name_mode: "none"` when both systems share reliable references.
+
+Use `name_mode: "tokens"` when references are sparse but names/descriptions are consistent.
+
+Start with `amount_tolerance_minor: 0`, then widen only when your source systems have known rounding differences.

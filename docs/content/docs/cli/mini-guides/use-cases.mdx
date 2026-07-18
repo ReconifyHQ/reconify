@@ -1,0 +1,48 @@
+---
+title: Choose a reconciliation use case
+description: Identify the transaction grain, matching policy, and workflow that fit your integration.
+---
+
+Reconify is a reconciliation engine, not an accounting system, payment processor, or bank-data connector. Use it when you already have two structured sources and need a deterministic, repeatable way to prove how their transactions relate.
+
+## Choose the workflow
+
+<Cards>
+  <Card title="Bank statement vs PSP settlement" href="/docs/cli/mini-guides/bank-vs-psp" description="Explain cash received in the bank from processor payout or settlement exports." />
+  <Card title="Bank statement vs internal ledger" href="/docs/cli/mini-guides/bank-vs-ledger" description="Find missing, delayed, or incorrectly posted cash movements." />
+  <Card title="Stripe-style payout exports" href="/docs/cli/mini-guides/stripe-exports" description="Prepare minor-unit PSP exports and select the correct settlement grain." />
+</Cards>
+
+## What developers build
+
+Every implementation follows the same pattern:
+
+1. Export or generate two files at the same transaction grain.
+2. Map each source's date, amount, currency, reference, and description into `reconify.yaml`.
+3. Validate the mapping against real files before scheduling a run.
+4. Reconcile with a matching policy that reflects the business rule.
+5. Send structured outcomes to a review queue, data store, or downstream job.
+
+The CLI is a good fit for local files and scheduled batch jobs. Use the CLI guides when an application needs a repeatable local or scheduled reconciliation workflow.
+
+## When Reconify is a better fit
+
+Choose Reconify when your team needs:
+
+- **Deterministic matching:** shared references, date windows, and amount tolerances define an explainable result; exceptions are classified rather than silently accepted.
+- **Config-as-code:** parser mappings and pair rules are YAML, so they can be reviewed, versioned, and reused across periods.
+- **Format normalization:** CSV, JSON, NDJSON, XLSX, and XLSM inputs can be mapped into one transaction model before matching.
+- **Automation-friendly output:** JSON, JSON stream, NDJSON, CSV, and table output support scripts, services, and human inspection.
+- **Large-file control:** streaming output and memory, disk, or automatic right-side indexes let a job trade speed for memory use.
+- **Audit-ready runs:** structured output can include source provenance and deterministic ordering for reproducible comparisons.
+
+Reconify is not automatically better than every reconciliation tool. A hosted finance platform may be a better fit when you need a managed workflow, approvals, or prebuilt bank connectivity. Reconify is strongest when developers need control over input preparation, matching rules, automation, and output handling.
+
+## Common implementation mistakes
+
+- Comparing sources at different grain, such as a bank payout against individual charges.
+- Applying a broad date window or tolerance before validating references and unit conversion.
+- Using token matching as a shortcut instead of fixing a missing identifier.
+- Treating a processor's gross amount as equivalent to a bank's net settlement.
+
+Start with the use case closest to your data, then use [Debug Column Mapping](/docs/cli/mini-guides/debug-column-mapping) and [Read Results](/docs/cli/guides/read-results) when the first run produces unexpected exceptions.

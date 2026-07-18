@@ -212,7 +212,7 @@ The reconciliation engine:
 5. **Optionally reconciles grouped settlements** with explicit `one_to_many` or `many_to_many` passes
 6. **Produces a JSON report** with matched pairs, grouped matches, unmatched entries, and summary statistics
 
-See the [engine internals guide](docs/content/docs/engine/index.md) for algorithm details. See the [Configuration reference](docs/content/docs/configuration.md) for the full set of source parser and pair options.
+See the [engine internals guide](docs/content/docs/cli/engine/index.md) for algorithm details. See the [Configuration reference](docs/content/docs/cli/reference/config.mdx) for the full set of source parser and pair options.
 
 ## Using as a Go Library
 
