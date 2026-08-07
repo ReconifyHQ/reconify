@@ -133,6 +133,7 @@ This validates that required columns exist and that sample data can be parsed.`,
 			}
 
 			if !valid {
+				cmd.PrintErrf("Available columns: %s\n", strings.Join(headers, ", "))
 				return configErrf("source %q does not match file %q", sourceName, filePath)
 			}
 
