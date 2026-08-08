@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`config check-source` available columns hint** — when a required column is missing, the command now prints the available column names from the input file's header to stderr, so the user does not have to inspect the file separately.
+
 ## [0.4.1] - 2026-07-16
 
 ### Added
