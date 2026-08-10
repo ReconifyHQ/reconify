@@ -34,8 +34,8 @@ type ParserCfg struct {
 	DateLayout  string `yaml:"date_layout"`
 	TZ          string `yaml:"tz"`
 	AmountCol   string `yaml:"amount_col"`
-	Decimal     string `yaml:"decimal"`
-	Thousands   string `yaml:"thousands"`
+	Decimal     string `yaml:"decimal,omitempty"`
+	Thousands   string `yaml:"thousands,omitempty"`
 	Multiplier  int64  `yaml:"multiplier"`
 	CurrencyCol string `yaml:"currency_col,omitempty"`
 	NameCol     string `yaml:"name_col,omitempty"`
