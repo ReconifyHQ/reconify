@@ -251,8 +251,13 @@ func promptConfigInitSource(cmd *cobra.Command, headers []string, source *config
 		source.RefCol = optionalHeaderNone
 	}
 	source.DateLayout = "2006-01-02"
-	source.Decimal = "."
-	source.Thousands = ","
+	if usesDelimitedSeparators(source.ParserType) {
+		source.Decimal = "."
+		source.Thousands = ","
+	} else {
+		source.Decimal = ""
+		source.Thousands = ""
+	}
 	source.Multiplier = 100
 	if source.DateCol == "" {
 		source.DateCol = headers[0]
@@ -264,33 +269,36 @@ func promptConfigInitSource(cmd *cobra.Command, headers []string, source *config
 	multiplier := strconv.FormatInt(source.Multiplier, 10)
 	title := fmt.Sprintf("Map %q fields", source.Name)
 
-	err := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title(title+": date column").
-				Options(headerOptions(headers, false)...).
-				Value(&source.DateCol),
-			huh.NewSelect[string]().
-				Title(title+": amount column").
-				Options(headerOptions(headers, false)...).
-				Value(&source.AmountCol),
-			huh.NewSelect[string]().
-				Title(title+": currency column").
-				Options(headerOptions(headers, true)...).
-				Value(&source.CurrencyCol),
-			huh.NewSelect[string]().
-				Title(title+": name/description column").
-				Options(headerOptions(headers, true)...).
-				Value(&source.NameCol),
-			huh.NewSelect[string]().
-				Title(title+": reference column").
-				Options(headerOptions(headers, true)...).
-				Value(&source.RefCol),
-			huh.NewInput().
-				Title(title+": date layout").
-				Description("Use Go date layout syntax, for example 2006-01-02").
-				Value(&source.DateLayout).
-				Validate(huh.ValidateNotEmpty()),
+	fields := []huh.Field{
+		huh.NewSelect[string]().
+			Title(title + ": date column").
+			Options(headerOptions(headers, false)...).
+			Value(&source.DateCol),
+		huh.NewSelect[string]().
+			Title(title + ": amount column").
+			Options(headerOptions(headers, false)...).
+			Value(&source.AmountCol),
+		huh.NewSelect[string]().
+			Title(title + ": currency column").
+			Options(headerOptions(headers, true)...).
+			Value(&source.CurrencyCol),
+		huh.NewSelect[string]().
+			Title(title + ": name/description column").
+			Options(headerOptions(headers, true)...).
+			Value(&source.NameCol),
+		huh.NewSelect[string]().
+			Title(title + ": reference column").
+			Options(headerOptions(headers, true)...).
+			Value(&source.RefCol),
+		huh.NewInput().
+			Title(title + ": date layout").
+			Description("Use Go date layout syntax, for example 2006-01-02").
+			Value(&source.DateLayout).
+			Validate(huh.ValidateNotEmpty()),
+	}
+	if usesDelimitedSeparators(source.ParserType) {
+		fields = append(
+			fields,
 			huh.NewInput().
 				Title(title+": decimal separator").
 				Value(&source.Decimal).
@@ -299,11 +307,18 @@ func promptConfigInitSource(cmd *cobra.Command, headers []string, source *config
 				Title(title+": thousands separator").
 				Value(&source.Thousands).
 				Validate(validateSingleCharOrEmpty),
-			huh.NewInput().
-				Title(title+": amount multiplier").
-				Value(&multiplier).
-				Validate(validatePositiveInt64),
-		),
+		)
+	}
+	fields = append(
+		fields,
+		huh.NewInput().
+			Title(title+": amount multiplier").
+			Value(&multiplier).
+			Validate(validatePositiveInt64),
+	)
+
+	err := huh.NewForm(
+		huh.NewGroup(fields...),
 	).WithOutput(cmd.ErrOrStderr()).Run()
 	if err != nil {
 		return err
@@ -397,17 +412,21 @@ func normalizeInitSourceAnswers(source configInitSourceAnswers) configInitSource
 	source.Name = strings.TrimSpace(source.Name)
 	source.FilePath = strings.TrimSpace(source.FilePath)
 	source.ParserType = strings.TrimSpace(source.ParserType)
+	if source.ParserType == "" {
+		source.ParserType = parserTypeForInit(source.FilePath)
+	}
 	source.DateCol = strings.TrimSpace(source.DateCol)
 	source.DateLayout = strings.TrimSpace(source.DateLayout)
 	source.AmountCol = strings.TrimSpace(source.AmountCol)
 	source.Decimal = strings.TrimSpace(source.Decimal)
 	source.Thousands = strings.TrimSpace(source.Thousands)
+	if !usesDelimitedSeparators(source.ParserType) {
+		source.Decimal = ""
+		source.Thousands = ""
+	}
 	source.CurrencyCol = emptyOptionalHeader(source.CurrencyCol)
 	source.NameCol = emptyOptionalHeader(source.NameCol)
 	source.RefCol = emptyOptionalHeader(source.RefCol)
-	if source.ParserType == "" {
-		source.ParserType = parserTypeForInit(source.FilePath)
-	}
 	return source
 }
 
@@ -476,6 +495,15 @@ func parserTypeForInit(filePath string) string {
 		return "xlsx"
 	default:
 		return "auto"
+	}
+}
+
+func usesDelimitedSeparators(parserType string) bool {
+	switch strings.ToLower(strings.TrimSpace(parserType)) {
+	case "json", "xlsx":
+		return false
+	default:
+		return true
 	}
 }
 
