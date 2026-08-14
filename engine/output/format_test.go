@@ -380,6 +380,78 @@ func TestCSVWriter_SummaryIncludesMonetaryTotals(t *testing.T) {
 	}
 }
 
+func TestCSVWriter_CurrencyColumns(t *testing.T) {
+	day := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	usd := Transaction{ID: "l-1", Date: day, Amount: 100, Currency: "USD"}
+	eur := Transaction{ID: "r-1", Date: day, Amount: 100, Currency: "EUR"}
+
+	var buf bytes.Buffer
+	w := newCSVWriter(&buf)
+	if err := w.WriteMatch(MatchedPair{Left: usd, Right: eur}); err != nil {
+		t.Fatalf("WriteMatch: %v", err)
+	}
+	if err := w.WriteAmountDiff(AmountDiffPair{Left: usd, Right: eur, DiffMinor: 5}); err != nil {
+		t.Fatalf("WriteAmountDiff: %v", err)
+	}
+	if err := w.WriteTimingDiff(TimingDiffPair{Left: usd, Right: eur, DaysDiff: 2}); err != nil {
+		t.Fatalf("WriteTimingDiff: %v", err)
+	}
+	if err := w.WriteUnmatched(usd, "left"); err != nil {
+		t.Fatalf("WriteUnmatched left: %v", err)
+	}
+	if err := w.WriteUnmatched(eur, "right"); err != nil {
+		t.Fatalf("WriteUnmatched right: %v", err)
+	}
+	if err := w.WriteDuplicate(DuplicateGroup{Source: "left", Reference: "REF", Transactions: []Transaction{usd}}); err != nil {
+		t.Fatalf("WriteDuplicate: %v", err)
+	}
+	if err := w.WriteSummary(Summary{TotalLeft: 1}); err != nil {
+		t.Fatalf("WriteSummary: %v", err)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	rows, err := csv.NewReader(strings.NewReader(buf.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	idx := map[string]int{}
+	for i, col := range rows[0] {
+		idx[col] = i
+	}
+	left, ok := idx["left_currency"]
+	if !ok {
+		t.Fatalf("missing left_currency column in header %v", rows[0])
+	}
+	right, ok := idx["right_currency"]
+	if !ok {
+		t.Fatalf("missing right_currency column in header %v", rows[0])
+	}
+	if left != idx["left_name"]+1 || right != idx["right_name"]+1 {
+		t.Errorf("currency columns not positioned after their name columns: %v", rows[0])
+	}
+
+	for _, tc := range []struct {
+		row               int
+		wantLeft, wantRgt string
+	}{
+		{1, "USD", "EUR"}, // match
+		{2, "USD", "EUR"}, // amount_diff
+		{3, "USD", "EUR"}, // timing_diff
+		{4, "USD", ""},    // unmatched_left
+		{5, "", "EUR"},    // unmatched_right
+		{6, "", ""},       // duplicate
+		{7, "", ""},       // summary
+	} {
+		row := rows[tc.row]
+		if row[left] != tc.wantLeft || row[right] != tc.wantRgt {
+			t.Errorf("%s row: left_currency=%q right_currency=%q, want %q/%q",
+				row[0], row[left], row[right], tc.wantLeft, tc.wantRgt)
+		}
+	}
+}
+
 func TestSanitizeCSVField(t *testing.T) {
 	tests := map[string]string{
 		"":         "",
@@ -428,10 +500,10 @@ func TestCSVWriter_SanitizesFormulaFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read csv: %v", err)
 	}
-	if rows[1][4] != "'=SUM(A1:A2)" || rows[1][5] != "'@malicious" || rows[1][9] != "'+SUM(A1:A2)" || rows[1][10] != "'-malicious" {
+	if rows[1][4] != "'=SUM(A1:A2)" || rows[1][5] != "'@malicious" || rows[1][10] != "'+SUM(A1:A2)" || rows[1][11] != "'-malicious" {
 		t.Fatalf("match row was not sanitized: %#v", rows[1])
 	}
-	if rows[2][14] != "'=DUP" {
+	if rows[2][16] != "'=DUP" {
 		t.Fatalf("duplicate reference was not sanitized: %#v", rows[2])
 	}
 }

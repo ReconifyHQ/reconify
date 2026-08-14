@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`left_currency` and `right_currency` columns in `csv` result output** — per-row `match`, `amount_diff`, `timing_diff`, and `unmatched_*` events now carry the transaction currency, so multi-currency reconciliations can be read without switching to JSON or NDJSON. Breaking: the columns are inserted after `left_name` / `right_name`, shifting all later columns — scripts reading the CSV by column position must be updated.
 - **`config check-source` available columns hint** — when a required column is missing, the command now prints the available column names from the input file's header to stderr, so the user does not have to inspect the file separately.
 
 ## [0.4.1] - 2026-07-16
