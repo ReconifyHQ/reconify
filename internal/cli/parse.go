@@ -115,7 +115,7 @@ func parseJSON(sourceName, filePath string, parserCfg config.ParserCfg, cmd *cob
 	return nil
 }
 
-var txCSVHeader = []string{"id", "date", "amount_minor", "currency", "reference", "name", "source"}
+var txCSVHeader = []string{"id", "date", "amount_minor", "currency", "reference", "name", "source", "group_key"}
 
 // parseCSVOut streams transactions as CSV rows.
 func parseCSVOut(sourceName, filePath string, parserCfg config.ParserCfg, cmd *cobra.Command) error {
@@ -134,6 +134,7 @@ func parseCSVOut(sourceName, filePath string, parserCfg config.ParserCfg, cmd *c
 			engine.SanitizeCSVField(tx.Reference),
 			engine.SanitizeCSVField(tx.Name),
 			tx.Source,
+			engine.SanitizeCSVField(tx.GroupKey),
 		})
 	})
 	if err != nil {
@@ -159,13 +160,13 @@ func parseTable(sourceName, filePath string, parserCfg config.ParserCfg, cmd *co
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "ID\tDATE\tAMOUNT\tCURRENCY\tREFERENCE\tNAME\tSOURCE"); err != nil {
+	if _, err := fmt.Fprintln(tw, "ID\tDATE\tAMOUNT\tCURRENCY\tREFERENCE\tNAME\tSOURCE\tGROUP_KEY"); err != nil {
 		return err
 	}
 	for _, tx := range txns {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
 			tx.ID, tx.Date.Format("2006-01-02"), tx.Amount,
-			tx.Currency, tx.Reference, tx.Name, tx.Source); err != nil {
+			tx.Currency, tx.Reference, tx.Name, tx.Source, tx.GroupKey); err != nil {
 			return err
 		}
 	}
