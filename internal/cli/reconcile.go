@@ -42,6 +42,7 @@ func newReconcileCmd() *cobra.Command {
 	var heartbeatEvery string
 	var progressOut string
 	var failIfUnmatched bool
+	var failIfExceptions bool
 	var resultModeFlag string
 
 	cmd := &cobra.Command{
@@ -223,12 +224,13 @@ Formats:
 				}
 			}
 
-			// When --fail-if-unmatched is set, wrap the writer to capture the final
-			// summary. All optional-interface setup (SetMeta, SetDeterministic) has
-			// already been applied to the inner writer above; audit's SetRunInfo is
-			// applied in the single-counterpart branch below, also before wrapping.
+			// When --fail-if-unmatched or --fail-if-exceptions is set, wrap the writer
+			// to capture the final summary. All optional-interface setup (SetMeta,
+			// SetDeterministic) has already been applied to the inner writer above;
+			// audit's SetRunInfo is applied in the single-counterpart branch below,
+			// also before wrapping.
 			var sc *summaryCapture
-			if failIfUnmatched {
+			if failIfUnmatched || failIfExceptions {
 				sc = &summaryCapture{inner: w}
 				w = sc
 			}
@@ -283,8 +285,10 @@ Formats:
 					if progress {
 						fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 					}
-					if failIfUnmatched && sc != nil && (sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 {
-						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+					if sc != nil {
+						if err := reconcileExitError(sc.captured, failIfUnmatched, failIfExceptions); err != nil {
+							return err
+						}
 					}
 					return nil
 				}
@@ -329,8 +333,8 @@ Formats:
 				if progress {
 					fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 				}
-				if failIfUnmatched && (batchResult.Summary.UnmatchedLeft+batchResult.Summary.UnmatchedRight) > 0 {
-					return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+				if err := reconcileExitError(batchResult.Summary, failIfUnmatched, failIfExceptions); err != nil {
+					return err
 				}
 				return nil
 			}
@@ -404,8 +408,10 @@ Formats:
 					if progress {
 						fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 					}
-					if sc != nil && (sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 && failIfUnmatched {
-						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+					if sc != nil {
+						if err := reconcileExitError(sc.captured, failIfUnmatched, failIfExceptions); err != nil {
+							return err
+						}
 					}
 					return nil
 				}
@@ -441,8 +447,8 @@ Formats:
 					if progress {
 						fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 					}
-					if failIfUnmatched && (batchResult.Summary.UnmatchedLeft+batchResult.Summary.UnmatchedRight) > 0 {
-						return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+					if err := reconcileExitError(batchResult.Summary, failIfUnmatched, failIfExceptions); err != nil {
+						return err
 					}
 					return nil
 				}
@@ -540,9 +546,10 @@ Formats:
 			if progress {
 				fmt.Fprintf(os.Stderr, "progress: reconcile done pair=%s elapsed=%s\n", pairName, time.Since(jobStart).Round(time.Second))
 			}
-			if failIfUnmatched && sc != nil &&
-				(sc.captured.UnmatchedLeft+sc.captured.UnmatchedRight) > 0 {
-				return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+			if sc != nil {
+				if err := reconcileExitError(sc.captured, failIfUnmatched, failIfExceptions); err != nil {
+					return err
+				}
 			}
 
 			return nil
@@ -579,6 +586,8 @@ Formats:
 		"Write live telemetry events as NDJSON to this path (must differ from --out)")
 	cmd.Flags().BoolVar(&failIfUnmatched, "fail-if-unmatched", false,
 		"Exit with code 3 if reconciliation completes with any unmatched rows on either side")
+	cmd.Flags().BoolVar(&failIfExceptions, "fail-if-exceptions", false,
+		"Exit with code 4 if reconciliation emits any amount_diff, timing_diff, or unmatched event (superset of --fail-if-unmatched)")
 	cmd.Flags().StringVar(&resultModeFlag, "result-mode", "",
 		`Emission mode: all (default), exceptions_only (suppress clean matches), summary_only (suppress all item events).
 Overrides result_mode in the pair config when set.`)

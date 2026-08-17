@@ -109,6 +109,7 @@ reconify reconcile \
 | `--audit-fixed-timestamp` | no | | RFC3339/RFC3339Nano timestamp for byte-identical audit reruns. |
 | `--deterministic` | no | `false` | Sort JSON output sections for stable diffs. |
 | `--fail-if-unmatched` | no | `false` | Exit with code `3` after a completed run if either side has unmatched rows. |
+| `--fail-if-exceptions` | no | `false` | Exit with code `4` after a completed run if any `amount_diff`, `timing_diff`, or unmatched event was emitted. Superset of `--fail-if-unmatched`; when both flags are set, code `4` takes precedence over code `3`. |
 | `--heartbeat-every` | no | `30s` | Wall-clock interval for telemetry heartbeat events. |
 | `--partition-workers` | no | `0` | Concurrent workers for the partitioned backend; `0` or `1` is serial. |
 | `--partition-queue-capacity` | no | derived | Maximum completed partition descriptors waiting for the final writer. |

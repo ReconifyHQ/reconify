@@ -15,6 +15,32 @@ func (stderrWarningObserver) ObserveWarning(warning engine.Warning) {
 	fmt.Fprintln(os.Stderr, "warning:", warning.Message)
 }
 
+// reconcileExitError inspects the final summary counts and the fail flags and
+// returns the appropriate *Error (or nil) per the --fail-if-unmatched and
+// --fail-if-exceptions flag precedence.
+//
+// --fail-if-exceptions is a superset of --fail-if-unmatched: it fires on any
+// amount_diff, timing_diff, or unmatched event. When both flags are set and both
+// conditions hold, ErrCodeExceptions (4) takes precedence over ErrCodeUnmatched (3).
+func reconcileExitError(sum engine.Summary, failIfUnmatched, failIfExceptions bool) error {
+	hasExceptions := sum.AmountDiffCount > 0 ||
+		sum.TimingDiffCount > 0 ||
+		sum.UnmatchedLeft > 0 ||
+		sum.UnmatchedRight > 0
+	if failIfExceptions && hasExceptions {
+		return &Error{
+			Code:    ErrCodeExceptions,
+			ErrCode: "exceptions",
+			Msg:     "reconciliation produced exception events (amount_diff, timing_diff, or unmatched)",
+		}
+	}
+	hasUnmatched := sum.UnmatchedLeft > 0 || sum.UnmatchedRight > 0
+	if failIfUnmatched && hasUnmatched {
+		return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+	}
+	return nil
+}
+
 // summaryCapture wraps a ResultWriter and captures the final Summary written by
 // WriteSummary. All optional interface setup is applied to the inner writer
 // before wrapping; grouped events and per-source summaries are forwarded when

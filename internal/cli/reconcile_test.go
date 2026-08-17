@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -591,5 +592,208 @@ func TestReconcileResultMode_CLIOverridesPairConfig(t *testing.T) {
 	// CLI --result-mode=exceptions_only overrides pair result_mode=summary_only.
 	if summaryResultMode != "exceptions_only" {
 		t.Errorf("CLI --result-mode did not override pair config: got %q, want %q", summaryResultMode, "exceptions_only")
+	}
+}
+
+// runReconcileBinary builds the reconify CLI binary once and returns its path.
+// go run always exits 1 when the inner program exits non-zero, so to observe
+// the real exit code (3 vs 4) we build the binary and run it directly.
+func runReconcileBinary(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "reconify")
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G204 -- test builds the local CLI binary with a fixed target.
+	build := exec.Command("go", "build", "-o", bin, "./cmd/reconify")
+	build.Dir = root
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build failed: %v\n%s", err, out)
+	}
+	return bin
+}
+
+func TestReconcileExitError(t *testing.T) {
+	cases := []struct {
+		name             string
+		sum              engine.Summary
+		failIfUnmatched  bool
+		failIfExceptions bool
+		wantCode         int
+		wantErrCode      string
+	}{
+		{
+			name:     "no flags clean run",
+			sum:      engine.Summary{MatchedCount: 1},
+			wantCode: 0,
+		},
+		{
+			name:             "fail-if-exceptions clean run",
+			sum:              engine.Summary{MatchedCount: 1},
+			failIfExceptions: true,
+			wantCode:         0,
+		},
+		{
+			name:             "fail-if-exceptions amount_diff",
+			sum:              engine.Summary{AmountDiffCount: 1},
+			failIfExceptions: true,
+			wantCode:         4,
+			wantErrCode:      "exceptions",
+		},
+		{
+			name:             "fail-if-exceptions timing_diff",
+			sum:              engine.Summary{TimingDiffCount: 1},
+			failIfExceptions: true,
+			wantCode:         4,
+			wantErrCode:      "exceptions",
+		},
+		{
+			name:             "fail-if-exceptions unmatched superset",
+			sum:              engine.Summary{UnmatchedLeft: 1},
+			failIfExceptions: true,
+			wantCode:         4,
+			wantErrCode:      "exceptions",
+		},
+		{
+			name:            "fail-if-unmatched unmatched only",
+			sum:             engine.Summary{UnmatchedLeft: 1},
+			failIfUnmatched: true,
+			wantCode:        3,
+			wantErrCode:     "unmatched",
+		},
+		{
+			name:            "fail-if-unmatched amount_diff only does not exit",
+			sum:             engine.Summary{AmountDiffCount: 1},
+			failIfUnmatched: true,
+			wantCode:        0,
+		},
+		{
+			name:             "both flags unmatched only -> code 4 precedence",
+			sum:              engine.Summary{UnmatchedLeft: 1},
+			failIfUnmatched:  true,
+			failIfExceptions: true,
+			wantCode:         4,
+			wantErrCode:      "exceptions",
+		},
+		{
+			name:             "both flags amount_diff + unmatched -> code 4",
+			sum:              engine.Summary{AmountDiffCount: 1, UnmatchedLeft: 1},
+			failIfUnmatched:  true,
+			failIfExceptions: true,
+			wantCode:         4,
+			wantErrCode:      "exceptions",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := reconcileExitError(tc.sum, tc.failIfUnmatched, tc.failIfExceptions)
+			if tc.wantCode == 0 {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error with code %d, got nil", tc.wantCode)
+			}
+			cliErr, ok := err.(*Error)
+			if !ok {
+				t.Fatalf("expected *cli.Error, got %T (%v)", err, err)
+			}
+			if cliErr.Code != tc.wantCode {
+				t.Errorf("code = %d, want %d", cliErr.Code, tc.wantCode)
+			}
+			if cliErr.ErrCode != tc.wantErrCode {
+				t.Errorf("errcode = %q, want %q", cliErr.ErrCode, tc.wantErrCode)
+			}
+		})
+	}
+}
+
+func TestReconcileFailIfExceptionsFlag(t *testing.T) {
+	bin := runReconcileBinary(t)
+
+	cases := []struct {
+		name     string
+		leftCSV  string
+		rightCSV string
+		args     []string
+		wantCode int
+	}{
+		{
+			name:     "clean run exits 0",
+			leftCSV:  "date,amount,reference\n2024-01-01,1.00,ref-1\n",
+			rightCSV: "date,amount,reference\n2024-01-01,1.00,ref-1\n",
+			args:     []string{"--fail-if-exceptions"},
+			wantCode: 0,
+		},
+		{
+			name:     "amount_diff exits 4",
+			leftCSV:  "date,amount,reference\n2024-01-01,2.00,ref-1\n",
+			rightCSV: "date,amount,reference\n2024-01-01,1.00,ref-1\n",
+			args:     []string{"--fail-if-exceptions"},
+			wantCode: 4,
+		},
+		{
+			name:     "unmatched superset exits 4",
+			leftCSV:  "date,amount,reference\n2024-01-01,1.00,ref-1\n2024-01-01,1.00,ref-only-l\n",
+			rightCSV: "date,amount,reference\n2024-01-01,1.00,ref-1\n",
+			args:     []string{"--fail-if-exceptions"},
+			wantCode: 4,
+		},
+		{
+			name:     "both flags unmatched -> code 4 precedence over 3",
+			leftCSV:  "date,amount,reference\n2024-01-01,1.00,ref-1\n2024-01-01,1.00,ref-only-l\n",
+			rightCSV: "date,amount,reference\n2024-01-01,1.00,ref-1\n",
+			args:     []string{"--fail-if-unmatched", "--fail-if-exceptions"},
+			wantCode: 4,
+		},
+		{
+			name:     "fail-if-unmatched amount_diff only exits 0",
+			leftCSV:  "date,amount,reference\n2024-01-01,2.00,ref-1\n",
+			rightCSV: "date,amount,reference\n2024-01-01,1.00,ref-1\n",
+			args:     []string{"--fail-if-unmatched"},
+			wantCode: 0,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			leftPath := filepath.Join(dir, "left.csv")
+			rightPath := filepath.Join(dir, "right.csv")
+			configPath := filepath.Join(dir, "reconify.yaml")
+			resultPath := filepath.Join(dir, "result.ndjson")
+			if err := os.WriteFile(leftPath, []byte(tc.leftCSV), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(rightPath, []byte(tc.rightCSV), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(configPath, []byte(buildTestConfig(leftPath, rightPath)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			args := append([]string{"reconcile",
+				"--config", configPath, "--pair", "pair",
+				"--format", "ndjson", "--out", resultPath,
+			}, tc.args...)
+			// #nosec G204 -- test invokes the locally built CLI binary with fixed arguments.
+			cmd := exec.Command(bin, args...)
+			out, err := cmd.CombinedOutput()
+			code := 0
+			if err != nil {
+				var exitErr *exec.ExitError
+				if errors.As(err, &exitErr) {
+					code = exitErr.ExitCode()
+				} else {
+					t.Fatalf("unexpected non-ExitError: %v\n%s", err, out)
+				}
+			}
+			if code != tc.wantCode {
+				t.Errorf("exit code = %d, want %d\noutput: %s", code, tc.wantCode, out)
+			}
+		})
 	}
 }
