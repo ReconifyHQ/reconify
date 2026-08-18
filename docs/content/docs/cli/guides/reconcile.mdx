@@ -144,6 +144,12 @@ reconify reconcile \
 Use `--fail-if-unmatched` in automation when any unmatched row should fail the
 job. Reconify exits with code `3` after completing the output.
 
+For stricter pipelines that should also fail on amount or timing discrepancies,
+use `--fail-if-exceptions`. Reconify exits with code `4` after completing the
+output if any `amount_diff`, `timing_diff`, or unmatched event was emitted. It
+is a superset of `--fail-if-unmatched`; when both flags are set and both
+conditions hold, code `4` takes precedence over code `3`.
+
 </Step>
 </Steps>
 

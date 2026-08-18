@@ -8,6 +8,10 @@ const (
 	ErrCodeConfig = 2
 	// ErrCodeUnmatched is returned by reconcile when --fail-if-unmatched is set and unmatched rows exist.
 	ErrCodeUnmatched = 3
+	// ErrCodeExceptions is returned by reconcile when --fail-if-exceptions is set and any
+	// amount_diff, timing_diff, or unmatched event was emitted. It is a superset of
+	// --fail-if-unmatched and takes precedence over ErrCodeUnmatched when both flags are set.
+	ErrCodeExceptions = 4
 )
 
 // Error is a typed error that carries an exit code and a short machine-readable

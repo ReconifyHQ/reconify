@@ -297,6 +297,7 @@ Agents can call this once to self-bootstrap context without reading the source c
 					"1": "Unexpected or internal error.",
 					"2": "Config or validation error (bad YAML, missing pair/source, column not found).",
 					"3": "Reconcile completed with unmatched rows. Only returned when --fail-if-unmatched is set.",
+					"4": "Reconcile completed with exception events (amount_diff, timing_diff, or unmatched). Only returned when --fail-if-exceptions is set. Takes precedence over exit code 3 when both flags are set.",
 				},
 			}
 

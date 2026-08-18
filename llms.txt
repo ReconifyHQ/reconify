@@ -47,6 +47,7 @@ This writes skill files into `.agents/skills/`, `.claude/skills/`, and `.codex/s
 | 1 | Unexpected or internal error |
 | 2 | Config or validation error (bad YAML, missing pair/source, wrong column) |
 | 3 | Reconcile completed with unmatched rows (only when `--fail-if-unmatched` is set) |
+| 4 | Reconcile completed with exception events: `amount_diff`, `timing_diff`, or unmatched (only when `--fail-if-exceptions` is set; takes precedence over code 3 when both flags are set) |
 
 Use `--error-format json` to get structured errors on stderr: `{"error":"...","code":"config_error"}`.
 
@@ -107,6 +108,7 @@ CLI flag overrides pair config when explicitly set. Filtering is at the writer b
 | `pair "X" not found in config` | 2 | Pair name typo or wrong `--pair` flag. |
 | `no files match pattern "data/*.csv"` | 2 | File pattern resolved to no files. Path is relative to the config file directory. |
 | `reconciliation has unmatched rows` | 3 | `--fail-if-unmatched` set and unmatched rows exist. Check the summary event for counts. |
+| `reconciliation produced exception events (amount_diff, timing_diff, or unmatched)` | 4 | `--fail-if-exceptions` set and any `amount_diff`, `timing_diff`, or unmatched event was emitted. Superset of `--fail-if-unmatched`; code 4 takes precedence over code 3 when both flags are set. |
 | `warning: --deterministic has no effect for --format="ndjson"` | — | `--deterministic` only works with `--format=json`. |
 
 ## Config Schema
