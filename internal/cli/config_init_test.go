@@ -33,6 +33,76 @@ func TestBuildConfigFromInitAnswersValidates(t *testing.T) {
 	}
 }
 
+func TestBuildConfigFromInitAnswersClearsDelimitedSeparatorsForNonCSV(t *testing.T) {
+	answers := validConfigInitAnswers("bank.json")
+	answers.Left.Decimal = "."
+	answers.Left.Thousands = ","
+	answers.Right.FilePath = "stripe.xlsx"
+	answers.Right.Decimal = ","
+	answers.Right.Thousands = "."
+
+	cfg, err := buildConfigFromInitAnswers(answers)
+	if err != nil {
+		t.Fatalf("buildConfigFromInitAnswers() error = %v", err)
+	}
+
+	for _, sourceName := range []string{"bank", "stripe"} {
+		parser := cfg.Sources[sourceName].Parser
+		if parser.Decimal != "" || parser.Thousands != "" {
+			t.Errorf(
+				"%s separators = decimal %q, thousands %q; want both empty for %s parser",
+				sourceName,
+				parser.Decimal,
+				parser.Thousands,
+				parser.Type,
+			)
+		}
+	}
+}
+
+func TestWriteConfigInitFileOmitsDelimitedSeparatorsForNonCSV(t *testing.T) {
+	answers := validConfigInitAnswers("bank.json")
+	answers.Right.FilePath = "stripe.xlsx"
+	cfg, err := buildConfigFromInitAnswers(answers)
+	if err != nil {
+		t.Fatalf("buildConfigFromInitAnswers() error = %v", err)
+	}
+
+	outPath := filepath.Join(t.TempDir(), "reconify.yaml")
+	if err := writeConfigInitFile(outPath, false, cfg); err != nil {
+		t.Fatalf("writeConfigInitFile() error = %v", err)
+	}
+	data, err := os.ReadFile(outPath) // #nosec G304 -- outPath is inside t.TempDir().
+	if err != nil {
+		t.Fatalf("read generated config: %v", err)
+	}
+	generated := string(data)
+	if strings.Contains(generated, "decimal:") || strings.Contains(generated, "thousands:") {
+		t.Fatalf("non-CSV config should omit separator keys:\n%s", generated)
+	}
+}
+
+func TestUsesDelimitedSeparators(t *testing.T) {
+	tests := []struct {
+		parserType string
+		want       bool
+	}{
+		{parserType: "csv", want: true},
+		{parserType: "auto", want: true},
+		{parserType: "json", want: false},
+		{parserType: "xlsx", want: false},
+		{parserType: " JSON ", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(strings.TrimSpace(tt.parserType), func(t *testing.T) {
+			if got := usesDelimitedSeparators(tt.parserType); got != tt.want {
+				t.Fatalf("usesDelimitedSeparators(%q) = %t, want %t", tt.parserType, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildConfigFromInitAnswersRejectsMissingRequiredMapping(t *testing.T) {
 	answers := validConfigInitAnswers("bank.csv")
 	answers.Left.DateCol = ""

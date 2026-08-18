@@ -35,7 +35,7 @@ The wizard prompts for:
 
 - Output path and timezone.
 - Left and right source names, plus a sample file path for each. Parser type is inferred from the file extension: `.csv` → `csv`, `.json`/`.ndjson` → `json`, `.xlsx`/`.xlsm` → `xlsx`, otherwise `auto`.
-- Column mapping for date, amount, currency, name, and reference per source, with defaults auto-guessed from header names (for example, a header containing "date", "amount", "reference").
+- Column mapping for date, amount, currency, name, and reference per source, with defaults auto-guessed from header names (for example, a header containing "date", "amount", "reference"). CSV sources also prompt for decimal and thousands separators; JSON, NDJSON, and XLSX sources omit those CSV-only fields.
 - Pair name (defaults to `<left>_vs_<right>`), date window (default `1d`), amount tolerance in minor units (default `0`), and name matching mode (`tokens` or `none`).
 
 Reconify validates the generated config before writing it and asks for confirmation. On success it prints `[OK] wrote <path>` and `[OK] <path> is valid` to stderr. Cancelling at any prompt prints `Config init cancelled.` and exits cleanly.
