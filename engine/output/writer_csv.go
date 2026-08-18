@@ -15,8 +15,8 @@ import (
 //
 // Column order:
 //
-//	type, left_id, left_date, left_amount_minor, left_ref, left_name,
-//	right_id, right_date, right_amount_minor, right_ref, right_name,
+//	type, left_id, left_date, left_amount_minor, left_ref, left_name, left_currency,
+//	right_id, right_date, right_amount_minor, right_ref, right_name, right_currency,
 //	diff_minor, days_diff,
 //	source, reference, dup_count,
 //	total_left, total_right, matched, unmatched_left, unmatched_right,
@@ -30,8 +30,8 @@ import (
 
 var csvHeader = []string{
 	"type",
-	"left_id", "left_date", "left_amount_minor", "left_ref", "left_name",
-	"right_id", "right_date", "right_amount_minor", "right_ref", "right_name",
+	"left_id", "left_date", "left_amount_minor", "left_ref", "left_name", "left_currency",
+	"right_id", "right_date", "right_amount_minor", "right_ref", "right_name", "right_currency",
 	"diff_minor", "days_diff",
 	"source", "reference", "dup_count",
 	"total_left", "total_right", "matched", "unmatched_left", "unmatched_right",
@@ -94,14 +94,16 @@ func txLeft(row []string, tx Transaction) {
 	row[3] = fmtI64(tx.Amount)
 	row[4] = SanitizeCSVField(tx.Reference)
 	row[5] = SanitizeCSVField(tx.Name)
+	row[6] = SanitizeCSVField(tx.Currency)
 }
 
 func txRight(row []string, tx Transaction) {
-	row[6] = tx.ID
-	row[7] = fmtDate(tx.Date)
-	row[8] = fmtI64(tx.Amount)
-	row[9] = SanitizeCSVField(tx.Reference)
-	row[10] = SanitizeCSVField(tx.Name)
+	row[7] = tx.ID
+	row[8] = fmtDate(tx.Date)
+	row[9] = fmtI64(tx.Amount)
+	row[10] = SanitizeCSVField(tx.Reference)
+	row[11] = SanitizeCSVField(tx.Name)
+	row[12] = SanitizeCSVField(tx.Currency)
 }
 
 func (c *csvWriter) WriteMatch(pair MatchedPair) error {
@@ -121,7 +123,7 @@ func (c *csvWriter) WriteAmountDiff(pair AmountDiffPair) error {
 	row := emptyRow("amount_diff")
 	txLeft(row, pair.Left)
 	txRight(row, pair.Right)
-	row[11] = fmtI64(pair.DiffMinor)
+	row[13] = fmtI64(pair.DiffMinor)
 	return c.w.Write(row)
 }
 
@@ -132,7 +134,7 @@ func (c *csvWriter) WriteTimingDiff(pair TimingDiffPair) error {
 	row := emptyRow("timing_diff")
 	txLeft(row, pair.Left)
 	txRight(row, pair.Right)
-	row[12] = fmtInt(pair.DaysDiff)
+	row[14] = fmtInt(pair.DaysDiff)
 	return c.w.Write(row)
 }
 
@@ -155,9 +157,9 @@ func (c *csvWriter) WriteDuplicate(group DuplicateGroup) error {
 		return err
 	}
 	row := emptyRow("duplicate")
-	row[13] = group.Source
-	row[14] = SanitizeCSVField(group.Reference)
-	row[15] = fmtInt(len(group.Transactions))
+	row[15] = group.Source
+	row[16] = SanitizeCSVField(group.Reference)
+	row[17] = fmtInt(len(group.Transactions))
 	return c.w.Write(row)
 }
 
@@ -166,22 +168,22 @@ func (c *csvWriter) WriteSummary(s Summary) error {
 		return err
 	}
 	row := emptyRow("summary")
-	row[16] = fmtInt(s.TotalLeft)
-	row[17] = fmtInt(s.TotalRight)
-	row[18] = fmtInt(s.MatchedCount)
-	row[19] = fmtInt(s.UnmatchedLeft)
-	row[20] = fmtInt(s.UnmatchedRight)
-	row[21] = fmtInt(s.AmountDiffCount)
-	row[22] = fmtInt(s.TimingDiffCount)
-	row[23] = fmtInt(s.DuplicateCount)
-	row[24] = strconv.FormatFloat(s.MatchRatePct, 'f', 2, 64)
-	row[25] = fmtI64(s.MatchedAmountLeft)
-	row[26] = fmtI64(s.MatchedAmountRight)
-	row[27] = fmtI64(s.UnmatchedAmountLeft)
-	row[28] = fmtI64(s.UnmatchedAmountRight)
-	row[29] = fmtI64(s.AmountDiffTotal)
-	row[30] = fmtI64(s.TotalDiscrepancy)
-	row[31] = strconv.FormatFloat(s.ReconciledRatePct, 'f', 2, 64)
+	row[18] = fmtInt(s.TotalLeft)
+	row[19] = fmtInt(s.TotalRight)
+	row[20] = fmtInt(s.MatchedCount)
+	row[21] = fmtInt(s.UnmatchedLeft)
+	row[22] = fmtInt(s.UnmatchedRight)
+	row[23] = fmtInt(s.AmountDiffCount)
+	row[24] = fmtInt(s.TimingDiffCount)
+	row[25] = fmtInt(s.DuplicateCount)
+	row[26] = strconv.FormatFloat(s.MatchRatePct, 'f', 2, 64)
+	row[27] = fmtI64(s.MatchedAmountLeft)
+	row[28] = fmtI64(s.MatchedAmountRight)
+	row[29] = fmtI64(s.UnmatchedAmountLeft)
+	row[30] = fmtI64(s.UnmatchedAmountRight)
+	row[31] = fmtI64(s.AmountDiffTotal)
+	row[32] = fmtI64(s.TotalDiscrepancy)
+	row[33] = strconv.FormatFloat(s.ReconciledRatePct, 'f', 2, 64)
 	return c.w.Write(row)
 }
 
