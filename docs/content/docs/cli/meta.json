@@ -27,6 +27,7 @@
     "reference/output-formats",
     "reference/result-schema",
     "reference/index-backends",
+    "reference/agent-protocol",
     "---Use Cases & Help---",
     "mini-guides/use-cases",
     "mini-guides/bank-vs-psp",

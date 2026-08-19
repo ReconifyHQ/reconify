@@ -1,0 +1,270 @@
+---
+title: Engine Agent Protocol v1
+description: Normative spec for the versioned, agent-facing Reconify Engine interface.
+---
+
+This page is the normative specification for **Reconify Engine Agent Protocol v1**. It defines the
+commands, schema identifiers, error shape, exit codes, inference gates, and flag-precedence rules that
+external agents (Claude Code, Codex, Gemini CLI, OpenCode, MCP clients, or any scripted caller) can rely
+on across releases.
+
+The keywords **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used as defined in RFC 2119.
+
+This document describes the target contract for the roadmap tracked in the `agent-protocol` label. Some
+identifiers and commands below (`capabilities`, `inspect`, `config infer`, `explain`, `--agent`,
+`reconcile --auto`) do not exist in the codebase yet; each is delivered by its own issue and MUST match
+this spec when it ships. [`reference/cli`](/docs/cli/reference/cli) and
+[`reference/result-schema`](/docs/cli/reference/result-schema) remain the source of truth for what is
+already implemented.
+
+## Naming
+
+- The OSS executable name **MUST** remain `reconify`. This protocol does not rename the binary, the Go
+  module, the repository, `reconify.yaml`, or the `RECONIFY_CONFIG` environment variable.
+- Agent-facing schemas, skills, capabilities, and any MCP surface **MUST** identify the interface as
+  **Reconify Engine**.
+- Versioned schema identifiers **MUST** use the `reconify.engine.*` namespace (see
+  [Schema identifiers](#schema-identifiers)).
+- A future hosted/platform CLI or MCP surface may use the name `reconify-cloud`. It is out of scope for
+  this repository and this protocol.
+- This protocol MUST NOT reorganize the documentation hierarchy in `docs/content/docs/`.
+
+## Scope: Engine vs. Cloud
+
+Reconify Engine is the deterministic, local, file-oriented interface specified here: the `reconify`
+binary, its output formats, and (later) a local `reconify-engine` MCP server. It establishes
+deterministic financial facts from local files and requires no account, authentication, or network
+access.
+
+A distinct, not-yet-built **Reconify Cloud** interface may later add hosted accounts, authentication,
+issue tracking, eventing, integrations, and monitoring. Reconify Cloud is explicitly out of scope for
+this protocol and for every issue in the `agent-protocol` roadmap. Nothing in this spec MAY be
+interpreted as a commitment about Cloud's naming, transport, or schemas.
+
+## Target workflow
+
+Agents are expected to drive Reconify through this sequence:
+
+```
+capabilities → inspect → infer config → validate → reconcile → explain
+```
+
+- `capabilities` — self-describe the installed Engine's protocol version, commands, formats, and schemas.
+- `inspect` — profile an input file deterministically before writing a config.
+- infer config — propose a `reconify.yaml` from two sample files.
+- validate — confirm the config or proposal is well-formed (`reconify config validate` /
+  `check-source`, both already implemented).
+- reconcile — run the deterministic match.
+- explain — summarize a completed result without re-running reconciliation.
+
+An agent MAY skip steps it already has enough information for (for example, calling `reconcile` directly
+with a hand-written config), but MUST NOT assume a step's output shape without first calling
+`capabilities` or reading this page.
+
+## Schema identifiers
+
+Every schema identifier under this protocol follows `reconify.engine.<name>.v1`. The `v1` suffix is a
+whole-document version: a breaking change to any field of a payload requires `v2` for that identifier
+specifically; identifiers version independently of one another.
+
+| Identifier | Emitted by | Status |
+|---|---|---|
+| `reconify.engine.result.v1` | `reconcile` (JSON / json-stream top level, and every NDJSON envelope) | Planned — AP-2 |
+| `reconify.engine.diagnostic.v1` | any command, on error, when `--error-format json` or `--agent` | Planned — AP-3 |
+| `reconify.engine.capabilities.v1` | `capabilities` | Planned — AP-4 |
+| `reconify.engine.profile.v1` | `inspect` | Planned — AP-5 |
+| `reconify.engine.config-proposal.v1` | `config infer` | Planned — AP-6 |
+| `reconify.engine.explanation.v1` | `explain` | Planned — AP-8 |
+
+Rules that apply to every identifier:
+
+- Adding this identifier to an existing payload (for example, a `schema` field on the top-level
+  `reconcile` JSON result) MUST NOT rename or remove any field or NDJSON event name that already exists.
+  See [`reference/result-schema`](/docs/cli/reference/result-schema) for the current, canonical field
+  list that this constraint protects.
+- New fields added under a `vN` identifier MUST be additive and MUST be safe to ignore by a consumer that
+  only understands the fields documented at the time it was written.
+- A schema identifier MUST NOT be reused for an incompatible shape. A breaking change creates
+  `reconify.engine.<name>.v2` while `v1` continues to be emitted for at least one deprecation window
+  documented in the changelog.
+
+## Commands in scope
+
+This protocol covers the following command surface. Commands marked "existing" are already implemented
+and are only constrained here with respect to the additive schema/diagnostic changes above; see
+`reference/cli` for their full flag reference.
+
+| Command | Status | Spec issue |
+|---|---|---|
+| `reconify reconcile` | existing, gains `reconify.engine.result.v1` and `--agent` | AP-2, AP-7 |
+| `reconify parse` | existing, unaffected by this protocol | — |
+| `reconify config validate` | existing, unaffected | — |
+| `reconify config check-source` | existing, unaffected | — |
+| `reconify config init` | existing, unaffected | — |
+| `reconify config schema` | existing, remains operational; `capabilities` supersedes it as the agent entry point but does not replace it | AP-4 |
+| `reconify capabilities` | new | AP-4 |
+| `reconify inspect FILE` | new | AP-5 |
+| `reconify config infer` | new | AP-6 |
+| `reconify explain` | new | AP-8 |
+| `reconify reconcile --auto` | new flag on existing command | AP-12 |
+| `--agent` (global flag) | new | AP-7 |
+
+`reconify doctor` is explicitly deferred: capability discovery (`capabilities`), config validation, and
+source checking (`config check-source`) already cover the readiness checks a `doctor` command would
+provide. No issue in this roadmap adds it.
+
+## Diagnostic model
+
+Reconify already emits a minimal JSON error envelope on stderr when `--error-format json` is set:
+
+```json
+{"error": "<message>", "code": "<err-code>"}
+```
+
+This protocol requires that both fields **remain present, unrenamed, and unchanged in meaning**
+indefinitely — they are the legacy contract. `reconify.engine.diagnostic.v1` (AP-3) adds a nested,
+richer diagnostic alongside them, not instead of them:
+
+```json
+{
+  "error": "<message>",
+  "code": "<err-code>",
+  "ok": false,
+  "schema": "reconify.engine.diagnostic.v1",
+  "diagnostic": {
+    "code": "<granular machine-readable code>",
+    "category": "<config | input | inference | execution | internal>",
+    "message": "<human-readable message>",
+    "details": { "...": "..." },
+    "suggestions": ["<actionable next step>"]
+  }
+}
+```
+
+- `ok` MUST be `false` on every error envelope and `true` on every successful structured response that
+  adopts this diagnostic shape.
+- `diagnostic.code` MAY be more granular than the legacy `code` field (for example, distinguishing
+  `INFERENCE_AMBIGUOUS` from a generic `config_error`), but the legacy `code` MUST still be one of the
+  existing values documented in `reference/cli`.
+- A command MUST NOT introduce a diagnostic-only failure mode that has no corresponding legacy `error`/
+  `code` pair, so that scripts written against the legacy contract keep working unmodified.
+
+## Exit codes
+
+The exit codes already documented in `reference/cli` and `reconify config schema` are canonical and
+MUST NOT change meaning:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. |
+| `1` | Unexpected or internal error. |
+| `2` | Config or validation error. |
+| `3` | Reconcile completed with unmatched rows (`--fail-if-unmatched` only). |
+| `4` | Reconcile completed with exception events (`--fail-if-exceptions`; takes precedence over `3`). |
+
+New commands introduced by this protocol MUST reuse this table rather than inventing new numeric codes,
+with these clarified applications:
+
+- `config infer` returns exit code `0` when it successfully produces a proposal, even when that
+  proposal's `status` is `needs_input` rather than `ready` — producing a needs-input proposal is not a
+  failure.
+- `config infer --out <file>.yaml` that cannot resolve ambiguity to a single confident mapping MUST NOT
+  write the output file and MUST return exit code `2`, with diagnostic code `INFERENCE_AMBIGUOUS`.
+- `reconcile --auto` that fails its confidence gate (see below) MUST emit `INFERENCE_AMBIGUOUS` to stderr,
+  MUST NOT emit any result data, and MUST return exit code `2`.
+
+## Config inference gates
+
+Any command that infers a `reconify.yaml` mapping (`config infer`, and `reconcile --auto` internally)
+MUST apply the same gate before returning `status: ready` or proceeding to reconcile:
+
+- Date, amount, and reference mappings each MUST reach confidence **>= 0.90**.
+- Each of those mappings MUST have a **>= 0.10** confidence lead over its next-best candidate column.
+- Confidence MUST be computed from **at least 100 successfully parsed sample rows** per source. Fewer
+  successfully parsed rows MUST NOT produce a `ready` status.
+
+When any of these gates fails, the command MUST return `status: needs_input` (for `config infer`) or the
+`INFERENCE_AMBIGUOUS` diagnostic (for `reconcile --auto`) rather than guessing.
+
+Inferred defaults, when a proposal is produced, MUST be:
+
+- One-to-one reference matching (no `passes` override, no `name_mode: tokens`).
+- A `1d` date window.
+- Zero amount tolerance.
+- No name matching.
+
+An agent MAY override any inferred default by editing the proposed config before running `reconcile`;
+`reconcile --auto` MUST use exactly the inferred defaults and MUST NOT accept a `--pair`, `--config`, or
+file-list override in the same invocation (see [Auto reconciliation](#auto-reconciliation)).
+
+## Flag precedence
+
+Reconify's existing precedence pattern, demonstrated today by `--result-mode` vs. per-pair
+`result_mode`, and by `--config` vs. `RECONIFY_CONFIG`, is:
+
+**explicit CLI flag > per-pair/config value > built-in default.**
+
+This protocol's new flags MUST follow the same pattern:
+
+- `--agent` sets defaults for output format, error format, and result mode. Any flag the caller sets
+  explicitly (`--format`, `--error-format`, `--result-mode`, etc.) MUST override the `--agent` default.
+  `--agent` MUST NOT imply `--fail-if-exceptions` or `--fail-if-unmatched` — those remain opt-in.
+- `--agent` MUST reject commands that require interactive input (for example, `config init`, which today
+  has no non-interactive mode — `--force` only bypasses the destination-file overwrite check in
+  `ensureCanWriteConfigInit`, not the `huh` wizard in `runConfigInit`) with a structured diagnostic that
+  names a non-interactive alternative (such as `config infer`, once implemented, or hand-writing
+  `reconify.yaml`), instead of blocking on a prompt.
+- Config inference defaults (above) apply only when the corresponding field is not already pinned by an
+  explicit flag or an existing config value being extended.
+
+## Auto reconciliation
+
+`reconify reconcile LEFT RIGHT --auto` (AP-12):
+
+- MUST accept exactly two positional file arguments.
+- MUST be mutually exclusive with an explicitly supplied `--config`, `--pair`, or any other file/source
+  override; supplying both is a config error (exit code `2`).
+- MUST run inference (the same gate as `config infer`) before reconciling, and MUST NOT reconcile when
+  the gate fails.
+- MUST emit reproducibility metadata containing the exact inferred config and its confidence alongside
+  the result, so the run can be reproduced non-auto by writing that config to a file.
+
+## Evaluation and skills surface
+
+Two roadmap issues extend this protocol without changing its schemas:
+
+- The evaluation corpus and cross-agent runner (AP-9, AP-10) exercise this protocol end-to-end against
+  external coding agents; they MUST treat this page, not agent-specific prompting, as ground truth for
+  expected behavior.
+- Canonical skills MUST be published under the `reconify-engine-*` namespace (AP-11); existing
+  `reconify-*` skill names remain as deprecated thin adapters and MUST continue to work.
+
+## MCP alignment
+
+A future local `reconify-engine` MCP server (AP-13) is specified separately, but MUST reuse the Engine
+schema identifiers and diagnostic model defined on this page rather than defining parallel ones. The MCP
+contract issue is documentation- and schema-only; it does not change anything normative here.
+
+MCP tools MUST preserve the semantic categories represented by CLI exit codes, but MUST express them
+using MCP-appropriate error/result semantics rather than exposing process exit codes as a parallel
+transport mechanism — MCP does not have Unix process exit codes, and forcing that concept into tool
+responses would misrepresent outcomes. In particular:
+
+| CLI exit code | MCP equivalent |
+|---|---|
+| `0` | Successful tool result. |
+| `1` | Internal error (MCP error response). |
+| `2` | Invalid params / structured `reconify.engine.diagnostic.v1` (MCP error response). |
+| `3`, `4` | **Not an error.** A successful reconciliation result whose payload reports unmatched rows or exception events; these exit codes are CLI-only, policy-driven behavior (`--fail-if-unmatched` / `--fail-if-exceptions`) for scripting, not execution failures. An MCP client MUST see a completed `reconcile` or `reconcile_auto` tool call as successful even when the result contains unmatched rows or exceptions.
+
+## Compatibility rules
+
+- Every change under this protocol is additive. Nothing on this page authorizes renaming or removing an
+  existing CLI flag, config key, output field, or NDJSON event name.
+- Existing reconciliation event names (`match`, `amount_diff`, `timing_diff`, `unmatched_left`,
+  `unmatched_right`, `grouped_match`, `grouped_amount_diff`, `grouped_timing_diff`,
+  `many_to_many_match`, `many_to_many_amount_diff`, `many_to_many_timing_diff`, `ambiguous_group`,
+  `duplicate`, `source_summary`, `summary`, `run_info`) are canonical. This protocol MUST NOT introduce a
+  replacement exception taxonomy.
+- `reconify config schema` remains operational and MUST stay in sync with this page; `capabilities`
+  (AP-4) is additive to it, not a replacement.
