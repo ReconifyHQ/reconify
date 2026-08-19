@@ -70,7 +70,7 @@ specifically; identifiers version independently of one another.
 | Identifier | Emitted by | Status |
 |---|---|---|
 | `reconify.engine.result.v1` | `reconcile` (JSON / json-stream top level, and every NDJSON envelope) | Published — AP-2 |
-| `reconify.engine.diagnostic.v1` | any command, on error, when `--error-format json` or `--agent` | Planned — AP-3 |
+| `reconify.engine.diagnostic.v1` | any command, on error, when `--error-format json` or `--agent` | Published — AP-3 |
 | `reconify.engine.capabilities.v1` | `capabilities` | Planned — AP-4 |
 | `reconify.engine.profile.v1` | `inspect` | Planned — AP-5 |
 | `reconify.engine.config-proposal.v1` | `config infer` | Planned — AP-6 |
@@ -115,15 +115,15 @@ provide. No issue in this roadmap adds it.
 
 ## Diagnostic model
 
-Reconify already emits a minimal JSON error envelope on stderr when `--error-format json` is set:
+Reconify emits the versioned diagnostic envelope on stderr when `--error-format json` is set. The
+legacy fields remain available for callers that only understand the original contract:
 
 ```json
 {"error": "<message>", "code": "<err-code>"}
 ```
 
-This protocol requires that both fields **remain present, unrenamed, and unchanged in meaning**
-indefinitely — they are the legacy contract. `reconify.engine.diagnostic.v1` (AP-3) adds a nested,
-richer diagnostic alongside them, not instead of them:
+Both fields **remain present, unrenamed, and unchanged in meaning** indefinitely. The versioned schema
+adds a nested, richer diagnostic alongside them, not instead of them:
 
 ```json
 {

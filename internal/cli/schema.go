@@ -13,6 +13,7 @@ func newSchemaCmd() *cobra.Command {
 		Short: "Print published Engine schemas",
 	}
 	cmd.AddCommand(newResultSchemaCmd())
+	cmd.AddCommand(newDiagnosticSchemaCmd())
 	return cmd
 }
 
@@ -25,6 +26,21 @@ func newResultSchemaCmd() *cobra.Command {
 			_ = args
 			if _, err := cmd.OutOrStdout().Write(schemas.ResultV1()); err != nil {
 				return fmt.Errorf("write result schema: %w", err)
+			}
+			return nil
+		},
+	}
+}
+
+func newDiagnosticSchemaCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "diagnostic",
+		Short: "Print the structured diagnostic schema",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = args
+			if _, err := cmd.OutOrStdout().Write(schemas.DiagnosticV1()); err != nil {
+				return fmt.Errorf("write diagnostic schema: %w", err)
 			}
 			return nil
 		},

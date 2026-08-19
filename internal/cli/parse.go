@@ -55,7 +55,7 @@ Formats:
 			}
 
 			if _, err := os.Stat(filePath); err != nil {
-				return configErrf("file %q not found", filePath)
+				return inputErr(ErrCodeConfig, "config_error", fmt.Sprintf("file %q not found", filePath), diagnosticCodeInputUnreadable)
 			}
 			resolvedPath := filePath
 

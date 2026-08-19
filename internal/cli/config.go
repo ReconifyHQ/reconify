@@ -3,6 +3,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/reconifyhq/reconify/config"
@@ -88,7 +89,7 @@ This validates that required columns exist and that sample data can be parsed.`,
 
 			headers, err := engine.ReadInputHeaders(cmd.Context(), filePath, source.Parser)
 			if err != nil {
-				return configErrf("failed to read file: %v", err)
+				return inputErr(ErrCodeConfig, "config_error", fmt.Sprintf("failed to read file: %v", err), diagnosticCodeInputUnreadable)
 			}
 
 			headerSet := make(map[string]bool)
@@ -135,7 +136,7 @@ This validates that required columns exist and that sample data can be parsed.`,
 
 			if !valid {
 				cmd.PrintErrf("Available columns: %s\n", strings.Join(headers, ", "))
-				return configErrf("source %q does not match file %q", sourceName, filePath)
+				return inputErr(ErrCodeConfig, "config_error", fmt.Sprintf("source %q does not match file %q", sourceName, filePath), diagnosticCodeInputMismatch)
 			}
 
 			cmd.PrintErrf("[OK] source %q matches file %q\n", sourceName, filePath)
@@ -157,13 +158,15 @@ func hasHeader(headers map[string]bool, name string) bool {
 // schemaOutput is the machine-readable description emitted by `reconify config schema`.
 // It is hand-authored to stay stable and readable — not generated via reflection.
 type schemaOutput struct {
-	Version        string                 `json:"version"`
-	ConfigSchema   map[string]interface{} `json:"config_schema"`
-	OutputFormats  map[string]interface{} `json:"output_formats"`
-	NDJSONEvents   map[string]string      `json:"ndjson_event_types"`
-	ExitCodes      map[string]string      `json:"exit_codes"`
-	ResultSchemaID string                 `json:"result_schema_id"`
-	ResultSchema   json.RawMessage        `json:"result_schema"`
+	Version            string                 `json:"version"`
+	ConfigSchema       map[string]interface{} `json:"config_schema"`
+	OutputFormats      map[string]interface{} `json:"output_formats"`
+	NDJSONEvents       map[string]string      `json:"ndjson_event_types"`
+	ExitCodes          map[string]string      `json:"exit_codes"`
+	ResultSchemaID     string                 `json:"result_schema_id"`
+	ResultSchema       json.RawMessage        `json:"result_schema"`
+	DiagnosticSchemaID string                 `json:"diagnostic_schema_id"`
+	DiagnosticSchema   json.RawMessage        `json:"diagnostic_schema"`
 }
 
 func newConfigSchemaCmd() *cobra.Command {
@@ -176,9 +179,11 @@ Agents can call this once to self-bootstrap context without reading the source c
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
 			out := schemaOutput{
-				Version:        cliVersion,
-				ResultSchemaID: schemas.ResultSchemaV1,
-				ResultSchema:   schemas.ResultV1(),
+				Version:            cliVersion,
+				ResultSchemaID:     schemas.ResultSchemaV1,
+				ResultSchema:       schemas.ResultV1(),
+				DiagnosticSchemaID: schemas.DiagnosticSchemaV1,
+				DiagnosticSchema:   schemas.DiagnosticV1(),
 				ConfigSchema: map[string]interface{}{
 					"version": map[string]interface{}{
 						"type": "integer", "required": true, "value": 1,

@@ -1,0 +1,74 @@
+{
+  "$id": "urn:reconify:engine:diagnostic:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconify Engine diagnostic envelope v1",
+  "description": "Versioned JSON diagnostics emitted by Reconify Engine commands.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean",
+          "const": false
+        },
+        "schema": {
+          "type": "string",
+          "const": "reconify.engine.diagnostic.v1"
+        },
+        "diagnostic": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string",
+              "enum": [
+                "config",
+                "input",
+                "inference",
+                "execution",
+                "internal"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "details": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "suggestions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "code",
+            "category",
+            "message",
+            "details",
+            "suggestions"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "error",
+        "code",
+        "ok",
+        "schema",
+        "diagnostic"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

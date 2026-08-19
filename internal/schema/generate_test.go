@@ -74,6 +74,45 @@ func TestPublishedResultSchemaValidatesJSONAndNDJSON(t *testing.T) {
 	}
 }
 
+func TestPublishedDiagnosticSchemaHasNoDrift(t *testing.T) {
+	generated, err := GenerateDiagnosticSchemaJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := schemas.DiagnosticV1(); !reflect.DeepEqual(generated, got) {
+		t.Fatalf("published diagnostic schema drifted from generator (generated %d bytes, published %d bytes)", len(generated), len(got))
+	}
+}
+
+func TestPublishedDiagnosticSchemaValidatesEnvelope(t *testing.T) {
+	var document jsonschema.Schema
+	if err := json.Unmarshal(schemas.DiagnosticV1(), &document); err != nil {
+		t.Fatalf("unmarshal published diagnostic schema: %v", err)
+	}
+	resolved, err := document.Resolve(nil)
+	if err != nil {
+		t.Fatalf("resolve published diagnostic schema: %v", err)
+	}
+
+	for _, category := range []string{"config", "input", "inference", "execution", "internal"} {
+		t.Run(category, func(t *testing.T) {
+			validateJSON(t, resolved, schemas.DiagnosticEnvelope{
+				Error:  "failure",
+				Code:   "error",
+				OK:     false,
+				Schema: schemas.DiagnosticSchemaV1,
+				Diagnostic: schemas.Diagnostic{
+					Code:        "TEST_FAILURE",
+					Category:    category,
+					Message:     "failure",
+					Details:     map[string]any{"exit_code": 1},
+					Suggestions: []string{"retry"},
+				},
+			})
+		})
+	}
+}
+
 func validateJSON(t *testing.T, schema *jsonschema.Resolved, value any) {
 	t.Helper()
 	b, err := json.Marshal(value)
