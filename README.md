@@ -103,6 +103,13 @@ workflow:
 reconify capabilities
 ```
 
+Before writing a config, `reconify inspect` deterministically profiles an input file's format and
+per-column types:
+
+```bash
+reconify inspect data/bank/jan.csv --format json
+```
+
 3. Run reconciliation:
 
 ```bash

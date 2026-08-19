@@ -12,6 +12,10 @@ It buffers the full result before writing.
 Structured JSON results include `"schema": "reconify.engine.result.v1"` at the
 top level. The same field is present in `json-stream` output.
 
+`reconify inspect` also emits indented JSON, tagged `"schema": "reconify.engine.profile.v1"`;
+`json` is currently its only supported `--format` value. See
+[`reference/agent-protocol`](/docs/cli/reference/agent-protocol#inspect) for the profile shape.
+
 ## `json-stream`
 
 Streaming JSON object with the same general structure as `json`, but it encodes events as they are processed.

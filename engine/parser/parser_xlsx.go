@@ -120,6 +120,56 @@ func readXLSXHeaders(ctx context.Context, filePath string, cfg config.ParserCfg)
 	}
 	return headers, nil
 }
+
+// openXLSXRows opens filePath, resolves the target sheet, and returns its
+// header row plus a live *excelize.Rows cursor positioned after the header.
+// The caller must invoke the returned close function (which closes both the
+// row cursor and the workbook) when done.
+func openXLSXRows(filePath string, cfg config.ParserCfg) (headers []string, rows *excelize.Rows, closeFn func(), err error) {
+	if strings.EqualFold(filepath.Ext(filePath), ".xls") {
+		return nil, nil, nil, fmt.Errorf("unsupported Excel format %q: legacy .xls files are not supported; save as .xlsx or .csv", filePath)
+	}
+
+	f, err := excelize.OpenFile(filePath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("open %q: %w", filePath, err)
+	}
+
+	sheet, err := resolveSheet(f, cfg)
+	if err != nil {
+		_ = f.Close()
+		return nil, nil, nil, fmt.Errorf("%s: %w", filePath, err)
+	}
+
+	r, err := f.Rows(sheet)
+	if err != nil {
+		_ = f.Close()
+		return nil, nil, nil, fmt.Errorf("%s: sheet %q: %w", filePath, sheet, err)
+	}
+
+	if !r.Next() {
+		if err := r.Error(); err != nil {
+			_ = r.Close()
+			_ = f.Close()
+			return nil, nil, nil, fmt.Errorf("%s: sheet %q: read header: %w", filePath, sheet, err)
+		}
+		_ = r.Close()
+		_ = f.Close()
+		return nil, nil, nil, fmt.Errorf("%s: sheet %q: read header: %w", filePath, sheet, io.EOF)
+	}
+	h, err := r.Columns()
+	if err != nil {
+		_ = r.Close()
+		_ = f.Close()
+		return nil, nil, nil, fmt.Errorf("%s: sheet %q: read header: %w", filePath, sheet, err)
+	}
+
+	return h, r, func() {
+		_ = r.Close()
+		_ = f.Close()
+	}, nil
+}
+
 func resolveSheet(f *excelize.File, cfg config.ParserCfg) (string, error) {
 	if cfg.Sheet != "" {
 		return cfg.Sheet, nil

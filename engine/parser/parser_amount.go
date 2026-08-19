@@ -10,6 +10,14 @@ import (
 	"strings"
 )
 
+// ParseAmount parses an amount string to int64 minor units using the given
+// decimal separator, thousands separator, and minor-unit multiplier. It is
+// exported so callers outside this package (such as file profiling) can
+// probe candidate amount formats without a full ParserCfg/source mapping.
+func ParseAmount(s string, decimal string, thousands string, multiplier int64) (int64, error) {
+	return parseAmount(s, decimal, thousands, multiplier)
+}
+
 // parseAmount parses an amount string to int64 minor units.
 // It removes the thousands separator, normalizes the decimal separator to ".",
 // then parses using integer/string arithmetic (no float64 round-trip) to avoid

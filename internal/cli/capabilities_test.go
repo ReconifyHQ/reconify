@@ -44,6 +44,15 @@ func TestCapabilitiesCommandDescribesEngineSurface(t *testing.T) {
 	if got.Schemas["diagnostic"] != schemas.DiagnosticSchemaV1 {
 		t.Fatalf("diagnostic schema ID = %q, want %q", got.Schemas["diagnostic"], schemas.DiagnosticSchemaV1)
 	}
+	if got.Schemas["profile"] != schemas.ProfileSchemaV1 {
+		t.Fatalf("profile schema ID = %q, want %q", got.Schemas["profile"], schemas.ProfileSchemaV1)
+	}
+	if got.Commands["inspect"].Interactive {
+		t.Fatalf("inspect should be non-interactive")
+	}
+	if got.Formats["inspect"].Default != "json" {
+		t.Fatalf("inspect default format = %q, want json", got.Formats["inspect"].Default)
+	}
 	if got.ErrorCodes["EXCEPTIONS_FOUND"].ExitCode != ErrCodeExceptions {
 		t.Fatalf("EXCEPTIONS_FOUND exit code = %d, want %d", got.ErrorCodes["EXCEPTIONS_FOUND"].ExitCode, ErrCodeExceptions)
 	}

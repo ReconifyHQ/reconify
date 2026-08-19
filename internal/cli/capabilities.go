@@ -19,6 +19,10 @@ func capabilityFormats() map[string]schemas.FormatCapability {
 			Default:          "ndjson",
 			StreamingFormats: []string{"ndjson", "csv"},
 		},
+		"inspect": {
+			Formats: []string{"json"},
+			Default: "json",
+		},
 	}
 }
 
@@ -60,10 +64,12 @@ func capabilityCommands() map[string]schemas.CommandCapability {
 		"config schema":       {Description: "Print the machine-readable configuration and output metadata schema.", Interactive: false},
 		"config validate":     {Description: "Validate a reconify.yaml configuration.", Interactive: false},
 		"config init":         {Description: "Interactively create a reconify.yaml configuration from sample files.", Interactive: true},
+		"inspect":             {Description: "Deterministically profile an input file's format and column types before writing a config.", Interactive: false},
 		"parse":               {Description: "Parse an input file according to a configured source parser.", Interactive: false},
 		"reconcile":           {Description: "Run a configured reconciliation and emit result events.", Interactive: false},
 		"schema capabilities": {Description: "Print the published capabilities schema.", Interactive: false},
 		"schema diagnostic":   {Description: "Print the published structured diagnostic schema.", Interactive: false},
+		"schema profile":      {Description: "Print the published file profile schema.", Interactive: false},
 		"schema result":       {Description: "Print the published reconciliation result schema.", Interactive: false},
 	}
 }
@@ -150,6 +156,7 @@ func buildCapabilities() schemas.Capabilities {
 		Schemas: map[string]string{
 			"capabilities": schemas.CapabilitiesSchemaV1,
 			"diagnostic":   schemas.DiagnosticSchemaV1,
+			"profile":      schemas.ProfileSchemaV1,
 			"result":       schemas.ResultSchemaV1,
 		},
 		ErrorCodes: capabilityErrorCodes(),

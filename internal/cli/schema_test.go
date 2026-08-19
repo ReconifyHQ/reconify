@@ -53,6 +53,21 @@ func TestCapabilitiesSchemaCommandPrintsPublishedArtifact(t *testing.T) {
 	}
 }
 
+func TestProfileSchemaCommandPrintsPublishedArtifact(t *testing.T) {
+	root := newRootCmd("test", "test")
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"schema", "profile"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("schema profile: %v", err)
+	}
+	if !bytes.Equal(out.Bytes(), schemas.ProfileV1()) {
+		t.Fatal("schema profile output differs from embedded published artifact")
+	}
+}
+
 func TestConfigSchemaIncludesPublishedResultSchema(t *testing.T) {
 	root := newRootCmd("test", "test")
 	var out bytes.Buffer

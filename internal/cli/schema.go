@@ -15,7 +15,23 @@ func newSchemaCmd() *cobra.Command {
 	cmd.AddCommand(newResultSchemaCmd())
 	cmd.AddCommand(newDiagnosticSchemaCmd())
 	cmd.AddCommand(newCapabilitiesSchemaCmd())
+	cmd.AddCommand(newProfileSchemaCmd())
 	return cmd
+}
+
+func newProfileSchemaCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "profile",
+		Short: "Print the Engine file profile schema",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = args
+			if _, err := cmd.OutOrStdout().Write(schemas.ProfileV1()); err != nil {
+				return fmt.Errorf("write profile schema: %w", err)
+			}
+			return nil
+		},
+	}
 }
 
 func newCapabilitiesSchemaCmd() *cobra.Command {
