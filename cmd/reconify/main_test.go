@@ -19,6 +19,7 @@ func buildTestBinary(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// #nosec G204 -- test builds the local CLI with a fixed command and a temp output path.
 	cmd := exec.Command("go", "build", "-o", bin, "./cmd/reconify")
 	cmd.Dir = root
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -29,6 +30,7 @@ func buildTestBinary(t *testing.T) string {
 
 func runTestBinary(t *testing.T, bin string, args ...string) (stdout, stderr string, exitCode int) {
 	t.Helper()
+	// #nosec G204 -- test invokes the locally built binary with fixed test arguments.
 	cmd := exec.Command(bin, args...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout = &out
