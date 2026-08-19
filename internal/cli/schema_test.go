@@ -38,6 +38,21 @@ func TestDiagnosticSchemaCommandPrintsPublishedArtifact(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesSchemaCommandPrintsPublishedArtifact(t *testing.T) {
+	root := newRootCmd("test", "test")
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"schema", "capabilities"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("schema capabilities: %v", err)
+	}
+	if !bytes.Equal(out.Bytes(), schemas.CapabilitiesV1()) {
+		t.Fatal("schema capabilities output differs from embedded published artifact")
+	}
+}
+
 func TestConfigSchemaIncludesPublishedResultSchema(t *testing.T) {
 	root := newRootCmd("test", "test")
 	var out bytes.Buffer

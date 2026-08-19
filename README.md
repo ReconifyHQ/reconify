@@ -96,6 +96,13 @@ pairs:
 reconify config validate --config reconify.yaml
 ```
 
+Agents and scripts can discover the installed Engine interface before running a
+workflow:
+
+```bash
+reconify capabilities
+```
+
 3. Run reconciliation:
 
 ```bash

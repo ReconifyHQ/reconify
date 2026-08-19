@@ -14,7 +14,23 @@ func newSchemaCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newResultSchemaCmd())
 	cmd.AddCommand(newDiagnosticSchemaCmd())
+	cmd.AddCommand(newCapabilitiesSchemaCmd())
 	return cmd
+}
+
+func newCapabilitiesSchemaCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "capabilities",
+		Short: "Print the Engine capabilities schema",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = args
+			if _, err := cmd.OutOrStdout().Write(schemas.CapabilitiesV1()); err != nil {
+				return fmt.Errorf("write capabilities schema: %w", err)
+			}
+			return nil
+		},
+	}
 }
 
 func newResultSchemaCmd() *cobra.Command {

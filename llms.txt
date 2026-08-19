@@ -38,6 +38,8 @@ This writes skill files into `.agents/skills/`, `.claude/skills/`, and `.codex/s
 - Build CLI: `make build`
 - Inspect CLI: `go run ./cmd/reconify --help`
 - Machine-readable schema: `go run ./cmd/reconify config schema`
+- Engine capability discovery: `go run ./cmd/reconify capabilities`
+- Published capabilities schema: `go run ./cmd/reconify schema capabilities`
 
 ## CLI Exit Codes
 
