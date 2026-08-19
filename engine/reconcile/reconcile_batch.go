@@ -57,6 +57,7 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 	}
 
 	result := &Result{
+		Schema:      ResultSchemaV1,
 		PairName:    pairName,
 		LeftSource:  leftSource,
 		RightSource: rightSource,

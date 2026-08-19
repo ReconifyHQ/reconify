@@ -3,6 +3,10 @@ package domain
 
 import "time"
 
+// ResultSchemaV1 is the stable schema identifier for structured reconciliation
+// results emitted by the Engine.
+const ResultSchemaV1 = "reconify.engine.result.v1"
+
 // Transaction is a normalized financial record from any source.
 type Transaction struct {
 	ID        string            `json:"id"`
@@ -159,8 +163,16 @@ type Summary struct {
 	TotalDiscrepancy int64 `json:"total_discrepancy"`
 }
 
+// SourceSummary is the per-counterpart summary payload used by multi-source
+// NDJSON results.
+type SourceSummary struct {
+	Source  string  `json:"source"`
+	Summary Summary `json:"summary"`
+}
+
 // Result is the full output of a reconciliation run.
 type Result struct {
+	Schema         string           `json:"schema"`
 	RunInfo        *RunInfo         `json:"run_info,omitempty"` // nil unless --audit mode
 	IndexSelection *IndexSelection  `json:"index_selection,omitempty"`
 	PairName       string           `json:"pair"`

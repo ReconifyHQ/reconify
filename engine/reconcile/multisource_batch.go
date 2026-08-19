@@ -66,6 +66,7 @@ func ReconcileMultiSource(
 	}
 
 	result := &Result{
+		Schema:     ResultSchemaV1,
 		PairName:   pairName,
 		LeftSource: leftSource,
 		BySource:   make(map[string]Summary, len(counterparts)),

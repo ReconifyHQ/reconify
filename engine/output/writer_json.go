@@ -29,7 +29,9 @@ type JSONWriter = jsonWriter
 // NewJSONWriter creates a JSON writer with metadata setters.
 func NewJSONWriter(w io.Writer) *JSONWriter { return newJSONWriter(w) }
 
-func newJSONWriter(w io.Writer) *jsonWriter { return &jsonWriter{w: w} }
+func newJSONWriter(w io.Writer) *jsonWriter {
+	return &jsonWriter{w: w, result: Result{Schema: ResultSchemaV1}}
+}
 
 func (j *jsonWriter) WriteMatch(pair MatchedPair) error {
 	j.result.Matched = append(j.result.Matched, pair)

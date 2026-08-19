@@ -24,12 +24,13 @@ func newNDJSONWriter(w io.Writer) *ndjsonWriter {
 }
 
 type ndjsonEnvelope struct {
-	Type string `json:"type"`
-	Data any    `json:"data"`
+	Schema string `json:"schema"`
+	Type   string `json:"type"`
+	Data   any    `json:"data"`
 }
 
 func (n *ndjsonWriter) emit(typ string, data any) error {
-	return n.enc.Encode(ndjsonEnvelope{Type: typ, Data: data})
+	return n.enc.Encode(ndjsonEnvelope{Schema: ResultSchemaV1, Type: typ, Data: data})
 }
 
 // SetRunInfo emits the run_info line immediately as the first line of output.
@@ -54,16 +55,10 @@ func (n *ndjsonWriter) WriteDuplicate(group DuplicateGroup) error { return n.emi
 func (n *ndjsonWriter) WriteSummary(s Summary) error              { return n.emit("summary", s) }
 func (n *ndjsonWriter) Flush() error                              { return nil }
 
-// sourceSummary is the payload for a "source_summary" ndjson line.
-type sourceSummary struct {
-	Source  string  `json:"source"`
-	Summary Summary `json:"summary"`
-}
-
 // WriteSourceSummary emits one source_summary line per counterpart for 1-N
 // source runs. Implements SourceBreakdownWriter.
 func (n *ndjsonWriter) WriteSourceSummary(sourceName string, s Summary) error {
-	return n.emit("source_summary", sourceSummary{Source: sourceName, Summary: s})
+	return n.emit("source_summary", SourceSummary{Source: sourceName, Summary: s})
 }
 
 // GroupedEventWriter implementation — one tagged line per event.

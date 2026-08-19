@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	. "github.com/reconifyhq/reconify/engine/domain"
+	"github.com/reconifyhq/reconify/schemas"
 )
 
 // makeRunInfo returns a minimal RunInfo for test fixtures.
@@ -310,6 +312,94 @@ func TestNDJSONWriter_ManyToManyEvents(t *testing.T) {
 		if !gotTypes[typ] {
 			t.Fatalf("missing ndjson event type %q in %v", typ, gotTypes)
 		}
+	}
+}
+
+func TestStructuredWriters_ValidatePublishedResultSchema(t *testing.T) {
+	resolved := loadPublishedResultSchema(t)
+
+	writeAll := func(t *testing.T, w ResultWriter) {
+		t.Helper()
+		requireNoFormatErr(t, w.WriteMatch(MatchedPair{}))
+		requireNoFormatErr(t, w.WriteAmountDiff(AmountDiffPair{}))
+		requireNoFormatErr(t, w.WriteTimingDiff(TimingDiffPair{}))
+		requireNoFormatErr(t, w.WriteUnmatched(Transaction{}, "left"))
+		requireNoFormatErr(t, w.WriteUnmatched(Transaction{}, "right"))
+		requireNoFormatErr(t, w.WriteDuplicate(DuplicateGroup{}))
+		if grouped, ok := w.(GroupedEventWriter); ok {
+			requireNoFormatErr(t, grouped.WriteGroupedMatch(GroupedMatchedPair{}))
+			requireNoFormatErr(t, grouped.WriteGroupedAmountDiff(GroupedAmountDiffPair{}))
+			requireNoFormatErr(t, grouped.WriteGroupedTimingDiff(GroupedTimingDiffPair{}))
+			requireNoFormatErr(t, grouped.WriteAmbiguousGroup(AmbiguousGroupPair{}))
+		}
+		if many, ok := w.(ManyToManyEventWriter); ok {
+			requireNoFormatErr(t, many.WriteManyToManyMatch(ManyToManyMatchedPair{}))
+			requireNoFormatErr(t, many.WriteManyToManyAmountDiff(ManyToManyAmountDiffPair{}))
+			requireNoFormatErr(t, many.WriteManyToManyTimingDiff(ManyToManyTimingDiffPair{}))
+		}
+		if source, ok := w.(SourceBreakdownWriter); ok {
+			requireNoFormatErr(t, source.WriteSourceSummary("counterpart", Summary{}))
+		}
+		requireNoFormatErr(t, w.WriteSummary(Summary{}))
+		requireNoFormatErr(t, w.Flush())
+	}
+
+	t.Run("json", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := newJSONWriter(&buf)
+		w.SetMeta("pair", "left", "right")
+		writeAll(t, w)
+		validatePublishedJSON(t, resolved, buf.Bytes())
+	})
+
+	t.Run("json-stream", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := newJSONStreamWriter(&buf)
+		w.SetMeta("pair", "left", "right")
+		writeAll(t, w)
+		validatePublishedJSON(t, resolved, buf.Bytes())
+	})
+
+	t.Run("ndjson", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := newNDJSONWriter(&buf)
+		requireNoFormatErr(t, w.SetRunInfo(makeRunInfo()))
+		requireNoFormatErr(t, w.SetIndexSelection(IndexSelection{}))
+		writeAll(t, w)
+		for i, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+			validatePublishedJSON(t, resolved, []byte(line))
+			var envelope map[string]any
+			if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+				t.Fatalf("line %d: unmarshal envelope: %v", i, err)
+			}
+			if envelope["schema"] != ResultSchemaV1 {
+				t.Errorf("line %d schema = %v, want %q", i, envelope["schema"], ResultSchemaV1)
+			}
+		}
+	})
+}
+
+func loadPublishedResultSchema(t *testing.T) *jsonschema.Resolved {
+	t.Helper()
+	var document jsonschema.Schema
+	if err := json.Unmarshal(schemas.ResultV1(), &document); err != nil {
+		t.Fatalf("unmarshal published schema: %v", err)
+	}
+	resolved, err := document.Resolve(nil)
+	if err != nil {
+		t.Fatalf("resolve published schema: %v", err)
+	}
+	return resolved
+}
+
+func validatePublishedJSON(t *testing.T, schema *jsonschema.Resolved, data []byte) {
+	t.Helper()
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if err := schema.Validate(value); err != nil {
+		t.Fatalf("published schema validation failed: %v\n%s", err, data)
 	}
 }
 

@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	charm.land/huh/v2 v2.0.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/spf13/cobra v1.8.0
 	github.com/xuri/excelize/v2 v2.10.1
 	golang.org/x/sys v0.46.0

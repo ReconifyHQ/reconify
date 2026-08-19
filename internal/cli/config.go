@@ -7,6 +7,7 @@ import (
 
 	"github.com/reconifyhq/reconify/config"
 	"github.com/reconifyhq/reconify/engine"
+	"github.com/reconifyhq/reconify/schemas"
 	"github.com/spf13/cobra"
 )
 
@@ -156,11 +157,13 @@ func hasHeader(headers map[string]bool, name string) bool {
 // schemaOutput is the machine-readable description emitted by `reconify config schema`.
 // It is hand-authored to stay stable and readable — not generated via reflection.
 type schemaOutput struct {
-	Version       string                 `json:"version"`
-	ConfigSchema  map[string]interface{} `json:"config_schema"`
-	OutputFormats map[string]interface{} `json:"output_formats"`
-	NDJSONEvents  map[string]string      `json:"ndjson_event_types"`
-	ExitCodes     map[string]string      `json:"exit_codes"`
+	Version        string                 `json:"version"`
+	ConfigSchema   map[string]interface{} `json:"config_schema"`
+	OutputFormats  map[string]interface{} `json:"output_formats"`
+	NDJSONEvents   map[string]string      `json:"ndjson_event_types"`
+	ExitCodes      map[string]string      `json:"exit_codes"`
+	ResultSchemaID string                 `json:"result_schema_id"`
+	ResultSchema   json.RawMessage        `json:"result_schema"`
 }
 
 func newConfigSchemaCmd() *cobra.Command {
@@ -173,7 +176,9 @@ Agents can call this once to self-bootstrap context without reading the source c
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args
 			out := schemaOutput{
-				Version: cliVersion,
+				Version:        cliVersion,
+				ResultSchemaID: schemas.ResultSchemaV1,
+				ResultSchema:   schemas.ResultV1(),
 				ConfigSchema: map[string]interface{}{
 					"version": map[string]interface{}{
 						"type": "integer", "required": true, "value": 1,
