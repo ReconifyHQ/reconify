@@ -1,0 +1,139 @@
+{
+  "$id": "urn:reconify:engine:profile:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconify Engine file profile v1",
+  "description": "Versioned JSON description of a deterministically profiled input file, emitted by `reconify inspect`.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "reconify.engine.profile.v1"
+        },
+        "file": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "scan": {
+          "type": "object",
+          "properties": {
+            "full": {
+              "type": "boolean"
+            },
+            "rows_scanned": {
+              "type": "integer"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "full",
+            "rows_scanned",
+            "truncated"
+          ],
+          "additionalProperties": false
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "non_empty_count": {
+                "type": "integer"
+              },
+              "null_count": {
+                "type": "integer"
+              },
+              "inferred_type": {
+                "type": "string"
+              },
+              "ambiguous": {
+                "type": "boolean"
+              },
+              "candidates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "confidence": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "confidence"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "date_layout": {
+                "type": "string"
+              },
+              "amount_format": {
+                "type": [
+                  "null",
+                  "object"
+                ],
+                "properties": {
+                  "decimal": {
+                    "type": "string"
+                  },
+                  "thousands": {
+                    "type": "string"
+                  },
+                  "currency_symbol": {
+                    "type": "string"
+                  },
+                  "parenthesized_negative": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "decimal",
+                  "parenthesized_negative"
+                ],
+                "additionalProperties": false
+              },
+              "sample_values": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "name",
+              "non_empty_count",
+              "null_count",
+              "inferred_type",
+              "ambiguous",
+              "candidates"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "file",
+        "format",
+        "scan",
+        "columns"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

@@ -29,6 +29,25 @@ describes the installed Engine version, implemented commands, formats, matching
 passes, result modes, schema identifiers, diagnostic codes, and exit codes.
 Use `reconify schema capabilities` to print the published Draft 2020-12 schema.
 
+## `reconify inspect`
+
+```bash
+reconify inspect data/bank.csv --format json
+```
+
+| Flag | Default | Description |
+|---|---:|---|
+| `--format` | `json` | Output format; `json` is the only supported value. |
+| `--full` | `false` | Exact scan of every row instead of the default 1,000-row bounded scan. |
+| `--sample-values` | `3` | Representative distinct raw sample values per column; `0` disables. |
+| `--sheet` | first sheet | XLSX/XLSM sheet name. |
+
+Prints the versioned `reconify.engine.profile.v1` document to stdout: file format,
+scan bounds, and per-column type inference (date layouts, amount formats, sample
+values). Supports CSV, JSON, NDJSON, XLSX, and XLSM. Does not require or propose a
+`reconify.yaml` column mapping. See [`reference/agent-protocol`](/docs/cli/reference/agent-protocol#inspect)
+for the full schema shape.
+
 ## `reconify config init`
 
 ```bash
@@ -99,6 +118,15 @@ reconify schema capabilities > reconify.engine.capabilities.v1.json
 
 Prints the published Draft 2020-12 capabilities schema used by
 `reconify capabilities`.
+
+## `reconify schema profile`
+
+```bash
+reconify schema profile > reconify.engine.profile.v1.json
+```
+
+Prints the published Draft 2020-12 schema for the file profile document used by
+`reconify inspect`.
 
 ## `reconify config check-source`
 

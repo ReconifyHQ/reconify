@@ -11,7 +11,7 @@ on across releases.
 The keywords **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used as defined in RFC 2119.
 
 This document describes the target contract for the roadmap tracked in the `agent-protocol` label. Some
-identifiers and commands below (`inspect`, `config infer`, `explain`, `--agent`, `reconcile --auto`) do
+identifiers and commands below (`config infer`, `explain`, `--agent`, `reconcile --auto`) do
 not exist in the codebase yet; each is delivered by its own issue and MUST match this spec when it ships.
 [`reference/cli`](/docs/cli/reference/cli) and
 [`reference/result-schema`](/docs/cli/reference/result-schema) remain the source of truth for what is
@@ -89,6 +89,47 @@ Installed binaries expose the same document with `reconify schema capabilities`.
 }
 ```
 
+## Inspect
+
+`reconify inspect FILE` prints a JSON document to stdout using the `reconify.engine.profile.v1`
+schema. It deterministically profiles a CSV, JSON, NDJSON, XLSX, or XLSM file's format, per-column
+type inference, date layouts, and amount formats **before** a `reconify.yaml` mapping exists. It does
+not propose a column mapping or config; `config infer` (AP-6) builds on this profile to do that.
+
+By default `inspect` scans up to 1,000 rows; `--full` performs an exact scan of every row instead. Up
+to three representative, distinct raw values per column are included by default, configurable with
+`--sample-values` (`0` disables sample collection entirely).
+
+```json
+{
+  "schema": "reconify.engine.profile.v1",
+  "file": "payments.csv",
+  "format": "csv",
+  "scan": {"full": false, "rows_scanned": 1000, "truncated": true},
+  "columns": [
+    {
+      "name": "date",
+      "non_empty_count": 1000,
+      "null_count": 0,
+      "inferred_type": "date",
+      "ambiguous": false,
+      "candidates": [{"type": "date", "confidence": 0.99}, {"type": "text", "confidence": 0.01}],
+      "date_layout": "2006-01-02",
+      "sample_values": ["2024-01-01", "2024-01-02", "2024-01-03"]
+    }
+  ]
+}
+```
+
+Each column reports every type hypothesis considered (`date`, `amount`, `integer`, `boolean`, `text`,
+or `empty` for an all-empty column) ranked by confidence (the fraction of non-empty sampled values that
+matched). `ambiguous` is `true` when the top two candidates are within a 0.10 confidence lead of each
+other — a fact about the column, not a decision; `inspect` never gates or proposes a mapping.
+
+The published Draft 2020-12 schema is
+[`schemas/reconify.engine.profile.v1.json`](https://github.com/reconifyhq/reconify/blob/main/schemas/reconify.engine.profile.v1.json).
+Installed binaries expose the same document with `reconify schema profile`.
+
 ## Schema identifiers
 
 Every schema identifier under this protocol follows `reconify.engine.<name>.v1`. The `v1` suffix is a
@@ -100,7 +141,7 @@ specifically; identifiers version independently of one another.
 | `reconify.engine.result.v1` | `reconcile` (JSON / json-stream top level, and every NDJSON envelope) | Published — AP-2 |
 | `reconify.engine.diagnostic.v1` | any command, on error, when `--error-format json` or `--agent` | Published — AP-3 |
 | `reconify.engine.capabilities.v1` | `capabilities` | Published — AP-4 |
-| `reconify.engine.profile.v1` | `inspect` | Planned — AP-5 |
+| `reconify.engine.profile.v1` | `inspect` | Published — AP-5 |
 | `reconify.engine.config-proposal.v1` | `config infer` | Planned — AP-6 |
 | `reconify.engine.explanation.v1` | `explain` | Planned — AP-8 |
 
@@ -131,7 +172,7 @@ and are only constrained here with respect to the additive schema/diagnostic cha
 | `reconify config init` | existing, unaffected | — |
 | `reconify config schema` | existing, remains operational; `capabilities` supersedes it as the agent entry point but does not replace it | AP-4 |
 | `reconify capabilities` | implemented | AP-4 |
-| `reconify inspect FILE` | new | AP-5 |
+| `reconify inspect FILE` | implemented | AP-5 |
 | `reconify config infer` | new | AP-6 |
 | `reconify explain` | new | AP-8 |
 | `reconify reconcile --auto` | new flag on existing command | AP-12 |
