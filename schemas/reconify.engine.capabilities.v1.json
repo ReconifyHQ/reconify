@@ -1,0 +1,236 @@
+{
+  "$id": "urn:reconify:engine:capabilities:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconify Engine capabilities v1",
+  "description": "Versioned JSON description of the implemented Reconify Engine interface.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "reconify.engine.capabilities.v1"
+        },
+        "protocol_version": {
+          "type": "string"
+        },
+        "protocol_versions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "engine": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "version"
+          ],
+          "additionalProperties": false
+        },
+        "commands": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "interactive": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "description",
+              "interactive"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "formats": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "formats": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default": {
+                "type": "string"
+              },
+              "streaming_formats": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "audit_compatible": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "deterministic_compatible": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "formats",
+              "default"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "matching": {
+          "type": "object",
+          "properties": {
+            "passes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "cardinality": {
+                    "type": "string"
+                  },
+                  "requires": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "group_by": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "type",
+                  "description",
+                  "cardinality"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "default_passes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "group_keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "passes",
+            "default_passes",
+            "group_keys"
+          ],
+          "additionalProperties": false
+        },
+        "result_modes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "schemas": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "error_codes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "category": {
+                "type": "string"
+              },
+              "legacy_code": {
+                "type": "string"
+              },
+              "exit_code": {
+                "type": "integer"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "category",
+              "legacy_code",
+              "exit_code",
+              "description"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "exit_codes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "protocol_version",
+        "protocol_versions",
+        "engine",
+        "commands",
+        "formats",
+        "matching",
+        "result_modes",
+        "schemas",
+        "error_codes",
+        "exit_codes"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

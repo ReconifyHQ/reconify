@@ -158,15 +158,15 @@ func hasHeader(headers map[string]bool, name string) bool {
 // schemaOutput is the machine-readable description emitted by `reconify config schema`.
 // It is hand-authored to stay stable and readable — not generated via reflection.
 type schemaOutput struct {
-	Version            string                 `json:"version"`
-	ConfigSchema       map[string]interface{} `json:"config_schema"`
-	OutputFormats      map[string]interface{} `json:"output_formats"`
-	NDJSONEvents       map[string]string      `json:"ndjson_event_types"`
-	ExitCodes          map[string]string      `json:"exit_codes"`
-	ResultSchemaID     string                 `json:"result_schema_id"`
-	ResultSchema       json.RawMessage        `json:"result_schema"`
-	DiagnosticSchemaID string                 `json:"diagnostic_schema_id"`
-	DiagnosticSchema   json.RawMessage        `json:"diagnostic_schema"`
+	Version            string                              `json:"version"`
+	ConfigSchema       map[string]interface{}              `json:"config_schema"`
+	OutputFormats      map[string]schemas.FormatCapability `json:"output_formats"`
+	NDJSONEvents       map[string]string                   `json:"ndjson_event_types"`
+	ExitCodes          map[string]string                   `json:"exit_codes"`
+	ResultSchemaID     string                              `json:"result_schema_id"`
+	ResultSchema       json.RawMessage                     `json:"result_schema"`
+	DiagnosticSchemaID string                              `json:"diagnostic_schema_id"`
+	DiagnosticSchema   json.RawMessage                     `json:"diagnostic_schema"`
 }
 
 func newConfigSchemaCmd() *cobra.Command {
@@ -268,47 +268,11 @@ Agents can call this once to self-bootstrap context without reading the source c
 						},
 					},
 				},
-				OutputFormats: map[string]interface{}{
-					"reconcile": map[string]interface{}{
-						"formats":                  []string{"json", "json-stream", "ndjson", "csv", "table"},
-						"default":                  "json",
-						"streaming_formats":        []string{"ndjson", "csv", "json-stream"},
-						"audit_compatible":         []string{"json", "json-stream", "ndjson"},
-						"deterministic_compatible": []string{"json"},
-					},
-					"parse": map[string]interface{}{
-						"formats":           []string{"ndjson", "csv", "table", "json"},
-						"default":           "ndjson",
-						"streaming_formats": []string{"ndjson", "csv"},
-					},
-				},
+				OutputFormats: formatMetadataForConfigSchema(),
 				// Event names match engine/format.go ndjsonWriter exactly.
 				// Each line is {"type":"<name>","data":{...}}.
-				NDJSONEvents: map[string]string{
-					"run_info":                 "Run provenance: tool version, file hashes, timestamps. Only emitted when --audit is set. Always the first line. Payload: RunInfo.",
-					"match":                    "Left+right pair that reconciled cleanly. Payload: {left: Transaction, right: Transaction}.",
-					"amount_diff":              "Reference matched but amount differs beyond amount_tolerance_minor. Payload: {left, right, diff_minor}.",
-					"timing_diff":              "Reference+amount matched but date is outside date_window. Payload: {left, right, days_diff}.",
-					"unmatched_left":           "Left transaction with no match on the right side. Payload: Transaction.",
-					"unmatched_right":          "Right transaction with no match on the left side. Payload: Transaction.",
-					"grouped_match":            "One left matched to N rights (one_to_many pass). Payload: {left, rights: []Transaction}.",
-					"grouped_amount_diff":      "Grouped match where sum of right amounts differs beyond tolerance. Payload: {left, rights, diff_minor}.",
-					"grouped_timing_diff":      "Grouped match where at least one right date is outside date_window. Payload: {left, rights, days_diff}.",
-					"many_to_many_match":       "M left rows matched to N right rows by shared group key. Payload: {lefts: []Transaction, rights: []Transaction}.",
-					"many_to_many_amount_diff": "N:M grouped match where summed left and right amounts differ beyond tolerance. Payload: {lefts, rights, diff_minor}.",
-					"many_to_many_timing_diff": "N:M grouped match where at least one cross-side date is outside date_window. Payload: {lefts, rights, days_diff}.",
-					"ambiguous_group":          "Multiple left rows share the same reference; manual review required. Payload: {reference, left_rows, rights}.",
-					"duplicate":                "Transactions within the same source sharing the same reference. Payload: {source, reference, transactions}.",
-					"source_summary":           "Per-counterpart summary for 1-N runs. One per counterpart, before final summary. Payload: {source: string, summary: Summary}.",
-					"summary":                  "Aggregate counts and match rate. Always the last line. Payload: Summary.",
-				},
-				ExitCodes: map[string]string{
-					"0": "Success.",
-					"1": "Unexpected or internal error.",
-					"2": "Config or validation error (bad YAML, missing pair/source, column not found).",
-					"3": "Reconcile completed with unmatched rows. Only returned when --fail-if-unmatched is set.",
-					"4": "Reconcile completed with exception events (amount_diff, timing_diff, or unmatched). Only returned when --fail-if-exceptions is set. Takes precedence over exit code 3 when both flags are set.",
-				},
+				NDJSONEvents: capabilityNDJSONEvents(),
+				ExitCodes:    capabilityExitCodes(),
 			}
 
 			enc := json.NewEncoder(cmd.OutOrStdout())

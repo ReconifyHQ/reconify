@@ -11,9 +11,9 @@ on across releases.
 The keywords **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used as defined in RFC 2119.
 
 This document describes the target contract for the roadmap tracked in the `agent-protocol` label. Some
-identifiers and commands below (`capabilities`, `inspect`, `config infer`, `explain`, `--agent`,
-`reconcile --auto`) do not exist in the codebase yet; each is delivered by its own issue and MUST match
-this spec when it ships. [`reference/cli`](/docs/cli/reference/cli) and
+identifiers and commands below (`inspect`, `config infer`, `explain`, `--agent`, `reconcile --auto`) do
+not exist in the codebase yet; each is delivered by its own issue and MUST match this spec when it ships.
+[`reference/cli`](/docs/cli/reference/cli) and
 [`reference/result-schema`](/docs/cli/reference/result-schema) remain the source of truth for what is
 already implemented.
 
@@ -61,6 +61,34 @@ An agent MAY skip steps it already has enough information for (for example, call
 with a hand-written config), but MUST NOT assume a step's output shape without first calling
 `capabilities` or reading this page.
 
+## Capabilities
+
+`reconify capabilities` prints a JSON document to stdout using the
+`reconify.engine.capabilities.v1` schema. It is the preferred first call for an agent that needs to
+discover the installed Engine surface. The document includes the Engine version, supported commands,
+input/output formats, matching passes, result modes, published schema identifiers, diagnostic codes,
+and process exit codes.
+
+The published Draft 2020-12 schema is
+[`schemas/reconify.engine.capabilities.v1.json`](https://github.com/reconifyhq/reconify/blob/main/schemas/reconify.engine.capabilities.v1.json).
+Installed binaries expose the same document with `reconify schema capabilities`.
+
+```json
+{
+  "schema": "reconify.engine.capabilities.v1",
+  "protocol_version": "v1",
+  "protocol_versions": ["v1"],
+  "engine": {"name": "Reconify Engine", "version": "0.4.0"},
+  "commands": {"reconcile": {"description": "...", "interactive": false}},
+  "formats": {"reconcile": {"formats": ["json", "json-stream", "ndjson", "csv", "table"], "default": "json"}},
+  "matching": {"passes": [], "default_passes": ["reference_one_to_one"], "group_keys": ["reference", "name", "group_key"]},
+  "result_modes": ["all", "exceptions_only", "summary_only"],
+  "schemas": {"result": "reconify.engine.result.v1", "diagnostic": "reconify.engine.diagnostic.v1"},
+  "error_codes": {},
+  "exit_codes": {"0": "Success."}
+}
+```
+
 ## Schema identifiers
 
 Every schema identifier under this protocol follows `reconify.engine.<name>.v1`. The `v1` suffix is a
@@ -71,7 +99,7 @@ specifically; identifiers version independently of one another.
 |---|---|---|
 | `reconify.engine.result.v1` | `reconcile` (JSON / json-stream top level, and every NDJSON envelope) | Published — AP-2 |
 | `reconify.engine.diagnostic.v1` | any command, on error, when `--error-format json` or `--agent` | Published — AP-3 |
-| `reconify.engine.capabilities.v1` | `capabilities` | Planned — AP-4 |
+| `reconify.engine.capabilities.v1` | `capabilities` | Published — AP-4 |
 | `reconify.engine.profile.v1` | `inspect` | Planned — AP-5 |
 | `reconify.engine.config-proposal.v1` | `config infer` | Planned — AP-6 |
 | `reconify.engine.explanation.v1` | `explain` | Planned — AP-8 |
@@ -102,7 +130,7 @@ and are only constrained here with respect to the additive schema/diagnostic cha
 | `reconify config check-source` | existing, unaffected | — |
 | `reconify config init` | existing, unaffected | — |
 | `reconify config schema` | existing, remains operational; `capabilities` supersedes it as the agent entry point but does not replace it | AP-4 |
-| `reconify capabilities` | new | AP-4 |
+| `reconify capabilities` | implemented | AP-4 |
 | `reconify inspect FILE` | new | AP-5 |
 | `reconify config infer` | new | AP-6 |
 | `reconify explain` | new | AP-8 |

@@ -18,6 +18,17 @@ reconify --config reconify.yaml --verbose
 
 If `--config` is not set, Reconify also checks `RECONIFY_CONFIG`.
 
+## `reconify capabilities`
+
+```bash
+reconify capabilities
+```
+
+Prints the versioned `reconify.engine.capabilities.v1` document to stdout. It
+describes the installed Engine version, implemented commands, formats, matching
+passes, result modes, schema identifiers, diagnostic codes, and exit codes.
+Use `reconify schema capabilities` to print the published Draft 2020-12 schema.
+
 ## `reconify config init`
 
 ```bash
@@ -79,6 +90,15 @@ Prints the published Draft 2020-12 schema for structured JSON diagnostics.
 When `--error-format json` is enabled, every failed command emits this envelope
 to stderr with `ok: false`, the legacy `error` and `code` fields, and the nested
 diagnostic details.
+
+## `reconify schema capabilities`
+
+```bash
+reconify schema capabilities > reconify.engine.capabilities.v1.json
+```
+
+Prints the published Draft 2020-12 capabilities schema used by
+`reconify capabilities`.
 
 ## `reconify config check-source`
 

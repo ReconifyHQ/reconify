@@ -47,7 +47,7 @@ It ingests financial data from multiple sources, normalizes them, and compares t
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "reconify.yaml", "Path to configuration file")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 	rootCmd.PersistentFlags().StringVar(&errorFormat, "error-format", "text",
-		`Error output format: text (default) or json. When json, errors are written to stderr as {"error":"...","code":"..."}.`)
+		`Error output format: text (default) or json. When json, errors are written to stderr as reconify.engine.diagnostic.v1.`)
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		_ = args
 		configExplicit = cmd.Root().PersistentFlags().Changed("config")
@@ -58,6 +58,7 @@ It ingests financial data from multiple sources, normalizes them, and compares t
 	rootCmd.AddCommand(newReconcileCmd())
 	rootCmd.AddCommand(newParseCmd())
 	rootCmd.AddCommand(newSchemaCmd())
+	rootCmd.AddCommand(newCapabilitiesCmd())
 
 	return rootCmd
 }
