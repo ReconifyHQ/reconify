@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,7 +65,16 @@ Formats:
   ndjson       One tagged JSON line per event; O(1) memory; crash-safe.
   csv          Fixed-schema CSV; O(1) memory.
   table        Aligned ASCII table; buffers all rows in memory.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			defer func() {
+				if err == nil {
+					return
+				}
+				var cliErr *Error
+				if !errors.As(err, &cliErr) && !errors.Is(err, context.Canceled) {
+					err = executionErr(err)
+				}
+			}()
 			_ = args
 			ctx := cmd.Context()
 			if pairName == "" {

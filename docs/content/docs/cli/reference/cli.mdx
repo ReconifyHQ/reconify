@@ -13,7 +13,7 @@ reconify --config reconify.yaml --verbose
 |---|---:|---|
 | `--config`, `-c` | `reconify.yaml` | Path to configuration file. |
 | `--verbose`, `-v` | `false` | Enable verbose output. |
-| `--error-format` | `text` | `text` or `json`; JSON errors are written to stderr with an error code. |
+| `--error-format` | `text` | `text` or `json`; JSON errors are written to stderr as `reconify.engine.diagnostic.v1` while preserving legacy `error` and `code`. |
 | `--version` | | Print version and build time. |
 
 If `--config` is not set, Reconify also checks `RECONIFY_CONFIG`.
@@ -57,7 +57,8 @@ reconify config schema
 Prints a machine-readable JSON description of the YAML configuration, output
 formats, NDJSON event types, and CLI exit codes. This is the preferred bootstrap
 interface for tools and agents that need the current schema. The response also
-contains `result_schema_id` and the published `result_schema` document.
+contains the published `result_schema_id`/`result_schema` and
+`diagnostic_schema_id`/`diagnostic_schema` documents.
 
 ## `reconify schema result`
 
@@ -67,6 +68,17 @@ reconify schema result > reconify.engine.result.v1.json
 
 Prints the published Draft 2020-12 reconciliation result schema used by JSON,
 JSON-stream, and NDJSON output.
+
+## `reconify schema diagnostic`
+
+```bash
+reconify schema diagnostic > reconify.engine.diagnostic.v1.json
+```
+
+Prints the published Draft 2020-12 schema for structured JSON diagnostics.
+When `--error-format json` is enabled, every failed command emits this envelope
+to stderr with `ok: false`, the legacy `error` and `code` fields, and the nested
+diagnostic details.
 
 ## `reconify config check-source`
 

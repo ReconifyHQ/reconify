@@ -28,15 +28,31 @@ func reconcileExitError(sum engine.Summary, failIfUnmatched, failIfExceptions bo
 		sum.UnmatchedLeft > 0 ||
 		sum.UnmatchedRight > 0
 	if failIfExceptions && hasExceptions {
-		return &Error{
-			Code:    ErrCodeExceptions,
-			ErrCode: "exceptions",
-			Msg:     "reconciliation produced exception events (amount_diff, timing_diff, or unmatched)",
-		}
+		return policyErr(
+			ErrCodeExceptions,
+			"exceptions",
+			"reconciliation produced exception events (amount_diff, timing_diff, or unmatched)",
+			diagnosticCodeExceptionsFound,
+			map[string]any{
+				"amount_diff_count": sum.AmountDiffCount,
+				"timing_diff_count": sum.TimingDiffCount,
+				"unmatched_left":    sum.UnmatchedLeft,
+				"unmatched_right":   sum.UnmatchedRight,
+			},
+		)
 	}
 	hasUnmatched := sum.UnmatchedLeft > 0 || sum.UnmatchedRight > 0
 	if failIfUnmatched && hasUnmatched {
-		return &Error{Code: ErrCodeUnmatched, ErrCode: "unmatched", Msg: "reconciliation has unmatched rows"}
+		return policyErr(
+			ErrCodeUnmatched,
+			"unmatched",
+			"reconciliation has unmatched rows",
+			diagnosticCodeUnmatchedRows,
+			map[string]any{
+				"unmatched_left":  sum.UnmatchedLeft,
+				"unmatched_right": sum.UnmatchedRight,
+			},
+		)
 	}
 	return nil
 }

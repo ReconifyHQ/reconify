@@ -49,7 +49,8 @@ This writes skill files into `.agents/skills/`, `.claude/skills/`, and `.codex/s
 | 3 | Reconcile completed with unmatched rows (only when `--fail-if-unmatched` is set) |
 | 4 | Reconcile completed with exception events: `amount_diff`, `timing_diff`, or unmatched (only when `--fail-if-exceptions` is set; takes precedence over code 3 when both flags are set) |
 
-Use `--error-format json` to get structured errors on stderr: `{"error":"...","code":"config_error"}`.
+Use `--error-format json` to get `reconify.engine.diagnostic.v1` errors on stderr. The envelope keeps
+the legacy `error` and `code` fields and adds `ok`, `schema`, and nested diagnostic details.
 
 ## Output Formats
 
