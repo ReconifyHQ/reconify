@@ -304,6 +304,9 @@ func decodeParityResult(t *testing.T, data []byte) Result {
 	if err := json.Unmarshal(data, &result); err != nil {
 		t.Fatal(err)
 	}
+	if result.Schema != ResultSchemaV1 {
+		t.Fatalf("result schema = %q, want %q", result.Schema, ResultSchemaV1)
+	}
 	return result
 }
 

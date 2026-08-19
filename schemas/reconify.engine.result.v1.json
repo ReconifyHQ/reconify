@@ -1,0 +1,3713 @@
+{
+  "$id": "urn:reconify:engine:result:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconify Engine reconciliation result v1",
+  "description": "Versioned JSON, JSON-stream, and NDJSON reconciliation result payloads.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "reconify.engine.result.v1"
+        },
+        "run_info": {
+          "type": [
+            "null",
+            "object"
+          ],
+          "properties": {
+            "run_id": {
+              "type": "string"
+            },
+            "timestamp": {
+              "type": "string"
+            },
+            "tool_version": {
+              "type": "string"
+            },
+            "left_file": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "type": "integer"
+                },
+                "mod_time": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "sha256",
+                "size_bytes",
+                "mod_time"
+              ],
+              "additionalProperties": false
+            },
+            "right_file": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "type": "integer"
+                },
+                "mod_time": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "sha256",
+                "size_bytes",
+                "mod_time"
+              ],
+              "additionalProperties": false
+            },
+            "pair_config": {
+              "type": "object",
+              "properties": {
+                "date_window": {
+                  "type": "string"
+                },
+                "amount_tolerance_minor": {
+                  "type": "integer"
+                },
+                "name_mode": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "date_window",
+                "amount_tolerance_minor",
+                "name_mode"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "run_id",
+            "timestamp",
+            "tool_version",
+            "left_file",
+            "right_file",
+            "pair_config"
+          ],
+          "additionalProperties": false
+        },
+        "index_selection": {
+          "type": [
+            "null",
+            "object"
+          ],
+          "properties": {
+            "requested_backend": {
+              "type": "string"
+            },
+            "backend": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "partition_count": {
+              "type": "integer"
+            },
+            "estimated_memory_bytes": {
+              "type": "integer"
+            },
+            "estimated_temp_disk_bytes": {
+              "type": "integer"
+            },
+            "fallbacks": {
+              "type": [
+                "null",
+                "array"
+              ],
+              "items": {
+                "type": "object",
+                "properties": {
+                  "backend": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "backend",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "requested_backend",
+            "backend",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        "pair": {
+          "type": "string"
+        },
+        "left_source": {
+          "type": "string"
+        },
+        "right_source": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "result_mode": {
+              "type": "string"
+            },
+            "currency": {
+              "type": "string"
+            },
+            "run_id": {
+              "type": "string"
+            },
+            "total_left": {
+              "type": "integer"
+            },
+            "total_right": {
+              "type": "integer"
+            },
+            "matched": {
+              "type": "integer"
+            },
+            "unmatched_left": {
+              "type": "integer"
+            },
+            "unmatched_right": {
+              "type": "integer"
+            },
+            "amount_diff_count": {
+              "type": "integer"
+            },
+            "timing_diff_count": {
+              "type": "integer"
+            },
+            "duplicate_count": {
+              "type": "integer"
+            },
+            "match_rate_pct": {
+              "type": "number"
+            },
+            "reconciled_rate_pct": {
+              "type": "number"
+            },
+            "grouped_matched_count": {
+              "type": "integer"
+            },
+            "grouped_amount_diff_count": {
+              "type": "integer"
+            },
+            "grouped_timing_diff_count": {
+              "type": "integer"
+            },
+            "many_to_many_matched_count": {
+              "type": "integer"
+            },
+            "many_to_many_amount_diff_count": {
+              "type": "integer"
+            },
+            "many_to_many_timing_diff_count": {
+              "type": "integer"
+            },
+            "ambiguous_group_count": {
+              "type": "integer"
+            },
+            "matched_amount_left": {
+              "type": "integer"
+            },
+            "matched_amount_right": {
+              "type": "integer"
+            },
+            "unmatched_amount_left": {
+              "type": "integer"
+            },
+            "unmatched_amount_right": {
+              "type": "integer"
+            },
+            "amount_diff_total": {
+              "type": "integer"
+            },
+            "ambiguous_amount_left": {
+              "type": "integer"
+            },
+            "ambiguous_amount_right": {
+              "type": "integer"
+            },
+            "total_discrepancy": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total_left",
+            "total_right",
+            "matched",
+            "unmatched_left",
+            "unmatched_right",
+            "amount_diff_count",
+            "timing_diff_count",
+            "duplicate_count",
+            "match_rate_pct",
+            "reconciled_rate_pct",
+            "matched_amount_left",
+            "matched_amount_right",
+            "unmatched_amount_left",
+            "unmatched_amount_right",
+            "amount_diff_total",
+            "total_discrepancy"
+          ],
+          "additionalProperties": false
+        },
+        "matched": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "right": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "left",
+              "right"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unmatched_left": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "reference": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "raw": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "group_key": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "date",
+              "amount",
+              "currency",
+              "reference",
+              "name",
+              "source"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unmatched_right": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string"
+              },
+              "amount": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "reference": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "raw": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "group_key": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "date",
+              "amount",
+              "currency",
+              "reference",
+              "name",
+              "source"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "amount_diff": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "right": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "diff_minor": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "left",
+              "right",
+              "diff_minor"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "timing_diff": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "right": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "days_diff": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "left",
+              "right",
+              "days_diff"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "duplicates": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "reference": {
+                "type": "string"
+              },
+              "transactions": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "source",
+              "reference",
+              "transactions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "grouped_matched": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "rights": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "left",
+              "rights"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "grouped_amount_diff": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "rights": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "diff_minor": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "left",
+              "rights",
+              "diff_minor"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "grouped_timing_diff": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "rights": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "days_diff": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "left",
+              "rights",
+              "days_diff"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "many_to_many_matched": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "lefts": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "rights": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "lefts",
+              "rights"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "many_to_many_amount_diff": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "lefts": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "rights": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "diff_minor": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "lefts",
+              "rights",
+              "diff_minor"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "many_to_many_timing_diff": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "lefts": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "rights": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "days_diff": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "lefts",
+              "rights",
+              "days_diff"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "ambiguous_groups": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "reference": {
+                "type": "string"
+              },
+              "left_rows": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "rights": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "reference",
+              "left_rows",
+              "rights"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "warnings": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "by_source": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "result_mode": {
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "run_id": {
+                "type": "string"
+              },
+              "total_left": {
+                "type": "integer"
+              },
+              "total_right": {
+                "type": "integer"
+              },
+              "matched": {
+                "type": "integer"
+              },
+              "unmatched_left": {
+                "type": "integer"
+              },
+              "unmatched_right": {
+                "type": "integer"
+              },
+              "amount_diff_count": {
+                "type": "integer"
+              },
+              "timing_diff_count": {
+                "type": "integer"
+              },
+              "duplicate_count": {
+                "type": "integer"
+              },
+              "match_rate_pct": {
+                "type": "number"
+              },
+              "reconciled_rate_pct": {
+                "type": "number"
+              },
+              "grouped_matched_count": {
+                "type": "integer"
+              },
+              "grouped_amount_diff_count": {
+                "type": "integer"
+              },
+              "grouped_timing_diff_count": {
+                "type": "integer"
+              },
+              "many_to_many_matched_count": {
+                "type": "integer"
+              },
+              "many_to_many_amount_diff_count": {
+                "type": "integer"
+              },
+              "many_to_many_timing_diff_count": {
+                "type": "integer"
+              },
+              "ambiguous_group_count": {
+                "type": "integer"
+              },
+              "matched_amount_left": {
+                "type": "integer"
+              },
+              "matched_amount_right": {
+                "type": "integer"
+              },
+              "unmatched_amount_left": {
+                "type": "integer"
+              },
+              "unmatched_amount_right": {
+                "type": "integer"
+              },
+              "amount_diff_total": {
+                "type": "integer"
+              },
+              "ambiguous_amount_left": {
+                "type": "integer"
+              },
+              "ambiguous_amount_right": {
+                "type": "integer"
+              },
+              "total_discrepancy": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total_left",
+              "total_right",
+              "matched",
+              "unmatched_left",
+              "unmatched_right",
+              "amount_diff_count",
+              "timing_diff_count",
+              "duplicate_count",
+              "match_rate_pct",
+              "reconciled_rate_pct",
+              "matched_amount_left",
+              "matched_amount_right",
+              "unmatched_amount_left",
+              "unmatched_amount_right",
+              "amount_diff_total",
+              "total_discrepancy"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "pair",
+        "left_source",
+        "right_source",
+        "summary",
+        "matched",
+        "unmatched_left",
+        "unmatched_right",
+        "amount_diff",
+        "timing_diff",
+        "duplicates"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "data": true,
+        "schema": {
+          "type": "string",
+          "const": "reconify.engine.result.v1"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "type",
+        "data"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "run_id": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "type": "string"
+                },
+                "tool_version": {
+                  "type": "string"
+                },
+                "left_file": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    },
+                    "size_bytes": {
+                      "type": "integer"
+                    },
+                    "mod_time": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sha256",
+                    "size_bytes",
+                    "mod_time"
+                  ],
+                  "additionalProperties": false
+                },
+                "right_file": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    },
+                    "size_bytes": {
+                      "type": "integer"
+                    },
+                    "mod_time": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sha256",
+                    "size_bytes",
+                    "mod_time"
+                  ],
+                  "additionalProperties": false
+                },
+                "pair_config": {
+                  "type": "object",
+                  "properties": {
+                    "date_window": {
+                      "type": "string"
+                    },
+                    "amount_tolerance_minor": {
+                      "type": "integer"
+                    },
+                    "name_mode": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "date_window",
+                    "amount_tolerance_minor",
+                    "name_mode"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "run_id",
+                "timestamp",
+                "tool_version",
+                "left_file",
+                "right_file",
+                "pair_config"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "run_info"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "requested_backend": {
+                  "type": "string"
+                },
+                "backend": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "partition_count": {
+                  "type": "integer"
+                },
+                "estimated_memory_bytes": {
+                  "type": "integer"
+                },
+                "estimated_temp_disk_bytes": {
+                  "type": "integer"
+                },
+                "fallbacks": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "backend": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "backend",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "requested_backend",
+                "backend",
+                "reason"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "index_selection"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "right": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "left",
+                "right"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "match"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "right": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "diff_minor": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "left",
+                "right",
+                "diff_minor"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "amount_diff"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "right": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "days_diff": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "left",
+                "right",
+                "days_diff"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "timing_diff"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "date": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "integer"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "reference": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "raw": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "group_key": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "date",
+                "amount",
+                "currency",
+                "reference",
+                "name",
+                "source"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "unmatched_left"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "date": {
+                  "type": "string"
+                },
+                "amount": {
+                  "type": "integer"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "reference": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "raw": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "group_key": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "date",
+                "amount",
+                "currency",
+                "reference",
+                "name",
+                "source"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "unmatched_right"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "rights": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "left",
+                "rights"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "grouped_match"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "rights": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "diff_minor": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "left",
+                "rights",
+                "diff_minor"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "grouped_amount_diff"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "rights": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "days_diff": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "left",
+                "rights",
+                "days_diff"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "grouped_timing_diff"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "lefts": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "rights": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "lefts",
+                "rights"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "many_to_many_match"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "lefts": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "rights": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "diff_minor": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "lefts",
+                "rights",
+                "diff_minor"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "many_to_many_amount_diff"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "lefts": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "rights": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "days_diff": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "lefts",
+                "rights",
+                "days_diff"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "many_to_many_timing_diff"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "reference": {
+                  "type": "string"
+                },
+                "left_rows": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "rights": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "reference",
+                "left_rows",
+                "rights"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "ambiguous_group"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "reference": {
+                  "type": "string"
+                },
+                "transactions": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "source",
+                "reference",
+                "transactions"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "duplicate"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "object",
+                  "properties": {
+                    "result_mode": {
+                      "type": "string"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "run_id": {
+                      "type": "string"
+                    },
+                    "total_left": {
+                      "type": "integer"
+                    },
+                    "total_right": {
+                      "type": "integer"
+                    },
+                    "matched": {
+                      "type": "integer"
+                    },
+                    "unmatched_left": {
+                      "type": "integer"
+                    },
+                    "unmatched_right": {
+                      "type": "integer"
+                    },
+                    "amount_diff_count": {
+                      "type": "integer"
+                    },
+                    "timing_diff_count": {
+                      "type": "integer"
+                    },
+                    "duplicate_count": {
+                      "type": "integer"
+                    },
+                    "match_rate_pct": {
+                      "type": "number"
+                    },
+                    "reconciled_rate_pct": {
+                      "type": "number"
+                    },
+                    "grouped_matched_count": {
+                      "type": "integer"
+                    },
+                    "grouped_amount_diff_count": {
+                      "type": "integer"
+                    },
+                    "grouped_timing_diff_count": {
+                      "type": "integer"
+                    },
+                    "many_to_many_matched_count": {
+                      "type": "integer"
+                    },
+                    "many_to_many_amount_diff_count": {
+                      "type": "integer"
+                    },
+                    "many_to_many_timing_diff_count": {
+                      "type": "integer"
+                    },
+                    "ambiguous_group_count": {
+                      "type": "integer"
+                    },
+                    "matched_amount_left": {
+                      "type": "integer"
+                    },
+                    "matched_amount_right": {
+                      "type": "integer"
+                    },
+                    "unmatched_amount_left": {
+                      "type": "integer"
+                    },
+                    "unmatched_amount_right": {
+                      "type": "integer"
+                    },
+                    "amount_diff_total": {
+                      "type": "integer"
+                    },
+                    "ambiguous_amount_left": {
+                      "type": "integer"
+                    },
+                    "ambiguous_amount_right": {
+                      "type": "integer"
+                    },
+                    "total_discrepancy": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "total_left",
+                    "total_right",
+                    "matched",
+                    "unmatched_left",
+                    "unmatched_right",
+                    "amount_diff_count",
+                    "timing_diff_count",
+                    "duplicate_count",
+                    "match_rate_pct",
+                    "reconciled_rate_pct",
+                    "matched_amount_left",
+                    "matched_amount_right",
+                    "unmatched_amount_left",
+                    "unmatched_amount_right",
+                    "amount_diff_total",
+                    "total_discrepancy"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "source",
+                "summary"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "source_summary"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "result_mode": {
+                  "type": "string"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "run_id": {
+                  "type": "string"
+                },
+                "total_left": {
+                  "type": "integer"
+                },
+                "total_right": {
+                  "type": "integer"
+                },
+                "matched": {
+                  "type": "integer"
+                },
+                "unmatched_left": {
+                  "type": "integer"
+                },
+                "unmatched_right": {
+                  "type": "integer"
+                },
+                "amount_diff_count": {
+                  "type": "integer"
+                },
+                "timing_diff_count": {
+                  "type": "integer"
+                },
+                "duplicate_count": {
+                  "type": "integer"
+                },
+                "match_rate_pct": {
+                  "type": "number"
+                },
+                "reconciled_rate_pct": {
+                  "type": "number"
+                },
+                "grouped_matched_count": {
+                  "type": "integer"
+                },
+                "grouped_amount_diff_count": {
+                  "type": "integer"
+                },
+                "grouped_timing_diff_count": {
+                  "type": "integer"
+                },
+                "many_to_many_matched_count": {
+                  "type": "integer"
+                },
+                "many_to_many_amount_diff_count": {
+                  "type": "integer"
+                },
+                "many_to_many_timing_diff_count": {
+                  "type": "integer"
+                },
+                "ambiguous_group_count": {
+                  "type": "integer"
+                },
+                "matched_amount_left": {
+                  "type": "integer"
+                },
+                "matched_amount_right": {
+                  "type": "integer"
+                },
+                "unmatched_amount_left": {
+                  "type": "integer"
+                },
+                "unmatched_amount_right": {
+                  "type": "integer"
+                },
+                "amount_diff_total": {
+                  "type": "integer"
+                },
+                "ambiguous_amount_left": {
+                  "type": "integer"
+                },
+                "ambiguous_amount_right": {
+                  "type": "integer"
+                },
+                "total_discrepancy": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "total_left",
+                "total_right",
+                "matched",
+                "unmatched_left",
+                "unmatched_right",
+                "amount_diff_count",
+                "timing_diff_count",
+                "duplicate_count",
+                "match_rate_pct",
+                "reconciled_rate_pct",
+                "matched_amount_left",
+                "matched_amount_right",
+                "unmatched_amount_left",
+                "unmatched_amount_right",
+                "amount_diff_total",
+                "total_discrepancy"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "summary"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  ]
+}

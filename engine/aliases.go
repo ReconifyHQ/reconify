@@ -26,6 +26,7 @@ type ManyToManyTimingDiffPair = domain.ManyToManyTimingDiffPair
 type AmbiguousGroupPair = domain.AmbiguousGroupPair
 type DuplicateGroup = domain.DuplicateGroup
 type Summary = domain.Summary
+type SourceSummary = domain.SourceSummary
 type Result = domain.Result
 type RunInfo = domain.RunInfo
 type FileInfo = domain.FileInfo
@@ -34,6 +35,8 @@ type Warning = domain.Warning
 type WarningObserver = domain.WarningObserver
 type IndexSelection = domain.IndexSelection
 type IndexFallback = domain.IndexFallback
+
+const ResultSchemaV1 = domain.ResultSchemaV1
 
 // Index aliases.
 type RightIndex = index.RightIndex

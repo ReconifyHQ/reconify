@@ -170,6 +170,7 @@ func (j *jsonStreamWriter) WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPa
 
 func (j *jsonStreamWriter) Flush() error {
 	result := map[string]any{
+		"schema":       ResultSchemaV1,
 		"pair":         j.meta.PairName,
 		"left_source":  j.meta.LeftSource,
 		"right_source": j.meta.RightSource,

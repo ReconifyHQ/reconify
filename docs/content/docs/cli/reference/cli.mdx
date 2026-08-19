@@ -56,7 +56,17 @@ reconify config schema
 
 Prints a machine-readable JSON description of the YAML configuration, output
 formats, NDJSON event types, and CLI exit codes. This is the preferred bootstrap
-interface for tools and agents that need the current schema.
+interface for tools and agents that need the current schema. The response also
+contains `result_schema_id` and the published `result_schema` document.
+
+## `reconify schema result`
+
+```bash
+reconify schema result > reconify.engine.result.v1.json
+```
+
+Prints the published Draft 2020-12 reconciliation result schema used by JSON,
+JSON-stream, and NDJSON output.
 
 ## `reconify config check-source`
 

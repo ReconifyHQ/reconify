@@ -5,8 +5,15 @@ description: Reconciliation result fields and event sections.
 
 ## Result object
 
+The published Draft 2020-12 schema is
+[`schemas/reconify.engine.result.v1.json`](https://github.com/reconifyhq/reconify/blob/main/schemas/reconify.engine.result.v1.json).
+Installed binaries expose the same document with `reconify schema result`.
+`reconify config schema` includes it under `result_schema` for additive
+backward-compatible discovery.
+
 ```go
 type Result struct {
+    Schema              string             // always reconify.engine.result.v1
     RunInfo             *RunInfo
     IndexSelection      *IndexSelection
     PairName            string
@@ -96,3 +103,12 @@ records the applied `date_window`, `amount_tolerance_minor`, and `name_mode`.
 For NDJSON, the event names include `run_info`, `index_selection`, `match`,
 `amount_diff`, `timing_diff`, `unmatched_left`, `unmatched_right`, `duplicate`,
 grouped event types, `source_summary` for multi-counterpart runs, and `summary`.
+Every NDJSON line has the envelope shape:
+
+```json
+{
+  "schema": "reconify.engine.result.v1",
+  "type": "match",
+  "data": {}
+}
+```
