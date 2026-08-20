@@ -16,7 +16,23 @@ func newSchemaCmd() *cobra.Command {
 	cmd.AddCommand(newDiagnosticSchemaCmd())
 	cmd.AddCommand(newCapabilitiesSchemaCmd())
 	cmd.AddCommand(newProfileSchemaCmd())
+	cmd.AddCommand(newConfigProposalSchemaCmd())
 	return cmd
+}
+
+func newConfigProposalSchemaCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "config-proposal",
+		Short: "Print the Engine config proposal schema",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = args
+			if _, err := cmd.OutOrStdout().Write(schemas.ConfigProposalV1()); err != nil {
+				return fmt.Errorf("write config proposal schema: %w", err)
+			}
+			return nil
+		},
+	}
 }
 
 func newProfileSchemaCmd() *cobra.Command {

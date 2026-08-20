@@ -23,6 +23,10 @@ func capabilityFormats() map[string]schemas.FormatCapability {
 			Formats: []string{"json"},
 			Default: "json",
 		},
+		"config infer": {
+			Formats: []string{"json"},
+			Default: "json",
+		},
 	}
 }
 
@@ -59,18 +63,20 @@ func capabilityExitCodes() map[string]string {
 
 func capabilityCommands() map[string]schemas.CommandCapability {
 	return map[string]schemas.CommandCapability{
-		"capabilities":        {Description: "Describe the installed Reconify Engine interface and its versioned schemas.", Interactive: false},
-		"config check-source": {Description: "Check whether an input file matches a configured source mapping.", Interactive: false},
-		"config schema":       {Description: "Print the machine-readable configuration and output metadata schema.", Interactive: false},
-		"config validate":     {Description: "Validate a reconify.yaml configuration.", Interactive: false},
-		"config init":         {Description: "Interactively create a reconify.yaml configuration from sample files.", Interactive: true},
-		"inspect":             {Description: "Deterministically profile an input file's format and column types before writing a config.", Interactive: false},
-		"parse":               {Description: "Parse an input file according to a configured source parser.", Interactive: false},
-		"reconcile":           {Description: "Run a configured reconciliation and emit result events.", Interactive: false},
-		"schema capabilities": {Description: "Print the published capabilities schema.", Interactive: false},
-		"schema diagnostic":   {Description: "Print the published structured diagnostic schema.", Interactive: false},
-		"schema profile":      {Description: "Print the published file profile schema.", Interactive: false},
-		"schema result":       {Description: "Print the published reconciliation result schema.", Interactive: false},
+		"capabilities":           {Description: "Describe the installed Reconify Engine interface and its versioned schemas.", Interactive: false},
+		"config check-source":    {Description: "Check whether an input file matches a configured source mapping.", Interactive: false},
+		"config infer":           {Description: "Infer a confidence-gated reconify.yaml proposal from two input files.", Interactive: false},
+		"config schema":          {Description: "Print the machine-readable configuration and output metadata schema.", Interactive: false},
+		"config validate":        {Description: "Validate a reconify.yaml configuration.", Interactive: false},
+		"config init":            {Description: "Interactively create a reconify.yaml configuration from sample files.", Interactive: true},
+		"inspect":                {Description: "Deterministically profile an input file's format and column types before writing a config.", Interactive: false},
+		"parse":                  {Description: "Parse an input file according to a configured source parser.", Interactive: false},
+		"reconcile":              {Description: "Run a configured reconciliation and emit result events.", Interactive: false},
+		"schema capabilities":    {Description: "Print the published capabilities schema.", Interactive: false},
+		"schema config-proposal": {Description: "Print the published config proposal schema.", Interactive: false},
+		"schema diagnostic":      {Description: "Print the published structured diagnostic schema.", Interactive: false},
+		"schema profile":         {Description: "Print the published file profile schema.", Interactive: false},
+		"schema result":          {Description: "Print the published reconciliation result schema.", Interactive: false},
 	}
 }
 
@@ -121,6 +127,10 @@ func capabilityErrorCodes() map[string]schemas.ErrorCodeCapability {
 			Category: diagnosticCategoryInput, LegacyCode: "config_error", ExitCode: ErrCodeConfig,
 			Description: "An input file does not match its configured source mapping.",
 		},
+		diagnosticCodeInferenceAmbiguous: {
+			Category: diagnosticCategoryInference, LegacyCode: "config_error", ExitCode: ErrCodeConfig,
+			Description: "Inference could not select confident date, amount, or reference mappings.",
+		},
 		diagnosticCodeExecutionFailed: {
 			Category: diagnosticCategoryExecution, LegacyCode: "error", ExitCode: 1,
 			Description: "Execution or output failed unexpectedly.",
@@ -154,10 +164,11 @@ func buildCapabilities() schemas.Capabilities {
 		Matching:    capabilityMatching(),
 		ResultModes: []string{string(config.ResultModeAll), string(config.ResultModeExceptionsOnly), string(config.ResultModeSummaryOnly)},
 		Schemas: map[string]string{
-			"capabilities": schemas.CapabilitiesSchemaV1,
-			"diagnostic":   schemas.DiagnosticSchemaV1,
-			"profile":      schemas.ProfileSchemaV1,
-			"result":       schemas.ResultSchemaV1,
+			"capabilities":    schemas.CapabilitiesSchemaV1,
+			"config_proposal": schemas.ConfigProposalSchemaV1,
+			"diagnostic":      schemas.DiagnosticSchemaV1,
+			"profile":         schemas.ProfileSchemaV1,
+			"result":          schemas.ResultSchemaV1,
 		},
 		ErrorCodes: capabilityErrorCodes(),
 		ExitCodes:  capabilityExitCodes(),
