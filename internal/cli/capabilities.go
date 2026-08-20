@@ -36,7 +36,7 @@ func capabilityFormats() map[string]schemas.FormatCapability {
 
 func capabilityNDJSONEvents() map[string]string {
 	return map[string]string{
-		"run_info":                 "Run provenance: tool version, file hashes, timestamps. Only emitted when --audit is set. Always the first line. Payload: RunInfo.",
+		"run_info":                 "Run provenance: tool version, file hashes, timestamps; --auto also includes the exact inferred config and mapping confidence. Emitted by --audit or --auto. Always the first line. Payload: RunInfo.",
 		"match":                    "Left+right pair that reconciled cleanly. Payload: {left: Transaction, right: Transaction}.",
 		"amount_diff":              "Reference matched but amount differs beyond amount_tolerance_minor. Payload: {left, right, diff_minor}.",
 		"timing_diff":              "Reference+amount matched but date is outside date_window. Payload: {left, right, days_diff}.",
@@ -76,7 +76,7 @@ func capabilityCommands() map[string]schemas.CommandCapability {
 		"config init":            {Description: "Interactively create a reconify.yaml configuration from sample files.", Interactive: true},
 		"inspect":                {Description: "Deterministically profile an input file's format and column types before writing a config.", Interactive: false},
 		"parse":                  {Description: "Parse an input file according to a configured source parser.", Interactive: false},
-		"reconcile":              {Description: "Run a configured reconciliation and emit result events.", Interactive: false},
+		"reconcile":              {Description: "Run a configured or confidence-gated auto-inferred reconciliation and emit result events.", Interactive: false},
 		"schema capabilities":    {Description: "Print the published capabilities schema.", Interactive: false},
 		"schema config-proposal": {Description: "Print the published config proposal schema.", Interactive: false},
 		"schema diagnostic":      {Description: "Print the published structured diagnostic schema.", Interactive: false},

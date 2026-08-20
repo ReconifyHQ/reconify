@@ -93,6 +93,58 @@
                 "name_mode"
               ],
               "additionalProperties": false
+            },
+            "inferred_config": {
+              "type": "string"
+            },
+            "inference_confidence": {
+              "type": [
+                "null",
+                "array"
+              ],
+              "items": {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "mappings": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string"
+                        },
+                        "column": {
+                          "type": "string"
+                        },
+                        "confidence": {
+                          "type": "number"
+                        },
+                        "lead": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "column",
+                        "confidence",
+                        "lead"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "source",
+                  "mappings"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -1843,6 +1895,58 @@
                     "name_mode"
                   ],
                   "additionalProperties": false
+                },
+                "inferred_config": {
+                  "type": "string"
+                },
+                "inference_confidence": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string"
+                      },
+                      "mappings": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "role": {
+                              "type": "string"
+                            },
+                            "column": {
+                              "type": "string"
+                            },
+                            "confidence": {
+                              "type": "number"
+                            },
+                            "lead": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "role",
+                            "column",
+                            "confidence",
+                            "lead"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "mappings"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [

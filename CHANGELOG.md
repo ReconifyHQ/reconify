@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **Global `--agent` execution profile** — defaults errors to structured JSON and reconciliation output to NDJSON with `exceptions_only`, while preserving explicit flag overrides and rejecting interactive commands with a structured alternative ([#107](https://github.com/ReconifyHQ/reconify/issues/107)).
+- **`reconcile --auto`** — confidence-gated zero-config reconciliation from exactly two input files, with the inferred YAML and mapping confidence embedded in structured run metadata for reproducibility ([#112](https://github.com/ReconifyHQ/reconify/issues/112)).
 - **`reconify explain`** — reads JSON, JSON-stream, or NDJSON reconciliation results and emits deterministic `reconify.engine.explanation.v1` findings with bounded top exception events; no reconciliation or subjective severity is added.
 - **`reconify config infer`** — non-interactively proposes a confidence-gated `reconify.yaml` from two input files. It emits `reconify.engine.config-proposal.v1` with mappings, alternatives, validation counts, and YAML; `--out` writes only ready proposals. `reconify schema config-proposal` prints the published schema.
 - **Sample-row validation for `config check-source`** — checks the first 10 data rows by default for date and amount parsing errors. Use `--rows 0` for headers only or set a bounded custom sample size.

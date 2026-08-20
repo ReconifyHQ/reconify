@@ -173,7 +173,7 @@ type SourceSummary struct {
 // Result is the full output of a reconciliation run.
 type Result struct {
 	Schema         string           `json:"schema"`
-	RunInfo        *RunInfo         `json:"run_info,omitempty"` // nil unless --audit mode
+	RunInfo        *RunInfo         `json:"run_info,omitempty"` // populated by --audit or --auto
 	IndexSelection *IndexSelection  `json:"index_selection,omitempty"`
 	PairName       string           `json:"pair"`
 	LeftSource     string           `json:"left_source"`
@@ -214,7 +214,7 @@ type Result struct {
 
 // RunInfo carries provenance metadata for a reconciliation run.
 // It is embedded in structured output formats (json, json-stream, ndjson) when
-// the --audit flag is set. It is never populated in the default path.
+// --audit or --auto is set. It is not populated in the default path.
 type RunInfo struct {
 	RunID       string         `json:"run_id"`       // 16 hex chars derived from file hashes + timestamp
 	Timestamp   time.Time      `json:"timestamp"`    // UTC wall-clock time captured before parsing began
@@ -222,6 +222,25 @@ type RunInfo struct {
 	LeftFile    FileInfo       `json:"left_file"`
 	RightFile   FileInfo       `json:"right_file"`
 	PairConfig  PairConfigSnap `json:"pair_config"`
+	// InferredConfig and InferenceConfidence are populated by --auto so a
+	// structured result contains everything needed to reproduce the run.
+	InferredConfig      string                      `json:"inferred_config,omitempty"`
+	InferenceConfidence []InferenceConfidenceSource `json:"inference_confidence,omitempty"`
+}
+
+// InferenceConfidenceSource records the confidence and lead for each mapping
+// selected while building an inferred config.
+type InferenceConfidenceSource struct {
+	Source   string                `json:"source"`
+	Mappings []InferenceConfidence `json:"mappings"`
+}
+
+// InferenceConfidence records one inferred mapping's selected column and gate metrics.
+type InferenceConfidence struct {
+	Role       string  `json:"role"`
+	Column     string  `json:"column"`
+	Confidence float64 `json:"confidence"`
+	Lead       float64 `json:"lead"`
 }
 
 // FileInfo holds the resolved path, SHA-256 digest, and stat metadata of an input file.

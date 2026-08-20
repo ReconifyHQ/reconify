@@ -11,6 +11,8 @@ import (
 
 	"github.com/reconifyhq/reconify/config"
 	"github.com/reconifyhq/reconify/engine"
+	"github.com/reconifyhq/reconify/engine/inference"
+	"github.com/reconifyhq/reconify/schemas"
 	"github.com/spf13/cobra"
 )
 
@@ -46,9 +48,10 @@ func newReconcileCmd() *cobra.Command {
 	var failIfUnmatched bool
 	var failIfExceptions bool
 	var resultModeFlag string
+	var autoMode bool
 
 	cmd := &cobra.Command{
-		Use:   "reconcile",
+		Use:   "reconcile [LEFT RIGHT]",
 		Short: "Run a reconciliation between two sources",
 		Long: `Execute a reconciliation between two configured sources.
 Reads configured input files, normalizes them, and matches transactions according to
@@ -75,9 +78,19 @@ Formats:
 					err = executionErr(err)
 				}
 			}()
-			_ = args
 			ctx := cmd.Context()
-			if pairName == "" {
+			if autoMode {
+				if len(args) != 2 {
+					return configErr("--auto requires exactly two positional input files")
+				}
+				if cmd.Flags().Changed("pair") || cmd.Root().PersistentFlags().Changed("config") ||
+					cmd.Flags().Changed("left-file") || cmd.Flags().Changed("right-file") {
+					return configErr("--auto cannot be combined with --config, --pair, --left-file, or --right-file")
+				}
+				if format == "csv" || format == "table" {
+					return configErr("--auto requires a structured output format: json, json-stream, or ndjson")
+				}
+			} else if pairName == "" {
 				return configErr("--pair is required")
 			}
 			if progressEvery <= 0 {
@@ -105,19 +118,35 @@ Formats:
 			}
 			telemetryEnabled := progress || progressOut != ""
 
-			cfgPath := getConfigPath()
-			cfg, err := config.Load(cfgPath)
-			if err != nil {
-				return configErrf("failed to load config: %v", err)
+			var cfg *config.Config
+			var cfgAbs, configDir string
+			var inferredProposal *schemas.ConfigProposal
+			if autoMode {
+				proposal, inferredCfg, inferErr := inference.InferWithConfig(ctx, args[0], args[1])
+				if inferErr != nil {
+					return inputErr(ErrCodeConfig, "config_error", fmt.Sprintf("auto inference failed: %v", inferErr), diagnosticCodeInputUnreadable)
+				}
+				if proposal.Status != "ready" {
+					return inferenceAmbiguousErr(proposal.Reasons)
+				}
+				cfg = inferredCfg
+				inferredProposal = &proposal
+				pairName = "left_to_right"
+			} else {
+				cfgPath := getConfigPath()
+				cfg, err = config.Load(cfgPath)
+				if err != nil {
+					return configErrf("failed to load config: %v", err)
+				}
+				if errs := cfg.Validate(); len(errs) > 0 {
+					return configErrf("config validation failed: %v", errs[0])
+				}
+				cfgAbs, err = filepath.Abs(cfgPath)
+				if err != nil {
+					return fmt.Errorf("resolve config path: %w", err)
+				}
+				configDir = filepath.Dir(cfgAbs)
 			}
-			if errs := cfg.Validate(); len(errs) > 0 {
-				return configErrf("config validation failed: %v", errs[0])
-			}
-			cfgAbs, err := filepath.Abs(cfgPath)
-			if err != nil {
-				return fmt.Errorf("resolve config path: %w", err)
-			}
-			configDir := filepath.Dir(cfgAbs)
 
 			pair, ok := cfg.Pairs[pairName]
 			if !ok {
@@ -138,9 +167,17 @@ Formats:
 				return configErrf("pair %q has no right or rights configured", pairName)
 			}
 			// Resolve left file path: explicit flag overrides the glob pattern.
-			leftPath, err := resolveFile(leftFile, leftSrc.FilePattern, configDir)
-			if err != nil {
-				return configErrf("left source: %v", err)
+			var leftPath string
+			if autoMode {
+				leftPath, err = filepath.Abs(args[0])
+				if err != nil {
+					return fmt.Errorf("resolve left input: %w", err)
+				}
+			} else {
+				leftPath, err = resolveFile(leftFile, leftSrc.FilePattern, configDir)
+				if err != nil {
+					return configErrf("left source: %v", err)
+				}
 			}
 			rightPaths := make(map[string]string, len(counterparts))
 			for _, name := range counterparts {
@@ -148,20 +185,28 @@ Formats:
 				if !ok {
 					return configErrf("right source %q not found in config", name)
 				}
-				explicitRight := ""
-				if len(counterparts) == 1 {
-					explicitRight = rightFile
-				} else if rightFile != "" {
-					return configErr("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
+				var path string
+				if autoMode {
+					path, err = filepath.Abs(args[1])
+				} else {
+					explicitRight := ""
+					if len(counterparts) == 1 {
+						explicitRight = rightFile
+					} else if rightFile != "" {
+						return configErr("--right-file is not supported with multiple counterparts (rights); each counterpart resolves its file via its own source's file_pattern")
+					}
+					path, err = resolveFile(explicitRight, src.FilePattern, configDir)
 				}
-				path, err := resolveFile(explicitRight, src.FilePattern, configDir)
 				if err != nil {
-					return configErrf("right source %q: %v", name, err)
+					return fmt.Errorf("resolve right input: %w", err)
 				}
 				rightPaths[name] = path
 			}
 			if progressOut != "" {
-				inputs := []string{cfgAbs, leftPath}
+				inputs := []string{leftPath}
+				if cfgAbs != "" {
+					inputs = append([]string{cfgAbs}, inputs...)
+				}
 				for _, name := range counterparts {
 					inputs = append(inputs, rightPaths[name])
 				}
@@ -170,7 +215,7 @@ Formats:
 				}
 			}
 
-			output, err := openReconcileOutput(outputPath, auditMode)
+			output, err := openReconcileOutput(outputPath, auditMode || autoMode)
 			if err != nil {
 				return err
 			}
@@ -222,6 +267,12 @@ Formats:
 				return configErr("--audit is not yet supported for multi-counterpart (rights) pairs")
 			}
 			var auditInfo engine.RunInfo
+			if autoMode && inferredProposal != nil {
+				// Auto mode always carries the inference envelope, even without
+				// --audit, so the output can be reproduced from its exact YAML.
+				auditInfo.InferredConfig = inferredProposal.ProposedYAML
+				auditInfo.InferenceConfidence = inferenceConfidence(inferredProposal)
+			}
 
 			// Deterministic mode: stable output ordering for diff-based audit trails.
 			if deterministic {
@@ -312,7 +363,7 @@ Formats:
 			// Single-counterpart grouped pairs may use the partitioned backend when
 			// chooseIndexBackend selects it; otherwise they fall through to batch below.
 			if containsBatchOnlyGroupedPass(pair.Passes) && len(counterparts) != 1 {
-				if auditMode {
+				if auditMode || autoMode {
 					return fmt.Errorf("--audit is not yet supported with grouped passes")
 				}
 				leftTxns, parseErr := engine.ParseWithTelemetry(ctx, pair.Left, leftPath, leftSrc.Parser, strings.Join(counterparts, ","), telemetry)
@@ -362,11 +413,11 @@ Formats:
 				if err != nil {
 					return fmt.Errorf("select index backend: %w", err)
 				}
-				if decision.Partitioned && auditMode {
+				if decision.Partitioned && (auditMode || autoMode) {
 					return configErr("--audit is not supported with the partitioned backend")
 				}
 
-				if auditMode {
+				if auditMode || autoMode {
 					// Check the inner writer directly: when summaryCapture wraps w, the
 					// optional RunInfoSetter interface is no longer visible on w itself.
 					auditTarget := w
@@ -389,6 +440,8 @@ Formats:
 					if err != nil {
 						return fmt.Errorf("audit: %w", err)
 					}
+					info.InferredConfig = auditInfo.InferredConfig
+					info.InferenceConfidence = auditInfo.InferenceConfidence
 					auditInfo = info
 					if err := setter.SetRunInfo(info); err != nil {
 						return fmt.Errorf("audit: set run info: %w", err)
@@ -549,7 +602,7 @@ Formats:
 				}
 			}
 
-			if auditMode {
+			if auditMode || autoMode {
 				if err := engine.VerifyAuditFiles(auditInfo); err != nil {
 					return fmt.Errorf("audit: %w", err)
 				}
@@ -587,7 +640,7 @@ Formats:
 	cmd.Flags().BoolVar(&auditMode, "audit", false,
 		"Embed run provenance in output: SHA-256 file hashes, timestamp, tool version, pair config snapshot")
 	cmd.Flags().StringVar(&auditFixedTimestamp, "audit-fixed-timestamp", "",
-		"Optional RFC3339/RFC3339Nano timestamp to freeze run_info timestamp/run_id (use with --audit for byte-identical reruns)")
+		"Optional RFC3339/RFC3339Nano timestamp to freeze run_info timestamp/run_id (use with --audit or --auto for byte-identical reruns)")
 	cmd.Flags().BoolVar(&deterministic, "deterministic", false,
 		"Sort output sections for stable diff-based audit trails (json format only; adds sort overhead)")
 	cmd.Flags().BoolVar(&progress, "progress", false,
@@ -605,6 +658,28 @@ Formats:
 	cmd.Flags().StringVar(&resultModeFlag, "result-mode", "",
 		`Emission mode: all (default), exceptions_only (suppress clean matches), summary_only (suppress all item events).
 Overrides result_mode in the pair config when set.`)
+	cmd.Flags().BoolVar(&autoMode, "auto", false,
+		"Infer a config from exactly two positional input files and reconcile when confidence gates pass")
 
 	return cmd
+}
+
+func inferenceConfidence(proposal *schemas.ConfigProposal) []engine.InferenceConfidenceSource {
+	if proposal == nil {
+		return nil
+	}
+	confidence := make([]engine.InferenceConfidenceSource, 0, len(proposal.Sources))
+	for _, source := range proposal.Sources {
+		mappings := make([]engine.InferenceConfidence, 0, len(source.Mappings))
+		for _, mapping := range source.Mappings {
+			mappings = append(mappings, engine.InferenceConfidence{
+				Role:       mapping.Role,
+				Column:     mapping.Column,
+				Confidence: mapping.Confidence,
+				Lead:       mapping.Lead,
+			})
+		}
+		confidence = append(confidence, engine.InferenceConfidenceSource{Source: source.Name, Mappings: mappings})
+	}
+	return confidence
 }
