@@ -14,6 +14,7 @@ reconify --config reconify.yaml --verbose
 | `--config`, `-c` | `reconify.yaml` | Path to configuration file. |
 | `--verbose`, `-v` | `false` | Enable verbose output. |
 | `--error-format` | `text` | `text` or `json`; JSON errors are written to stderr as `reconify.engine.diagnostic.v1` while preserving legacy `error` and `code`. |
+| `--agent` | `false` | Use JSON diagnostics and, for `reconcile`, default to NDJSON with `exceptions_only`; explicit flags still take precedence. |
 | `--version` | | Print version and build time. |
 
 If `--config` is not set, Reconify also checks `RECONIFY_CONFIG`.
@@ -227,7 +228,7 @@ reconify reconcile \
 | `--out`, `-o` | no | `-` | Output file path; `-` writes stdout. |
 | `--left-file` | no | | Explicit left input file. |
 | `--right-file` | no | | Explicit right input file. |
-| `--format` | no | `json` | `json`, `json-stream`, `ndjson`, `csv`, or `table`. |
+| `--format` | no | `json` (`ndjson` with `--agent`) | `json`, `json-stream`, `ndjson`, `csv`, or `table`. |
 | `--max-token-buffer` | no | `100000` | Advisory row limit for token-mode unmatched buffer; `0` means unlimited. |
 | `--audit` | no | `false` | Add run provenance to structured output. |
 | `--audit-fixed-timestamp` | no | | RFC3339/RFC3339Nano timestamp for byte-identical audit reruns. |
@@ -241,7 +242,7 @@ reconify reconcile \
 | `--progress` | no | `false` | Log progress to stderr. |
 | `--progress-every` | no | `1000000` | Row interval for progress logs. |
 | `--progress-out` | no | | Write machine-readable telemetry NDJSON to a separate file. |
-| `--result-mode` | no | pair config / `all` | `all`, `exceptions_only`, or `summary_only`; overrides the pair setting. |
+| `--result-mode` | no | pair config / `all` (`exceptions_only` with `--agent`) | `all`, `exceptions_only`, or `summary_only`; overrides the pair setting. |
 
 `--audit` is supported for `json`, `json-stream`, and `ndjson`. `--deterministic`
 only affects buffered `json` output. `--progress-out` must differ from `--out`.

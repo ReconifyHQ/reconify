@@ -68,6 +68,9 @@ func TestCapabilitiesCommandDescribesEngineSurface(t *testing.T) {
 	if got.ErrorCodes["EXCEPTIONS_FOUND"].ExitCode != ErrCodeExceptions {
 		t.Fatalf("EXCEPTIONS_FOUND exit code = %d, want %d", got.ErrorCodes["EXCEPTIONS_FOUND"].ExitCode, ErrCodeExceptions)
 	}
+	if got.ErrorCodes[diagnosticCodeInteractiveUnsupported].ExitCode != ErrCodeConfig {
+		t.Fatalf("INTERACTIVE_UNSUPPORTED exit code = %d, want %d", got.ErrorCodes[diagnosticCodeInteractiveUnsupported].ExitCode, ErrCodeConfig)
+	}
 	if got.ExitCodes["4"] == "" {
 		t.Fatal("capabilities omitted exit code 4")
 	}

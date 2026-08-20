@@ -21,14 +21,15 @@ const (
 )
 
 const (
-	diagnosticCodeConfigInvalid      = "CONFIG_INVALID"
-	diagnosticCodeInputUnreadable    = "INPUT_UNREADABLE"
-	diagnosticCodeInputMismatch      = "INPUT_MISMATCH"
-	diagnosticCodeInferenceAmbiguous = "INFERENCE_AMBIGUOUS"
-	diagnosticCodeExecutionFailed    = "EXECUTION_FAILED"
-	diagnosticCodeUnmatchedRows      = "UNMATCHED_ROWS"
-	diagnosticCodeExceptionsFound    = "EXCEPTIONS_FOUND"
-	diagnosticCodeInternalError      = "INTERNAL_ERROR"
+	diagnosticCodeConfigInvalid          = "CONFIG_INVALID"
+	diagnosticCodeInputUnreadable        = "INPUT_UNREADABLE"
+	diagnosticCodeInputMismatch          = "INPUT_MISMATCH"
+	diagnosticCodeInferenceAmbiguous     = "INFERENCE_AMBIGUOUS"
+	diagnosticCodeInteractiveUnsupported = "INTERACTIVE_UNSUPPORTED"
+	diagnosticCodeExecutionFailed        = "EXECUTION_FAILED"
+	diagnosticCodeUnmatchedRows          = "UNMATCHED_ROWS"
+	diagnosticCodeExceptionsFound        = "EXCEPTIONS_FOUND"
+	diagnosticCodeInternalError          = "INTERNAL_ERROR"
 )
 
 const (
