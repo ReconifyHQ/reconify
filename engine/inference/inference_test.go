@@ -59,6 +59,31 @@ func TestInferNeedsInputForUnknownReference(t *testing.T) {
 	}
 }
 
+func TestInferNeedsInputWhenSampleContainsParseFailures(t *testing.T) {
+	path := inferenceCSV(t, "date,amount,reference", "reference")
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0) // #nosec G304 -- test path is created above.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString("invalid-date,101.00,REF-101\n"); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Infer(context.Background(), path, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "needs_input" {
+		t.Fatalf("status = %q, want needs_input", got.Status)
+	}
+	if got.Sources[0].Validation.ParseErrorCount != 1 {
+		t.Fatalf("parse_error_count = %d, want 1", got.Sources[0].Validation.ParseErrorCount)
+	}
+}
+
 func TestInferSupportsJSONAndXLSX(t *testing.T) {
 	dir := t.TempDir()
 	jsonPath := filepath.Join(dir, "input.json")

@@ -25,9 +25,10 @@ type InferredSource struct {
 
 // InferenceValidation summarizes the bounded parsing validation scan.
 type InferenceValidation struct {
-	RowsScanned    int  `json:"rows_scanned"`
-	SuccessfulRows int  `json:"successful_rows"`
-	Truncated      bool `json:"truncated"`
+	RowsScanned     int  `json:"rows_scanned"`
+	SuccessfulRows  int  `json:"successful_rows"`
+	ParseErrorCount int  `json:"parse_error_count"`
+	Truncated       bool `json:"truncated"`
 }
 
 // InferredRole describes a selected column and ranked alternatives for a role.

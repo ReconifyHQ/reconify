@@ -40,6 +40,9 @@
                   "successful_rows": {
                     "type": "integer"
                   },
+                  "parse_error_count": {
+                    "type": "integer"
+                  },
                   "truncated": {
                     "type": "boolean"
                   }
@@ -47,6 +50,7 @@
                 "required": [
                   "rows_scanned",
                   "successful_rows",
+                  "parse_error_count",
                   "truncated"
                 ],
                 "additionalProperties": false

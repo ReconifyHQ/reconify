@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,5 +73,23 @@ func TestConfigInferDoesNotWriteAmbiguousProposal(t *testing.T) {
 	}
 	if proposal.Status != "needs_input" {
 		t.Fatalf("status = %q", proposal.Status)
+	}
+}
+
+func TestConfigInferMissingFileUsesUnreadableDiagnostic(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.csv")
+	right := writeInferInput(t, "reference")
+	root := newRootCmd("test", "test")
+	root.SetArgs([]string{"config", "infer", "--left", missing, "--right", right})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected missing input error")
+	}
+	var cliErr *Error
+	if !errors.As(err, &cliErr) {
+		t.Fatalf("error type = %T, want *Error", err)
+	}
+	if cliErr.Diagnostic.Code != diagnosticCodeInputUnreadable {
+		t.Fatalf("diagnostic code = %q, want %q", cliErr.Diagnostic.Code, diagnosticCodeInputUnreadable)
 	}
 }

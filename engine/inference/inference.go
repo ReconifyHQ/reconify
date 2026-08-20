@@ -48,6 +48,10 @@ func Infer(ctx context.Context, leftPath, rightPath string) (schemas.ConfigPropo
 	}
 	proposal := schemas.ConfigProposal{Schema: schemas.ConfigProposalSchemaV1, Status: "ready", Sources: []schemas.InferredSource{left, right}, ProposedYAML: string(yamlData)}
 	for _, source := range proposal.Sources {
+		if source.Validation.ParseErrorCount > 0 {
+			proposal.Status = "needs_input"
+			proposal.Reasons = append(proposal.Reasons, fmt.Sprintf("%s has %d unparsable sampled rows", source.Name, source.Validation.ParseErrorCount))
+		}
 		if source.Validation.SuccessfulRows < 100 {
 			proposal.Status = "needs_input"
 			proposal.Reasons = append(proposal.Reasons, fmt.Sprintf("%s has only %d successfully parsed sample rows (need 100)", source.Name, source.Validation.SuccessfulRows))
@@ -89,10 +93,10 @@ func inferSource(ctx context.Context, name, filePath string) (schemas.InferredSo
 	if err != nil {
 		return schemas.InferredSource{}, config.ParserCfg{}, err
 	}
-	date = setReadiness(date, validation.SuccessfulRows)
-	amount = setReadiness(amount, validation.SuccessfulRows)
-	reference = setReadiness(reference, validation.SuccessfulRows)
-	return schemas.InferredSource{Name: name, File: absPath, Format: p.Format, Validation: schemas.InferenceValidation{RowsScanned: validation.RowsScanned, SuccessfulRows: validation.SuccessfulRows, Truncated: validation.Truncated}, Mappings: []schemas.InferredRole{date, amount, reference}}, cfg, nil
+	date = setReadiness(date, validation.SuccessfulRows, len(validation.Errors))
+	amount = setReadiness(amount, validation.SuccessfulRows, len(validation.Errors))
+	reference = setReadiness(reference, validation.SuccessfulRows, len(validation.Errors))
+	return schemas.InferredSource{Name: name, File: absPath, Format: p.Format, Validation: schemas.InferenceValidation{RowsScanned: validation.RowsScanned, SuccessfulRows: validation.SuccessfulRows, ParseErrorCount: len(validation.Errors), Truncated: validation.Truncated}, Mappings: []schemas.InferredRole{date, amount, reference}}, cfg, nil
 }
 
 type refStats struct{ nonEmpty, distinct, rows int }
@@ -168,8 +172,8 @@ func buildRole(role string, candidates []schemas.MappingCandidate) schemas.Infer
 	return schemas.InferredRole{Role: role, Column: selected.Column, Confidence: selected.Confidence, Lead: lead, Alternatives: candidates}
 }
 
-func setReadiness(role schemas.InferredRole, successful int) schemas.InferredRole {
-	role.Ready = role.Confidence >= 0.9 && role.Lead >= 0.1 && successful >= 100
+func setReadiness(role schemas.InferredRole, successful, parseErrors int) schemas.InferredRole {
+	role.Ready = role.Confidence >= 0.9 && role.Lead >= 0.1 && successful >= 100 && parseErrors == 0
 	if role.Confidence < 0.9 {
 		role.Reasons = append(role.Reasons, "confidence is below 0.90")
 	}
@@ -178,6 +182,9 @@ func setReadiness(role schemas.InferredRole, successful int) schemas.InferredRol
 	}
 	if successful < 100 {
 		role.Reasons = append(role.Reasons, "fewer than 100 successfully parsed sample rows")
+	}
+	if parseErrors > 0 {
+		role.Reasons = append(role.Reasons, "sample contains unparsable rows")
 	}
 	return role
 }

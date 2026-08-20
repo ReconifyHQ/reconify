@@ -28,6 +28,11 @@ instead of guessing whenever confidence or sample-row gates are not satisfied.`,
 			if right == "" {
 				return configErr("--right is required")
 			}
+			for _, filePath := range []string{left, right} {
+				if _, err := os.Stat(filePath); err != nil {
+					return inputErr(ErrCodeConfig, "config_error", fmt.Sprintf("file %q not found", filePath), diagnosticCodeInputUnreadable)
+				}
+			}
 			proposal, err := inference.Infer(cmd.Context(), left, right)
 			if err != nil {
 				return inputErr(ErrCodeConfig, "config_error", fmt.Sprintf("infer config: %v", err), diagnosticCodeInputMismatch)
