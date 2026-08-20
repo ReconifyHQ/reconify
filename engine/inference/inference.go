@@ -28,13 +28,21 @@ var aliases = map[string][]string{
 
 // Infer returns a proposal for exactly two input files.
 func Infer(ctx context.Context, leftPath, rightPath string) (schemas.ConfigProposal, error) {
+	proposal, _, err := InferWithConfig(ctx, leftPath, rightPath)
+	return proposal, err
+}
+
+// InferWithConfig returns the proposal and the in-memory config that
+// produced its YAML. Callers that execute the proposal can therefore use the
+// same config representation without reparsing or reconstructing defaults.
+func InferWithConfig(ctx context.Context, leftPath, rightPath string) (schemas.ConfigProposal, *config.Config, error) {
 	left, leftCfg, err := inferSource(ctx, "left", leftPath)
 	if err != nil {
-		return schemas.ConfigProposal{}, err
+		return schemas.ConfigProposal{}, nil, err
 	}
 	right, rightCfg, err := inferSource(ctx, "right", rightPath)
 	if err != nil {
-		return schemas.ConfigProposal{}, err
+		return schemas.ConfigProposal{}, nil, err
 	}
 	cfg := &config.Config{Version: 1, Sources: map[string]config.Source{
 		"left":  {FilePattern: left.File, Parser: leftCfg},
@@ -44,7 +52,7 @@ func Infer(ctx context.Context, leftPath, rightPath string) (schemas.ConfigPropo
 	}}
 	yamlData, err := yaml.Marshal(cfg)
 	if err != nil {
-		return schemas.ConfigProposal{}, fmt.Errorf("marshal proposal: %w", err)
+		return schemas.ConfigProposal{}, nil, fmt.Errorf("marshal proposal: %w", err)
 	}
 	proposal := schemas.ConfigProposal{Schema: schemas.ConfigProposalSchemaV1, Status: "ready", Sources: []schemas.InferredSource{left, right}, ProposedYAML: string(yamlData)}
 	for _, source := range proposal.Sources {
@@ -63,7 +71,7 @@ func Infer(ctx context.Context, leftPath, rightPath string) (schemas.ConfigPropo
 			}
 		}
 	}
-	return proposal, nil
+	return proposal, cfg, nil
 }
 
 func inferSource(ctx context.Context, name, filePath string) (schemas.InferredSource, config.ParserCfg, error) {

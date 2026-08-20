@@ -243,11 +243,27 @@ reconify reconcile \
 | `--progress-every` | no | `1000000` | Row interval for progress logs. |
 | `--progress-out` | no | | Write machine-readable telemetry NDJSON to a separate file. |
 | `--result-mode` | no | pair config / `all` (`exceptions_only` with `--agent`) | `all`, `exceptions_only`, or `summary_only`; overrides the pair setting. |
+| `--auto` | no | `false` | Infer a config from exactly two positional files and reconcile only when all inference gates pass. Mutually exclusive with `--config`, `--pair`, `--left-file`, and `--right-file`. |
 
 `--audit` is supported for `json`, `json-stream`, and `ndjson`. `--deterministic`
 only affects buffered `json` output. `--progress-out` must differ from `--out`.
 For multi-counterpart `rights` pairs, `--right-file` does not apply and audit is
 not currently supported; progress telemetry covers each counterpart pass.
+
+### Confidence-gated auto reconciliation
+
+```bash
+reconify reconcile payments.csv ledger.csv --auto --out results.json
+```
+
+`--auto` accepts exactly two positional input files and applies the same confidence
+and sample-size gates as `config infer`. It does not read a config or pair, and it
+rejects file/source overrides. When the gate passes, structured output includes a
+`run_info` object with the exact inferred YAML in `inferred_config` and each
+selected mapping's `confidence` and `lead` in `inference_confidence`. JSON,
+JSON-stream, and NDJSON are supported so this metadata remains alongside the result.
+When the gate fails, the command returns `INFERENCE_AMBIGUOUS` with exit code `2`
+and does not write result data.
 
 ## Not implemented yet
 
