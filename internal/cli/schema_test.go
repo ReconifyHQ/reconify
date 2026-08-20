@@ -68,6 +68,20 @@ func TestProfileSchemaCommandPrintsPublishedArtifact(t *testing.T) {
 	}
 }
 
+func TestConfigProposalSchemaCommandPrintsPublishedArtifact(t *testing.T) {
+	root := newRootCmd("test", "test")
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"schema", "config-proposal"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("schema config-proposal: %v", err)
+	}
+	if !bytes.Equal(out.Bytes(), schemas.ConfigProposalV1()) {
+		t.Fatal("schema config-proposal output differs from embedded artifact")
+	}
+}
+
 func TestConfigSchemaIncludesPublishedResultSchema(t *testing.T) {
 	root := newRootCmd("test", "test")
 	var out bytes.Buffer

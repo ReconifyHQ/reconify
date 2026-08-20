@@ -47,6 +47,12 @@ func TestCapabilitiesCommandDescribesEngineSurface(t *testing.T) {
 	if got.Schemas["profile"] != schemas.ProfileSchemaV1 {
 		t.Fatalf("profile schema ID = %q, want %q", got.Schemas["profile"], schemas.ProfileSchemaV1)
 	}
+	if got.Schemas["config_proposal"] != schemas.ConfigProposalSchemaV1 {
+		t.Fatalf("config proposal schema ID = %q", got.Schemas["config_proposal"])
+	}
+	if got.Commands["config infer"].Interactive {
+		t.Fatal("config infer should be non-interactive")
+	}
 	if got.Commands["inspect"].Interactive {
 		t.Fatalf("inspect should be non-interactive")
 	}

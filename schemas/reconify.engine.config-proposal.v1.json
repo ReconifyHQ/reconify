@@ -1,0 +1,153 @@
+{
+  "$id": "urn:reconify:engine:config-proposal:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconify Engine config proposal v1",
+  "description": "Versioned config inference response emitted by reconify config infer.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "reconify.engine.config-proposal.v1"
+        },
+        "status": {
+          "type": "string"
+        },
+        "sources": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string"
+              },
+              "validation": {
+                "type": "object",
+                "properties": {
+                  "rows_scanned": {
+                    "type": "integer"
+                  },
+                  "successful_rows": {
+                    "type": "integer"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "rows_scanned",
+                  "successful_rows",
+                  "truncated"
+                ],
+                "additionalProperties": false
+              },
+              "mappings": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string"
+                    },
+                    "column": {
+                      "type": "string"
+                    },
+                    "confidence": {
+                      "type": "number"
+                    },
+                    "lead": {
+                      "type": "number"
+                    },
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "alternatives": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "column": {
+                            "type": "string"
+                          },
+                          "confidence": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "column",
+                          "confidence"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "reasons": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "column",
+                    "confidence",
+                    "lead",
+                    "ready",
+                    "alternatives"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "name",
+              "file",
+              "format",
+              "validation",
+              "mappings"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "proposed_yaml": {
+          "type": "string"
+        },
+        "reasons": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "status",
+        "sources",
+        "proposed_yaml"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

@@ -142,7 +142,7 @@ specifically; identifiers version independently of one another.
 | `reconify.engine.diagnostic.v1` | any command, on error, when `--error-format json` or `--agent` | Published — AP-3 |
 | `reconify.engine.capabilities.v1` | `capabilities` | Published — AP-4 |
 | `reconify.engine.profile.v1` | `inspect` | Published — AP-5 |
-| `reconify.engine.config-proposal.v1` | `config infer` | Planned — AP-6 |
+| `reconify.engine.config-proposal.v1` | `config infer` | Published — AP-6 |
 | `reconify.engine.explanation.v1` | `explain` | Planned — AP-8 |
 
 Rules that apply to every identifier:
@@ -168,12 +168,12 @@ and are only constrained here with respect to the additive schema/diagnostic cha
 | `reconify reconcile` | existing, gains `reconify.engine.result.v1` and `--agent` | AP-2, AP-7 |
 | `reconify parse` | existing, unaffected by this protocol | — |
 | `reconify config validate` | existing, unaffected | — |
-| `reconify config check-source` | existing, unaffected | — |
+| `reconify config check-source` | existing, validates a bounded row sample by default | #90 |
 | `reconify config init` | existing, unaffected | — |
 | `reconify config schema` | existing, remains operational; `capabilities` supersedes it as the agent entry point but does not replace it | AP-4 |
 | `reconify capabilities` | implemented | AP-4 |
 | `reconify inspect FILE` | implemented | AP-5 |
-| `reconify config infer` | new | AP-6 |
+| `reconify config infer` | implemented | AP-6 |
 | `reconify explain` | new | AP-8 |
 | `reconify reconcile --auto` | new flag on existing command | AP-12 |
 | `--agent` (global flag) | new | AP-7 |

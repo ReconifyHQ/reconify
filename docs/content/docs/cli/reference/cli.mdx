@@ -128,6 +128,14 @@ reconify schema profile > reconify.engine.profile.v1.json
 Prints the published Draft 2020-12 schema for the file profile document used by
 `reconify inspect`.
 
+## `reconify schema config-proposal`
+
+```bash
+reconify schema config-proposal > reconify.engine.config-proposal.v1.json
+```
+
+Prints the published Draft 2020-12 schema for config-inference proposals.
+
 ## `reconify config check-source`
 
 ```bash
@@ -141,6 +149,26 @@ reconify config check-source \
 |---|---|---|
 | `--source` | yes | Source name to check. |
 | `--file` | yes | Input file to validate against the source parser. |
+| `--rows` | no | `10` | Number of data rows to parse; `0` checks headers only. |
+
+## `reconify config infer`
+
+```bash
+reconify config infer --left data/ledger.csv --right data/bank.csv --out reconify.yaml
+```
+
+Prints a `reconify.engine.config-proposal.v1` JSON document with candidate date,
+amount, and reference mappings. A proposal is `ready` only when all mappings meet
+the confidence gates and at least 100 sampled rows parse successfully per source.
+Without `--out`, `needs_input` is a successful proposal. With `--out`, Reconify
+only writes a ready YAML config; ambiguous inference returns exit code `2` and
+leaves no output file.
+
+| Flag | Required | Description |
+|---|---|---|
+| `--left` | yes | Left input file. |
+| `--right` | yes | Right input file. |
+| `--out` | no | Write a ready proposed YAML config. |
 
 ## `reconify parse`
 
