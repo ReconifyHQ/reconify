@@ -16,7 +16,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	if err := os.WriteFile(*output, document, 0o644); err != nil {
+	if err := os.WriteFile(*output, document, 0o644); err != nil { // #nosec G306 -- generated schema is a checked-in public artifact.
 		fatal(fmt.Errorf("write %s: %w", *output, err))
 	}
 }
