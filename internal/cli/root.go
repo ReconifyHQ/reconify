@@ -60,6 +60,7 @@ It ingests financial data from multiple sources, normalizes them, and compares t
 	rootCmd.AddCommand(newSchemaCmd())
 	rootCmd.AddCommand(newCapabilitiesCmd())
 	rootCmd.AddCommand(newInspectCmd())
+	rootCmd.AddCommand(newExplainCmd())
 
 	return rootCmd
 }

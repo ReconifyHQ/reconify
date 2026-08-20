@@ -136,6 +136,32 @@ reconify schema config-proposal > reconify.engine.config-proposal.v1.json
 
 Prints the published Draft 2020-12 schema for config-inference proposals.
 
+## `reconify schema explanation`
+
+```bash
+reconify schema explanation > reconify.engine.explanation.v1.json
+```
+
+Prints the published Draft 2020-12 schema for deterministic result explanations.
+
+## `reconify explain`
+
+```bash
+reconify explain results.ndjson --top 10
+```
+
+Reads a completed JSON, JSON-stream, or NDJSON reconciliation result without
+rerunning reconciliation. It emits `reconify.engine.explanation.v1` with the
+original summary, deterministic finding counts, and up to `--top` exception
+events. `--top` defaults to `10`; use `0` to omit event payloads while retaining
+counts. Results with `result_mode: summary_only` still report summary counts,
+but cannot include exception payloads that were not present in the input.
+
+| Flag | Required | Default | Description |
+|---|---|---:|---|
+| `FILE` | yes | | JSON, JSON-stream, or NDJSON result file. |
+| `--top` | no | `10` | Maximum exception event payloads to copy. |
+
 ## `reconify config check-source`
 
 ```bash

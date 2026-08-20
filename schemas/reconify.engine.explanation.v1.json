@@ -1,0 +1,296 @@
+{
+  "$id": "urn:reconify:engine:explanation:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconify Engine explanation v1",
+  "description": "Versioned deterministic summary of a completed reconciliation result.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "reconify.engine.explanation.v1"
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "result_mode": {
+              "type": "string"
+            },
+            "currency": {
+              "type": "string"
+            },
+            "run_id": {
+              "type": "string"
+            },
+            "total_left": {
+              "type": "integer"
+            },
+            "total_right": {
+              "type": "integer"
+            },
+            "matched": {
+              "type": "integer"
+            },
+            "unmatched_left": {
+              "type": "integer"
+            },
+            "unmatched_right": {
+              "type": "integer"
+            },
+            "amount_diff_count": {
+              "type": "integer"
+            },
+            "timing_diff_count": {
+              "type": "integer"
+            },
+            "duplicate_count": {
+              "type": "integer"
+            },
+            "match_rate_pct": {
+              "type": "number"
+            },
+            "reconciled_rate_pct": {
+              "type": "number"
+            },
+            "grouped_matched_count": {
+              "type": "integer"
+            },
+            "grouped_amount_diff_count": {
+              "type": "integer"
+            },
+            "grouped_timing_diff_count": {
+              "type": "integer"
+            },
+            "many_to_many_matched_count": {
+              "type": "integer"
+            },
+            "many_to_many_amount_diff_count": {
+              "type": "integer"
+            },
+            "many_to_many_timing_diff_count": {
+              "type": "integer"
+            },
+            "ambiguous_group_count": {
+              "type": "integer"
+            },
+            "matched_amount_left": {
+              "type": "integer"
+            },
+            "matched_amount_right": {
+              "type": "integer"
+            },
+            "unmatched_amount_left": {
+              "type": "integer"
+            },
+            "unmatched_amount_right": {
+              "type": "integer"
+            },
+            "amount_diff_total": {
+              "type": "integer"
+            },
+            "ambiguous_amount_left": {
+              "type": "integer"
+            },
+            "ambiguous_amount_right": {
+              "type": "integer"
+            },
+            "total_discrepancy": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total_left",
+            "total_right",
+            "matched",
+            "unmatched_left",
+            "unmatched_right",
+            "amount_diff_count",
+            "timing_diff_count",
+            "duplicate_count",
+            "match_rate_pct",
+            "reconciled_rate_pct",
+            "matched_amount_left",
+            "matched_amount_right",
+            "unmatched_amount_left",
+            "unmatched_amount_right",
+            "amount_diff_total",
+            "total_discrepancy"
+          ],
+          "additionalProperties": false
+        },
+        "by_source": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "result_mode": {
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "run_id": {
+                "type": "string"
+              },
+              "total_left": {
+                "type": "integer"
+              },
+              "total_right": {
+                "type": "integer"
+              },
+              "matched": {
+                "type": "integer"
+              },
+              "unmatched_left": {
+                "type": "integer"
+              },
+              "unmatched_right": {
+                "type": "integer"
+              },
+              "amount_diff_count": {
+                "type": "integer"
+              },
+              "timing_diff_count": {
+                "type": "integer"
+              },
+              "duplicate_count": {
+                "type": "integer"
+              },
+              "match_rate_pct": {
+                "type": "number"
+              },
+              "reconciled_rate_pct": {
+                "type": "number"
+              },
+              "grouped_matched_count": {
+                "type": "integer"
+              },
+              "grouped_amount_diff_count": {
+                "type": "integer"
+              },
+              "grouped_timing_diff_count": {
+                "type": "integer"
+              },
+              "many_to_many_matched_count": {
+                "type": "integer"
+              },
+              "many_to_many_amount_diff_count": {
+                "type": "integer"
+              },
+              "many_to_many_timing_diff_count": {
+                "type": "integer"
+              },
+              "ambiguous_group_count": {
+                "type": "integer"
+              },
+              "matched_amount_left": {
+                "type": "integer"
+              },
+              "matched_amount_right": {
+                "type": "integer"
+              },
+              "unmatched_amount_left": {
+                "type": "integer"
+              },
+              "unmatched_amount_right": {
+                "type": "integer"
+              },
+              "amount_diff_total": {
+                "type": "integer"
+              },
+              "ambiguous_amount_left": {
+                "type": "integer"
+              },
+              "ambiguous_amount_right": {
+                "type": "integer"
+              },
+              "total_discrepancy": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total_left",
+              "total_right",
+              "matched",
+              "unmatched_left",
+              "unmatched_right",
+              "amount_diff_count",
+              "timing_diff_count",
+              "duplicate_count",
+              "match_rate_pct",
+              "reconciled_rate_pct",
+              "matched_amount_left",
+              "matched_amount_right",
+              "unmatched_amount_left",
+              "unmatched_amount_right",
+              "amount_diff_total",
+              "total_discrepancy"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "findings": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "category": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "category",
+              "count"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "top_exceptions": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "type",
+              "data"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "exceptions_total": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema",
+        "summary",
+        "findings",
+        "top_exceptions",
+        "exceptions_total",
+        "truncated"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

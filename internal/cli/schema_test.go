@@ -82,6 +82,20 @@ func TestConfigProposalSchemaCommandPrintsPublishedArtifact(t *testing.T) {
 	}
 }
 
+func TestExplanationSchemaCommandPrintsPublishedArtifact(t *testing.T) {
+	root := newRootCmd("test", "test")
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"schema", "explanation"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("schema explanation: %v", err)
+	}
+	if !bytes.Equal(out.Bytes(), schemas.ExplanationV1()) {
+		t.Fatal("schema explanation output differs from embedded artifact")
+	}
+}
+
 func TestConfigSchemaIncludesPublishedResultSchema(t *testing.T) {
 	root := newRootCmd("test", "test")
 	var out bytes.Buffer

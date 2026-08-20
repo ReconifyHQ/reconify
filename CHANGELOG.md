@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`reconify explain`** — reads JSON, JSON-stream, or NDJSON reconciliation results and emits deterministic `reconify.engine.explanation.v1` findings with bounded top exception events; no reconciliation or subjective severity is added.
 - **`reconify config infer`** — non-interactively proposes a confidence-gated `reconify.yaml` from two input files. It emits `reconify.engine.config-proposal.v1` with mappings, alternatives, validation counts, and YAML; `--out` writes only ready proposals. `reconify schema config-proposal` prints the published schema.
 - **Sample-row validation for `config check-source`** — checks the first 10 data rows by default for date and amount parsing errors. Use `--rows 0` for headers only or set a bounded custom sample size.
 - **`reconify inspect FILE`** — deterministically profiles a CSV, JSON, NDJSON, XLSX, or XLSM file before a `reconify.yaml` mapping exists: format, per-column type inference (date layouts, amount formats, ambiguity flags), and representative sample values. Emits `reconify.engine.profile.v1` to stdout (`reconify schema profile` prints the published schema). Scans 1,000 rows by default; `--full` performs an exact scan. `--sample-values` controls how many distinct raw values are included per column (`0` disables). Part of the Reconify Engine Agent Protocol v1 roadmap (AP-5).
