@@ -207,6 +207,9 @@ Formats:
 			effectiveMode := config.ResultMode(resultModeFlag)
 			if effectiveMode == "" {
 				effectiveMode = pair.ResultMode
+				if effectiveMode == "" && agentMode {
+					effectiveMode = config.ResultModeExceptionsOnly
+				}
 			}
 			// Always wrap: adds ResultMode/RunID to Summary and filters events by mode.
 			w = engine.WrapWithResultModeAndWarnings(w, effectiveMode, telemetry.RunID, stderrWarningObserver{})

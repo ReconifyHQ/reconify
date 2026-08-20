@@ -11,8 +11,8 @@ on across releases.
 The keywords **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used as defined in RFC 2119.
 
 This document describes the target contract for the roadmap tracked in the `agent-protocol` label. Some
-identifiers and commands below (`--agent`, `reconcile --auto`) do not exist in the codebase yet; each is
-delivered by its own issue and MUST match this spec when it ships.
+identifiers and commands below (`reconcile --auto`) do not exist in the codebase yet; each is delivered by
+its own issue and MUST match this spec when it ships.
 [`reference/cli`](/docs/cli/reference/cli) and
 [`reference/result-schema`](/docs/cli/reference/result-schema) remain the source of truth for what is
 already implemented.
@@ -165,7 +165,7 @@ and are only constrained here with respect to the additive schema/diagnostic cha
 
 | Command | Status | Spec issue |
 |---|---|---|
-| `reconify reconcile` | existing, gains `reconify.engine.result.v1` and `--agent` | AP-2, AP-7 |
+| `reconify reconcile` | implemented, gains `reconify.engine.result.v1` and `--agent` | AP-2, AP-7 |
 | `reconify parse` | existing, unaffected by this protocol | — |
 | `reconify config validate` | existing, unaffected | — |
 | `reconify config check-source` | existing, validates a bounded row sample by default | #90 |
@@ -176,7 +176,7 @@ and are only constrained here with respect to the additive schema/diagnostic cha
 | `reconify config infer` | implemented | AP-6 |
 | `reconify explain` | implemented | AP-8 |
 | `reconify reconcile --auto` | new flag on existing command | AP-12 |
-| `--agent` (global flag) | new | AP-7 |
+| `--agent` (global flag) | implemented | AP-7 |
 
 `reconify doctor` is explicitly deferred: capability discovery (`capabilities`), config validation, and
 source checking (`config check-source`) already cover the readiness checks a `doctor` command would

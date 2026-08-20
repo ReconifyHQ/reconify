@@ -137,6 +137,10 @@ func capabilityErrorCodes() map[string]schemas.ErrorCodeCapability {
 			Category: diagnosticCategoryInference, LegacyCode: "config_error", ExitCode: ErrCodeConfig,
 			Description: "Inference could not select confident date, amount, or reference mappings.",
 		},
+		diagnosticCodeInteractiveUnsupported: {
+			Category: diagnosticCategoryConfig, LegacyCode: "config_error", ExitCode: ErrCodeConfig,
+			Description: "The requested command requires interactive input and cannot run in agent mode.",
+		},
 		diagnosticCodeExecutionFailed: {
 			Category: diagnosticCategoryExecution, LegacyCode: "error", ExitCode: 1,
 			Description: "Execution or output failed unexpectedly.",
