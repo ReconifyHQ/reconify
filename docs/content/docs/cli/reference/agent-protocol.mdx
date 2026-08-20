@@ -11,8 +11,8 @@ on across releases.
 The keywords **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used as defined in RFC 2119.
 
 This document describes the target contract for the roadmap tracked in the `agent-protocol` label. Some
-identifiers and commands below (`config infer`, `explain`, `--agent`, `reconcile --auto`) do
-not exist in the codebase yet; each is delivered by its own issue and MUST match this spec when it ships.
+identifiers and commands below (`--agent`, `reconcile --auto`) do not exist in the codebase yet; each is
+delivered by its own issue and MUST match this spec when it ships.
 [`reference/cli`](/docs/cli/reference/cli) and
 [`reference/result-schema`](/docs/cli/reference/result-schema) remain the source of truth for what is
 already implemented.
@@ -143,7 +143,7 @@ specifically; identifiers version independently of one another.
 | `reconify.engine.capabilities.v1` | `capabilities` | Published — AP-4 |
 | `reconify.engine.profile.v1` | `inspect` | Published — AP-5 |
 | `reconify.engine.config-proposal.v1` | `config infer` | Published — AP-6 |
-| `reconify.engine.explanation.v1` | `explain` | Planned — AP-8 |
+| `reconify.engine.explanation.v1` | `explain` | Published — AP-8 |
 
 Rules that apply to every identifier:
 
@@ -174,7 +174,7 @@ and are only constrained here with respect to the additive schema/diagnostic cha
 | `reconify capabilities` | implemented | AP-4 |
 | `reconify inspect FILE` | implemented | AP-5 |
 | `reconify config infer` | implemented | AP-6 |
-| `reconify explain` | new | AP-8 |
+| `reconify explain` | implemented | AP-8 |
 | `reconify reconcile --auto` | new flag on existing command | AP-12 |
 | `--agent` (global flag) | new | AP-7 |
 

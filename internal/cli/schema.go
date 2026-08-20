@@ -17,6 +17,7 @@ func newSchemaCmd() *cobra.Command {
 	cmd.AddCommand(newCapabilitiesSchemaCmd())
 	cmd.AddCommand(newProfileSchemaCmd())
 	cmd.AddCommand(newConfigProposalSchemaCmd())
+	cmd.AddCommand(newExplanationSchemaCmd())
 	return cmd
 }
 
@@ -29,6 +30,21 @@ func newConfigProposalSchemaCmd() *cobra.Command {
 			_ = args
 			if _, err := cmd.OutOrStdout().Write(schemas.ConfigProposalV1()); err != nil {
 				return fmt.Errorf("write config proposal schema: %w", err)
+			}
+			return nil
+		},
+	}
+}
+
+func newExplanationSchemaCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "explanation",
+		Short: "Print the Engine explanation schema",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = args
+			if _, err := cmd.OutOrStdout().Write(schemas.ExplanationV1()); err != nil {
+				return fmt.Errorf("write explanation schema: %w", err)
 			}
 			return nil
 		},

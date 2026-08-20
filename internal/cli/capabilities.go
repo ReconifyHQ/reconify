@@ -27,6 +27,10 @@ func capabilityFormats() map[string]schemas.FormatCapability {
 			Formats: []string{"json"},
 			Default: "json",
 		},
+		"explain": {
+			Formats: []string{"json"},
+			Default: "json",
+		},
 	}
 }
 
@@ -66,6 +70,7 @@ func capabilityCommands() map[string]schemas.CommandCapability {
 		"capabilities":           {Description: "Describe the installed Reconify Engine interface and its versioned schemas.", Interactive: false},
 		"config check-source":    {Description: "Check whether an input file matches a configured source mapping.", Interactive: false},
 		"config infer":           {Description: "Infer a confidence-gated reconify.yaml proposal from two input files.", Interactive: false},
+		"explain":                {Description: "Summarize a completed reconciliation result deterministically.", Interactive: false},
 		"config schema":          {Description: "Print the machine-readable configuration and output metadata schema.", Interactive: false},
 		"config validate":        {Description: "Validate a reconify.yaml configuration.", Interactive: false},
 		"config init":            {Description: "Interactively create a reconify.yaml configuration from sample files.", Interactive: true},
@@ -75,6 +80,7 @@ func capabilityCommands() map[string]schemas.CommandCapability {
 		"schema capabilities":    {Description: "Print the published capabilities schema.", Interactive: false},
 		"schema config-proposal": {Description: "Print the published config proposal schema.", Interactive: false},
 		"schema diagnostic":      {Description: "Print the published structured diagnostic schema.", Interactive: false},
+		"schema explanation":     {Description: "Print the published explanation schema.", Interactive: false},
 		"schema profile":         {Description: "Print the published file profile schema.", Interactive: false},
 		"schema result":          {Description: "Print the published reconciliation result schema.", Interactive: false},
 	}
@@ -167,6 +173,7 @@ func buildCapabilities() schemas.Capabilities {
 			"capabilities":    schemas.CapabilitiesSchemaV1,
 			"config_proposal": schemas.ConfigProposalSchemaV1,
 			"diagnostic":      schemas.DiagnosticSchemaV1,
+			"explanation":     schemas.ExplanationSchemaV1,
 			"profile":         schemas.ProfileSchemaV1,
 			"result":          schemas.ResultSchemaV1,
 		},
