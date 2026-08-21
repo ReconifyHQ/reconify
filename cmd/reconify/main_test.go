@@ -100,3 +100,39 @@ func TestJSONDiagnosticCoversGenericCobraErrors(t *testing.T) {
 		t.Fatalf("envelope = %+v", envelope)
 	}
 }
+
+func TestAgentProfileStructuresGenericCobraErrors(t *testing.T) {
+	bin := buildTestBinary(t)
+	stdout, stderr, exitCode := runTestBinary(t, bin, "--agent", "reconcile", "--bogus")
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr=%s", exitCode, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
+	}
+	var envelope schemas.DiagnosticEnvelope
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stderr)), &envelope); err != nil {
+		t.Fatalf("decode stderr JSON: %v\nstderr=%s", err, stderr)
+	}
+	if envelope.Code != "error" || envelope.Diagnostic.Code != "INTERNAL_ERROR" {
+		t.Fatalf("envelope = %+v", envelope)
+	}
+}
+
+func TestAgentProfileStructuresUnknownCommands(t *testing.T) {
+	bin := buildTestBinary(t)
+	stdout, stderr, exitCode := runTestBinary(t, bin, "--agent", "no-such-command")
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr=%s", exitCode, stderr)
+	}
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty", stdout)
+	}
+	var envelope schemas.DiagnosticEnvelope
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stderr)), &envelope); err != nil {
+		t.Fatalf("decode stderr JSON: %v\nstderr=%s", err, stderr)
+	}
+	if envelope.Code != "error" || envelope.Diagnostic.Code != "INTERNAL_ERROR" {
+		t.Fatalf("envelope = %+v", envelope)
+	}
+}

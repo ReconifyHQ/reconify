@@ -14,6 +14,7 @@ reconify --config reconify.yaml --verbose
 | `--config`, `-c` | `reconify.yaml` | Path to configuration file. |
 | `--verbose`, `-v` | `false` | Enable verbose output. |
 | `--error-format` | `text` | `text` or `json`; JSON errors are written to stderr as `reconify.engine.diagnostic.v1` while preserving legacy `error` and `code`. |
+| `--agent` | `false` | Use JSON diagnostics and, for `reconcile`, default to NDJSON with `exceptions_only`; explicit flags still take precedence. |
 | `--version` | | Print version and build time. |
 
 If `--config` is not set, Reconify also checks `RECONIFY_CONFIG`.
@@ -28,6 +29,25 @@ Prints the versioned `reconify.engine.capabilities.v1` document to stdout. It
 describes the installed Engine version, implemented commands, formats, matching
 passes, result modes, schema identifiers, diagnostic codes, and exit codes.
 Use `reconify schema capabilities` to print the published Draft 2020-12 schema.
+
+## `reconify inspect`
+
+```bash
+reconify inspect data/bank.csv --format json
+```
+
+| Flag | Default | Description |
+|---|---:|---|
+| `--format` | `json` | Output format; `json` is the only supported value. |
+| `--full` | `false` | Exact scan of every row instead of the default 1,000-row bounded scan. |
+| `--sample-values` | `3` | Representative distinct raw sample values per column; `0` disables. |
+| `--sheet` | first sheet | XLSX/XLSM sheet name. |
+
+Prints the versioned `reconify.engine.profile.v1` document to stdout: file format,
+scan bounds, and per-column type inference (date layouts, amount formats, sample
+values). Supports CSV, JSON, NDJSON, XLSX, and XLSM. Does not require or propose a
+`reconify.yaml` column mapping. See [`reference/agent-protocol`](/docs/cli/reference/agent-protocol#inspect)
+for the full schema shape.
 
 ## `reconify config init`
 
@@ -100,6 +120,49 @@ reconify schema capabilities > reconify.engine.capabilities.v1.json
 Prints the published Draft 2020-12 capabilities schema used by
 `reconify capabilities`.
 
+## `reconify schema profile`
+
+```bash
+reconify schema profile > reconify.engine.profile.v1.json
+```
+
+Prints the published Draft 2020-12 schema for the file profile document used by
+`reconify inspect`.
+
+## `reconify schema config-proposal`
+
+```bash
+reconify schema config-proposal > reconify.engine.config-proposal.v1.json
+```
+
+Prints the published Draft 2020-12 schema for config-inference proposals.
+
+## `reconify schema explanation`
+
+```bash
+reconify schema explanation > reconify.engine.explanation.v1.json
+```
+
+Prints the published Draft 2020-12 schema for deterministic result explanations.
+
+## `reconify explain`
+
+```bash
+reconify explain results.ndjson --top 10
+```
+
+Reads a completed JSON, JSON-stream, or NDJSON reconciliation result without
+rerunning reconciliation. It emits `reconify.engine.explanation.v1` with the
+original summary, deterministic finding counts, and up to `--top` exception
+events. `--top` defaults to `10`; use `0` to omit event payloads while retaining
+counts. Results with `result_mode: summary_only` still report summary counts,
+but cannot include exception payloads that were not present in the input.
+
+| Flag | Required | Default | Description |
+|---|---|---:|---|
+| `FILE` | yes | | JSON, JSON-stream, or NDJSON result file. |
+| `--top` | no | `10` | Maximum exception event payloads to copy. |
+
 ## `reconify config check-source`
 
 ```bash
@@ -109,10 +172,30 @@ reconify config check-source \
   --file data/bank.csv
 ```
 
+| Flag | Required | Default | Description |
+|---|---|---:|---|
+| `--source` | yes | | Source name to check. |
+| `--file` | yes | | Input file to validate against the source parser. |
+| `--rows` | no | `10` | Number of data rows to parse; `0` checks headers only. |
+
+## `reconify config infer`
+
+```bash
+reconify config infer --left data/ledger.csv --right data/bank.csv --out reconify.yaml
+```
+
+Prints a `reconify.engine.config-proposal.v1` JSON document with candidate date,
+amount, and reference mappings. A proposal is `ready` only when all mappings meet
+the confidence gates and at least 100 sampled rows parse successfully per source.
+Without `--out`, `needs_input` is a successful proposal. With `--out`, Reconify
+only writes a ready YAML config; ambiguous inference returns exit code `2` and
+leaves no output file.
+
 | Flag | Required | Description |
 |---|---|---|
-| `--source` | yes | Source name to check. |
-| `--file` | yes | Input file to validate against the source parser. |
+| `--left` | yes | Left input file. |
+| `--right` | yes | Right input file. |
+| `--out` | no | Write a ready proposed YAML config. |
 
 ## `reconify parse`
 
@@ -145,7 +228,7 @@ reconify reconcile \
 | `--out`, `-o` | no | `-` | Output file path; `-` writes stdout. |
 | `--left-file` | no | | Explicit left input file. |
 | `--right-file` | no | | Explicit right input file. |
-| `--format` | no | `json` | `json`, `json-stream`, `ndjson`, `csv`, or `table`. |
+| `--format` | no | `json` (`ndjson` with `--agent`) | `json`, `json-stream`, `ndjson`, `csv`, or `table`. |
 | `--max-token-buffer` | no | `100000` | Advisory row limit for token-mode unmatched buffer; `0` means unlimited. |
 | `--audit` | no | `false` | Add run provenance to structured output. |
 | `--audit-fixed-timestamp` | no | | RFC3339/RFC3339Nano timestamp for byte-identical audit reruns. |
@@ -159,12 +242,28 @@ reconify reconcile \
 | `--progress` | no | `false` | Log progress to stderr. |
 | `--progress-every` | no | `1000000` | Row interval for progress logs. |
 | `--progress-out` | no | | Write machine-readable telemetry NDJSON to a separate file. |
-| `--result-mode` | no | pair config / `all` | `all`, `exceptions_only`, or `summary_only`; overrides the pair setting. |
+| `--result-mode` | no | pair config / `all` (`exceptions_only` with `--agent`) | `all`, `exceptions_only`, or `summary_only`; overrides the pair setting. |
+| `--auto` | no | `false` | Infer a config from exactly two positional files and reconcile only when all inference gates pass. Mutually exclusive with `--config`, `--pair`, `--left-file`, and `--right-file`. |
 
 `--audit` is supported for `json`, `json-stream`, and `ndjson`. `--deterministic`
 only affects buffered `json` output. `--progress-out` must differ from `--out`.
 For multi-counterpart `rights` pairs, `--right-file` does not apply and audit is
 not currently supported; progress telemetry covers each counterpart pass.
+
+### Confidence-gated auto reconciliation
+
+```bash
+reconify reconcile payments.csv ledger.csv --auto --out results.json
+```
+
+`--auto` accepts exactly two positional input files and applies the same confidence
+and sample-size gates as `config infer`. It does not read a config or pair, and it
+rejects file/source overrides. When the gate passes, structured output includes a
+`run_info` object with the exact inferred YAML in `inferred_config` and each
+selected mapping's `confidence` and `lead` in `inference_confidence`. JSON,
+JSON-stream, and NDJSON are supported so this metadata remains alongside the result.
+When the gate fails, the command returns `INFERENCE_AMBIGUOUS` with exit code `2`
+and does not write result data.
 
 ## Not implemented yet
 

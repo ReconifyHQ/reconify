@@ -15,7 +15,7 @@ By the end of this guide, you know:
 
 ## How it works
 
-`config check-source` reads the headers from your input file and checks that every column referenced in the source's `parser` block exists. It does not parse or normalize any rows. It only verifies that the columns are present. See [Ingestion](/docs/cli/guides/ingestion) for how columns map to the normalized transaction model once parsing begins.
+`config check-source` reads the headers from your input file and checks that every column referenced in the source's `parser` block exists. It then parses the first 10 data rows by default, catching date-layout and amount-format errors before a full reconciliation. Use `--rows 0` for a headers-only check, or raise `--rows` for a larger bounded sample. See [Ingestion](/docs/cli/guides/ingestion) for how columns map to the normalized transaction model once parsing begins.
 
 ## Command
 
@@ -23,7 +23,8 @@ By the end of this guide, you know:
 reconify config check-source \
   --config reconify.yaml \
   --source bank \
-  --file data/bank/january.csv
+  --file data/bank/january.csv \
+  --rows 25
 ```
 
 ## Steps
@@ -83,6 +84,6 @@ A passing run prints a confirmation for each checked column. If all columns are 
 parse a file with [`reconify parse`](/docs/cli/guides/ingestion) to confirm row-level normalization
 looks correct before running a full reconciliation.
 
-If a column passes `check-source` but rows still look wrong after parsing, use
+If a column and its bounded sample pass `check-source` but rows still look wrong after parsing, use
 [`reconify parse`](/docs/cli/guides/ingestion) to inspect how individual rows are normalized — the
 issue is likely in `date_layout`, `multiplier`, or separator settings rather than the column name.

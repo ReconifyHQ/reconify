@@ -53,6 +53,49 @@ func TestCapabilitiesSchemaCommandPrintsPublishedArtifact(t *testing.T) {
 	}
 }
 
+func TestProfileSchemaCommandPrintsPublishedArtifact(t *testing.T) {
+	root := newRootCmd("test", "test")
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"schema", "profile"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("schema profile: %v", err)
+	}
+	if !bytes.Equal(out.Bytes(), schemas.ProfileV1()) {
+		t.Fatal("schema profile output differs from embedded published artifact")
+	}
+}
+
+func TestConfigProposalSchemaCommandPrintsPublishedArtifact(t *testing.T) {
+	root := newRootCmd("test", "test")
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"schema", "config-proposal"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("schema config-proposal: %v", err)
+	}
+	if !bytes.Equal(out.Bytes(), schemas.ConfigProposalV1()) {
+		t.Fatal("schema config-proposal output differs from embedded artifact")
+	}
+}
+
+func TestExplanationSchemaCommandPrintsPublishedArtifact(t *testing.T) {
+	root := newRootCmd("test", "test")
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"schema", "explanation"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("schema explanation: %v", err)
+	}
+	if !bytes.Equal(out.Bytes(), schemas.ExplanationV1()) {
+		t.Fatal("schema explanation output differs from embedded artifact")
+	}
+}
+
 func TestConfigSchemaIncludesPublishedResultSchema(t *testing.T) {
 	root := newRootCmd("test", "test")
 	var out bytes.Buffer

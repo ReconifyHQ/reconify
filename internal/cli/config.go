@@ -8,6 +8,7 @@ import (
 
 	"github.com/reconifyhq/reconify/config"
 	"github.com/reconifyhq/reconify/engine"
+	"github.com/reconifyhq/reconify/engine/sample"
 	"github.com/reconifyhq/reconify/schemas"
 	"github.com/spf13/cobra"
 )
@@ -23,6 +24,7 @@ func newConfigCmd() *cobra.Command {
 	cmd.AddCommand(newConfigCheckSourceCmd())
 	cmd.AddCommand(newConfigInitCmd())
 	cmd.AddCommand(newConfigSchemaCmd())
+	cmd.AddCommand(newConfigInferCmd())
 
 	return cmd
 }
@@ -58,6 +60,7 @@ This checks that all required fields are present and have valid values.`,
 func newConfigCheckSourceCmd() *cobra.Command {
 	var sourceName string
 	var filePath string
+	var rows int
 
 	cmd := &cobra.Command{
 		Use:   "check-source",
@@ -66,6 +69,9 @@ func newConfigCheckSourceCmd() *cobra.Command {
 This validates that required columns exist and that sample data can be parsed.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_ = args // avoid unused variable warning
+			if rows < 0 {
+				return configErr("--rows must be non-negative")
+			}
 			if sourceName == "" {
 				return configErr("--source is required")
 			}
@@ -139,6 +145,21 @@ This validates that required columns exist and that sample data can be parsed.`,
 				return inputErr(ErrCodeConfig, "config_error", fmt.Sprintf("source %q does not match file %q", sourceName, filePath), diagnosticCodeInputMismatch)
 			}
 
+			if rows > 0 {
+				result, err := sample.Validate(cmd.Context(), filePath, source.Parser, rows)
+				if err != nil {
+					return inputErr(ErrCodeConfig, "config_error", fmt.Sprintf("failed to parse sample rows: %v", err), diagnosticCodeInputMismatch)
+				}
+				for _, rowErr := range result.Errors {
+					cmd.PrintErrf("[x] row %d: %s\n", rowErr.Row, rowErr.Message)
+				}
+				if len(result.Errors) > 0 {
+					cmd.PrintErrf("[x] headers valid; %d of %d sampled rows failed to parse\n", len(result.Errors), result.RowsScanned)
+					return inputErr(ErrCodeConfig, "config_error", fmt.Sprintf("source %q has invalid sample rows", sourceName), diagnosticCodeInputMismatch)
+				}
+				cmd.PrintErrf("[ok] %d sampled rows parsed\n", result.SuccessfulRows)
+			}
+
 			cmd.PrintErrf("[OK] source %q matches file %q\n", sourceName, filePath)
 
 			return nil
@@ -147,6 +168,7 @@ This validates that required columns exist and that sample data can be parsed.`,
 
 	cmd.Flags().StringVar(&sourceName, "source", "", "Source name to check")
 	cmd.Flags().StringVar(&filePath, "file", "", "Input file path to validate")
+	cmd.Flags().IntVar(&rows, "rows", 10, "Number of data rows to parse after checking headers (0 checks headers only)")
 
 	return cmd
 }

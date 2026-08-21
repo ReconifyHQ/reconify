@@ -17,6 +17,7 @@ Run the smallest command that proves the current behavior:
 go run ./cmd/reconify --help
 go run ./cmd/reconify config --help
 go run ./cmd/reconify parse --help
+go run ./cmd/reconify inspect --help
 go run ./cmd/reconify reconcile --help
 go test ./...
 ```
@@ -29,6 +30,7 @@ Use `make test` only when race detection and coverage output are wanted; it is s
 - Cobra setup: `internal/cli/root.go`
 - Config commands: `internal/cli/config.go`
 - Parse command: `internal/cli/parse.go`
+- Inspect command: `internal/cli/inspect.go` (deterministic file profiling, `engine/profile`)
 - Reconcile command: `internal/cli/reconcile.go`
 - Public config model: `config/config.go`
 - Output writers: `engine/format.go`
@@ -44,6 +46,7 @@ Use `make test` only when race detection and coverage output are wanted; it is s
 ## Output Formats
 
 - `parse` supports `ndjson`, `csv`, `table`, and `json`.
+- `inspect` supports `json` only (emits `reconify.engine.profile.v1`).
 - `reconcile` supports `json`, `json-stream`, `ndjson`, `csv`, and `table`.
 - For large reconciliation jobs, recommend `ndjson` or `csv`; `json` and `table` buffer more data.
 - `--audit` is supported only for structured JSON-style outputs: `json`, `json-stream`, and `ndjson`.

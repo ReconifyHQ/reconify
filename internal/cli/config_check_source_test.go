@@ -51,3 +51,26 @@ sources:
 		t.Fatalf("stderr missing actual header 'transaction_date', got:\n%s", out)
 	}
 }
+
+func TestConfigCheckSourceValidatesSampleRows(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "input.csv")
+	configPath := filepath.Join(dir, "reconify.yaml")
+	if err := os.WriteFile(inputPath, []byte("date,amount\n01/15/2024,10.00\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := "version: 1\nsources:\n  bank:\n    file_pattern: " + inputPath + "\n    parser:\n      type: csv\n      date_col: date\n      date_layout: \"2006-01-02\"\n      amount_col: amount\n      multiplier: 100\n"
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := newRootCmd("test", "test")
+	var stderr bytes.Buffer
+	root.SetErr(&stderr)
+	root.SetArgs([]string{"config", "check-source", "--config", configPath, "--source", "bank", "--file", inputPath})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected sample parsing error")
+	}
+	if !strings.Contains(stderr.String(), "invalid date") {
+		t.Fatalf("missing parse failure: %s", stderr.String())
+	}
+}

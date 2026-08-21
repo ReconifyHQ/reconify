@@ -19,12 +19,24 @@ func capabilityFormats() map[string]schemas.FormatCapability {
 			Default:          "ndjson",
 			StreamingFormats: []string{"ndjson", "csv"},
 		},
+		"inspect": {
+			Formats: []string{"json"},
+			Default: "json",
+		},
+		"config infer": {
+			Formats: []string{"json"},
+			Default: "json",
+		},
+		"explain": {
+			Formats: []string{"json"},
+			Default: "json",
+		},
 	}
 }
 
 func capabilityNDJSONEvents() map[string]string {
 	return map[string]string{
-		"run_info":                 "Run provenance: tool version, file hashes, timestamps. Only emitted when --audit is set. Always the first line. Payload: RunInfo.",
+		"run_info":                 "Run provenance: tool version, file hashes, timestamps; --auto also includes the exact inferred config and mapping confidence. Emitted by --audit or --auto. Always the first line. Payload: RunInfo.",
 		"match":                    "Left+right pair that reconciled cleanly. Payload: {left: Transaction, right: Transaction}.",
 		"amount_diff":              "Reference matched but amount differs beyond amount_tolerance_minor. Payload: {left, right, diff_minor}.",
 		"timing_diff":              "Reference+amount matched but date is outside date_window. Payload: {left, right, days_diff}.",
@@ -55,16 +67,22 @@ func capabilityExitCodes() map[string]string {
 
 func capabilityCommands() map[string]schemas.CommandCapability {
 	return map[string]schemas.CommandCapability{
-		"capabilities":        {Description: "Describe the installed Reconify Engine interface and its versioned schemas.", Interactive: false},
-		"config check-source": {Description: "Check whether an input file matches a configured source mapping.", Interactive: false},
-		"config schema":       {Description: "Print the machine-readable configuration and output metadata schema.", Interactive: false},
-		"config validate":     {Description: "Validate a reconify.yaml configuration.", Interactive: false},
-		"config init":         {Description: "Interactively create a reconify.yaml configuration from sample files.", Interactive: true},
-		"parse":               {Description: "Parse an input file according to a configured source parser.", Interactive: false},
-		"reconcile":           {Description: "Run a configured reconciliation and emit result events.", Interactive: false},
-		"schema capabilities": {Description: "Print the published capabilities schema.", Interactive: false},
-		"schema diagnostic":   {Description: "Print the published structured diagnostic schema.", Interactive: false},
-		"schema result":       {Description: "Print the published reconciliation result schema.", Interactive: false},
+		"capabilities":           {Description: "Describe the installed Reconify Engine interface and its versioned schemas.", Interactive: false},
+		"config check-source":    {Description: "Check whether an input file matches a configured source mapping.", Interactive: false},
+		"config infer":           {Description: "Infer a confidence-gated reconify.yaml proposal from two input files.", Interactive: false},
+		"explain":                {Description: "Summarize a completed reconciliation result deterministically.", Interactive: false},
+		"config schema":          {Description: "Print the machine-readable configuration and output metadata schema.", Interactive: false},
+		"config validate":        {Description: "Validate a reconify.yaml configuration.", Interactive: false},
+		"config init":            {Description: "Interactively create a reconify.yaml configuration from sample files.", Interactive: true},
+		"inspect":                {Description: "Deterministically profile an input file's format and column types before writing a config.", Interactive: false},
+		"parse":                  {Description: "Parse an input file according to a configured source parser.", Interactive: false},
+		"reconcile":              {Description: "Run a configured or confidence-gated auto-inferred reconciliation and emit result events.", Interactive: false},
+		"schema capabilities":    {Description: "Print the published capabilities schema.", Interactive: false},
+		"schema config-proposal": {Description: "Print the published config proposal schema.", Interactive: false},
+		"schema diagnostic":      {Description: "Print the published structured diagnostic schema.", Interactive: false},
+		"schema explanation":     {Description: "Print the published explanation schema.", Interactive: false},
+		"schema profile":         {Description: "Print the published file profile schema.", Interactive: false},
+		"schema result":          {Description: "Print the published reconciliation result schema.", Interactive: false},
 	}
 }
 
@@ -115,6 +133,14 @@ func capabilityErrorCodes() map[string]schemas.ErrorCodeCapability {
 			Category: diagnosticCategoryInput, LegacyCode: "config_error", ExitCode: ErrCodeConfig,
 			Description: "An input file does not match its configured source mapping.",
 		},
+		diagnosticCodeInferenceAmbiguous: {
+			Category: diagnosticCategoryInference, LegacyCode: "config_error", ExitCode: ErrCodeConfig,
+			Description: "Inference could not select confident date, amount, or reference mappings.",
+		},
+		diagnosticCodeInteractiveUnsupported: {
+			Category: diagnosticCategoryConfig, LegacyCode: "config_error", ExitCode: ErrCodeConfig,
+			Description: "The requested command requires interactive input and cannot run in agent mode.",
+		},
 		diagnosticCodeExecutionFailed: {
 			Category: diagnosticCategoryExecution, LegacyCode: "error", ExitCode: 1,
 			Description: "Execution or output failed unexpectedly.",
@@ -148,9 +174,12 @@ func buildCapabilities() schemas.Capabilities {
 		Matching:    capabilityMatching(),
 		ResultModes: []string{string(config.ResultModeAll), string(config.ResultModeExceptionsOnly), string(config.ResultModeSummaryOnly)},
 		Schemas: map[string]string{
-			"capabilities": schemas.CapabilitiesSchemaV1,
-			"diagnostic":   schemas.DiagnosticSchemaV1,
-			"result":       schemas.ResultSchemaV1,
+			"capabilities":    schemas.CapabilitiesSchemaV1,
+			"config_proposal": schemas.ConfigProposalSchemaV1,
+			"diagnostic":      schemas.DiagnosticSchemaV1,
+			"explanation":     schemas.ExplanationSchemaV1,
+			"profile":         schemas.ProfileSchemaV1,
+			"result":          schemas.ResultSchemaV1,
 		},
 		ErrorCodes: capabilityErrorCodes(),
 		ExitCodes:  capabilityExitCodes(),

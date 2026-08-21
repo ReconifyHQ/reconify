@@ -82,9 +82,9 @@ All monetary fields are minor units. `match_rate_pct` counts exact one-to-one
 matches; `reconciled_rate_pct` also includes grouped outcomes. The summary is
 computed from the full reconciliation even when `result_mode` suppresses events.
 
-## Audit `run_info`
+## Audit and auto `run_info`
 
-When `--audit` is enabled:
+When `--audit` is enabled, or when `reconcile --auto` is used:
 
 ```go
 type RunInfo struct {
@@ -94,11 +94,16 @@ type RunInfo struct {
     LeftFile    FileInfo
     RightFile   FileInfo
     PairConfig  PairConfigSnap
+    InferredConfig      string
+    InferenceConfidence []InferenceConfidenceSource
 }
 ```
 
 `FileInfo` includes `path`, `sha256`, `size_bytes`, and `mod_time`. `PairConfigSnap`
 records the applied `date_window`, `amount_tolerance_minor`, and `name_mode`.
+Auto runs populate `InferredConfig` with the exact YAML used for reconciliation and
+`InferenceConfidence` with each selected source mapping's column, confidence, and
+confidence lead. This makes the auto result reproducible with an explicit config run.
 
 For NDJSON, the event names include `run_info`, `index_selection`, `match`,
 `amount_diff`, `timing_diff`, `unmatched_left`, `unmatched_right`, `duplicate`,
