@@ -1,0 +1,3 @@
+date,amount,currency,reference,description
+2024-01-01,50.00,USD,INV-005,Installment 1
+2024-01-02,50.00,USD,INV-005,Installment 2

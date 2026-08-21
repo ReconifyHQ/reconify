@@ -1,0 +1,27 @@
+{
+  "schema": "reconify.engine.eval-scenario.v1",
+  "id": "007-multi-provider",
+  "prompt": "We take money through two processors. Our ledger (`left.csv`) records every sale regardless of which processor handled it, while each processor gives us its own payout export \u2014 `stripe.csv` and `paypal.csv`. A ledger row is accounted for if it appears in either export. Columns are the same across all three files: date, amount, currency, reference, description; dates look like 2024-01-31. Write a `reconify.yaml` that reconciles the ledger against both processors in a single run.",
+  "inputs": [
+    "inputs/left.csv",
+    "inputs/paypal.csv",
+    "inputs/stripe.csv"
+  ],
+  "reference_config": "reference/reconify.yaml",
+  "expected_result": "expected/result.json",
+  "pair": "left_vs_providers",
+  "assertions": {
+    "matched": 2,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 0,
+    "duplicate_count": 0,
+    "grouped_matched_count": 0,
+    "many_to_many_matched_count": 0,
+    "ambiguous_group_count": 0
+  },
+  "counter_examples": [
+    "counter_examples/single-provider.yaml"
+  ]
+}

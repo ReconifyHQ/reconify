@@ -1,0 +1,26 @@
+{
+  "schema": "reconify.engine.eval-scenario.v1",
+  "id": "005-one-to-many",
+  "prompt": "The ledger (`left.csv`) carries one row per invoice for its full value. The customer settled this invoice across several smaller payments, each of which appears as its own row in `right.csv` carrying the same invoice number. Columns are date, amount, currency, reference, description; dates look like 2024-01-31. Write a `reconify.yaml` that reconciles the invoice against its payments without reporting the individual payments as repeated entries.",
+  "inputs": [
+    "inputs/left.csv",
+    "inputs/right.csv"
+  ],
+  "reference_config": "reference/reconify.yaml",
+  "expected_result": "expected/result.json",
+  "pair": "left_vs_right",
+  "assertions": {
+    "matched": 0,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 0,
+    "duplicate_count": 0,
+    "grouped_matched_count": 1,
+    "many_to_many_matched_count": 0,
+    "ambiguous_group_count": 0
+  },
+  "counter_examples": [
+    "counter_examples/one-to-one-only.yaml"
+  ]
+}

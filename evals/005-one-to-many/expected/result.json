@@ -1,0 +1,95 @@
+{
+  "schema": "reconify.engine.result.v1",
+  "index_selection": {
+    "requested_backend": "memory",
+    "backend": "memory",
+    "reason": "memory estimate fits configured policy",
+    "estimated_memory_bytes": 205521559
+  },
+  "pair": "left_vs_right",
+  "left_source": "left",
+  "right_source": "right",
+  "summary": {
+    "currency": "USD",
+    "total_left": 1,
+    "total_right": 2,
+    "matched": 0,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 0,
+    "duplicate_count": 0,
+    "match_rate_pct": 0,
+    "reconciled_rate_pct": 50,
+    "grouped_matched_count": 1,
+    "matched_amount_left": 10000,
+    "matched_amount_right": 10000,
+    "unmatched_amount_left": 0,
+    "unmatched_amount_right": 0,
+    "amount_diff_total": 0,
+    "total_discrepancy": 0
+  },
+  "matched": null,
+  "unmatched_left": null,
+  "unmatched_right": null,
+  "amount_diff": null,
+  "timing_diff": null,
+  "duplicates": null,
+  "grouped_matched": [
+    {
+      "left": {
+        "id": "left-1",
+        "date": "2024-01-01T00:00:00Z",
+        "amount": 10000,
+        "currency": "USD",
+        "reference": "INV-005",
+        "name": "Full invoice",
+        "source": "left",
+        "raw": {
+          "amount": "100.00",
+          "currency": "USD",
+          "date": "2024-01-01",
+          "description": "Full invoice",
+          "reference": "INV-005"
+        },
+        "group_key": "INV-005"
+      },
+      "rights": [
+        {
+          "id": "right-1",
+          "date": "2024-01-01T00:00:00Z",
+          "amount": 5000,
+          "currency": "USD",
+          "reference": "INV-005",
+          "name": "Installment 1",
+          "source": "right",
+          "raw": {
+            "amount": "50.00",
+            "currency": "USD",
+            "date": "2024-01-01",
+            "description": "Installment 1",
+            "reference": "INV-005"
+          },
+          "group_key": "Installment 1"
+        },
+        {
+          "id": "right-2",
+          "date": "2024-01-02T00:00:00Z",
+          "amount": 5000,
+          "currency": "USD",
+          "reference": "INV-005",
+          "name": "Installment 2",
+          "source": "right",
+          "raw": {
+            "amount": "50.00",
+            "currency": "USD",
+            "date": "2024-01-02",
+            "description": "Installment 2",
+            "reference": "INV-005"
+          },
+          "group_key": "Installment 2"
+        }
+      ]
+    }
+  ]
+}

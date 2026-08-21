@@ -1,0 +1,26 @@
+{
+  "schema": "reconify.engine.eval-scenario.v1",
+  "id": "006-many-to-many",
+  "prompt": "Our store ledger (`left.csv`) and the payment gateway export (`right.csv`) both break the same payout into several rows, but they split it differently \u2014 the totals agree while no individual row lines up. Every row on both sides carries the shared payout reference. Columns are date, amount, currency, reference, description; dates look like 2024-01-31. Write a `reconify.yaml` that reconciles the payout without reporting the component rows as repeated entries.",
+  "inputs": [
+    "inputs/left.csv",
+    "inputs/right.csv"
+  ],
+  "reference_config": "reference/reconify.yaml",
+  "expected_result": "expected/result.json",
+  "pair": "left_vs_right",
+  "assertions": {
+    "matched": 0,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 0,
+    "duplicate_count": 0,
+    "grouped_matched_count": 0,
+    "many_to_many_matched_count": 1,
+    "ambiguous_group_count": 0
+  },
+  "counter_examples": [
+    "counter_examples/one-to-one-only.yaml"
+  ]
+}

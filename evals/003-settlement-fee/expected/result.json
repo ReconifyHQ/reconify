@@ -1,0 +1,96 @@
+{
+  "schema": "reconify.engine.result.v1",
+  "index_selection": {
+    "requested_backend": "memory",
+    "backend": "memory",
+    "reason": "memory estimate fits configured policy",
+    "estimated_memory_bytes": 201326656
+  },
+  "pair": "left_vs_right",
+  "left_source": "left",
+  "right_source": "right",
+  "summary": {
+    "currency": "USD",
+    "total_left": 2,
+    "total_right": 2,
+    "matched": 1,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 1,
+    "timing_diff_count": 0,
+    "duplicate_count": 0,
+    "match_rate_pct": 50,
+    "reconciled_rate_pct": 100,
+    "matched_amount_left": 10000,
+    "matched_amount_right": 9800,
+    "unmatched_amount_left": 0,
+    "unmatched_amount_right": 0,
+    "amount_diff_total": 500,
+    "total_discrepancy": 500
+  },
+  "matched": [
+    {
+      "left": {
+        "id": "left-1",
+        "date": "2024-01-01T00:00:00Z",
+        "amount": 10000,
+        "currency": "USD",
+        "reference": "PAY-003",
+        "name": "Sale",
+        "source": "left",
+        "raw": {
+          "amount": "100.00",
+          "currency": "USD",
+          "date": "2024-01-01",
+          "description": "Sale",
+          "reference": "PAY-003"
+        },
+        "group_key": "PAY-003"
+      },
+      "right": {
+        "id": "right-1",
+        "date": "2024-01-01T00:00:00Z",
+        "amount": 9800,
+        "currency": "USD",
+        "reference": "PAY-003",
+        "name": "Settlement less fee",
+        "source": "right"
+      }
+    }
+  ],
+  "unmatched_left": null,
+  "unmatched_right": null,
+  "amount_diff": [
+    {
+      "left": {
+        "id": "left-2",
+        "date": "2024-01-01T00:00:00Z",
+        "amount": 10000,
+        "currency": "USD",
+        "reference": "PAY-903",
+        "name": "Sale",
+        "source": "left",
+        "raw": {
+          "amount": "100.00",
+          "currency": "USD",
+          "date": "2024-01-01",
+          "description": "Sale",
+          "reference": "PAY-903"
+        },
+        "group_key": "PAY-903"
+      },
+      "right": {
+        "id": "right-2",
+        "date": "2024-01-01T00:00:00Z",
+        "amount": 9500,
+        "currency": "USD",
+        "reference": "PAY-903",
+        "name": "Settlement short",
+        "source": "right"
+      },
+      "diff_minor": 500
+    }
+  ],
+  "timing_diff": null,
+  "duplicates": null
+}

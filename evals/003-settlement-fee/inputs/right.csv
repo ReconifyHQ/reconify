@@ -1,0 +1,3 @@
+date,amount,currency,reference,description
+2024-01-01,98.00,USD,PAY-003,Settlement less fee
+2024-01-01,95.00,USD,PAY-903,Settlement short

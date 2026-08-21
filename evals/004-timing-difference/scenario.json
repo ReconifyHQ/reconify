@@ -1,0 +1,26 @@
+{
+  "schema": "reconify.engine.eval-scenario.v1",
+  "id": "004-timing-difference",
+  "prompt": "Payments recorded in the ledger (`left.csv`) usually clear the bank (`right.csv`) up to two days later, and we treat that lag as normal. One payment in this file took far longer than that and should be reported rather than treated as ordinary settlement lag. Columns are date, amount, currency, reference, description; dates look like 2024-01-31. Write a `reconify.yaml` that reconciles the files.",
+  "inputs": [
+    "inputs/left.csv",
+    "inputs/right.csv"
+  ],
+  "reference_config": "reference/reconify.yaml",
+  "expected_result": "expected/result.json",
+  "pair": "left_vs_right",
+  "assertions": {
+    "matched": 1,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 1,
+    "duplicate_count": 0,
+    "grouped_matched_count": 0,
+    "many_to_many_matched_count": 0,
+    "ambiguous_group_count": 0
+  },
+  "counter_examples": [
+    "counter_examples/window-too-wide.yaml"
+  ]
+}

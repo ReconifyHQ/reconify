@@ -1,0 +1,114 @@
+{
+  "schema": "reconify.engine.result.v1",
+  "index_selection": {
+    "requested_backend": "memory",
+    "backend": "memory",
+    "reason": "memory estimate fits configured policy",
+    "estimated_memory_bytes": 205521586
+  },
+  "pair": "left_vs_right",
+  "left_source": "left",
+  "right_source": "right",
+  "summary": {
+    "currency": "USD",
+    "total_left": 2,
+    "total_right": 2,
+    "matched": 0,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 0,
+    "duplicate_count": 0,
+    "match_rate_pct": 0,
+    "reconciled_rate_pct": 50,
+    "many_to_many_matched_count": 1,
+    "matched_amount_left": 10000,
+    "matched_amount_right": 10000,
+    "unmatched_amount_left": 0,
+    "unmatched_amount_right": 0,
+    "amount_diff_total": 0,
+    "total_discrepancy": 0
+  },
+  "matched": null,
+  "unmatched_left": null,
+  "unmatched_right": null,
+  "amount_diff": null,
+  "timing_diff": null,
+  "duplicates": null,
+  "many_to_many_matched": [
+    {
+      "lefts": [
+        {
+          "id": "left-1",
+          "date": "2024-01-01T00:00:00Z",
+          "amount": 4000,
+          "currency": "USD",
+          "reference": "PO-006",
+          "name": "Order 1",
+          "source": "left",
+          "raw": {
+            "amount": "40.00",
+            "currency": "USD",
+            "date": "2024-01-01",
+            "description": "Order 1",
+            "reference": "PO-006"
+          },
+          "group_key": "Order 1"
+        },
+        {
+          "id": "left-2",
+          "date": "2024-01-01T00:00:00Z",
+          "amount": 6000,
+          "currency": "USD",
+          "reference": "PO-006",
+          "name": "Order 2",
+          "source": "left",
+          "raw": {
+            "amount": "60.00",
+            "currency": "USD",
+            "date": "2024-01-01",
+            "description": "Order 2",
+            "reference": "PO-006"
+          },
+          "group_key": "Order 2"
+        }
+      ],
+      "rights": [
+        {
+          "id": "right-1",
+          "date": "2024-01-01T00:00:00Z",
+          "amount": 7500,
+          "currency": "USD",
+          "reference": "PO-006",
+          "name": "Payout part A",
+          "source": "right",
+          "raw": {
+            "amount": "75.00",
+            "currency": "USD",
+            "date": "2024-01-01",
+            "description": "Payout part A",
+            "reference": "PO-006"
+          },
+          "group_key": "Payout part A"
+        },
+        {
+          "id": "right-2",
+          "date": "2024-01-01T00:00:00Z",
+          "amount": 2500,
+          "currency": "USD",
+          "reference": "PO-006",
+          "name": "Payout part B",
+          "source": "right",
+          "raw": {
+            "amount": "25.00",
+            "currency": "USD",
+            "date": "2024-01-01",
+            "description": "Payout part B",
+            "reference": "PO-006"
+          },
+          "group_key": "Payout part B"
+        }
+      ]
+    }
+  ]
+}

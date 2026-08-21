@@ -1,0 +1,26 @@
+{
+  "schema": "reconify.engine.eval-scenario.v1",
+  "id": "008-ambiguous-reference",
+  "prompt": "The bank export (`right.csv`) arrives with an empty reference column \u2014 the only thing identifying the payment is the free-text description the payer typed, which overlaps with but does not exactly equal our own description in `left.csv`. Columns are date, amount, currency, reference, description; dates look like 2024-01-31. Write a `reconify.yaml` that still reconciles the two rows.",
+  "inputs": [
+    "inputs/left.csv",
+    "inputs/right.csv"
+  ],
+  "reference_config": "reference/reconify.yaml",
+  "expected_result": "expected/result.json",
+  "pair": "left_vs_right",
+  "assertions": {
+    "matched": 1,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 0,
+    "duplicate_count": 0,
+    "grouped_matched_count": 0,
+    "many_to_many_matched_count": 0,
+    "ambiguous_group_count": 0
+  },
+  "counter_examples": [
+    "counter_examples/reference-only.yaml"
+  ]
+}
