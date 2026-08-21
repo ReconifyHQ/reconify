@@ -1,0 +1,11 @@
+{
+  "scenario": "005-one-to-many",
+  "description": "Validates that a one_to_many pass correctly groups multiple right rows that share a reference to a single left row.",
+  "expected": {
+    "summary": {
+      "matched": 1,
+      "unmatched_left": 0,
+      "unmatched_right": 0
+    }
+  }
+}

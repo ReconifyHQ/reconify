@@ -1,0 +1,11 @@
+{
+  "scenario": "002-duplicate",
+  "description": "Validates that identical rows in the left file are correctly flagged by Reconify's duplicate detection.",
+  "expected": {
+    "summary": {
+      "matched": 1,
+      "unmatched_left": 0,
+      "unmatched_right": 0
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "scenario": "008-ambiguous-reference",
+  "description": "Validates that name_mode: tokens successfully matches a clean reference against a messy description field.",
+  "expected": {
+    "summary": {
+      "matched": 1,
+      "unmatched_left": 0,
+      "unmatched_right": 0
+    }
+  }
+}

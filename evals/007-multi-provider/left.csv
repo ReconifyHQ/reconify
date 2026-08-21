@@ -1,0 +1,3 @@
+date,amount,currency,reference,description
+2024-01-01,100.00,USD,STRIPE-7,Stripe Sale
+2024-01-01,50.00,USD,PAYPAL-7,PayPal Sale

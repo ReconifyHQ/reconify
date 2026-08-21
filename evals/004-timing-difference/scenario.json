@@ -1,0 +1,11 @@
+{
+  "scenario": "004-timing-difference",
+  "description": "Validates that dates falling within the date_window are successfully matched.",
+  "expected": {
+    "summary": {
+      "matched": 1,
+      "unmatched_left": 0,
+      "unmatched_right": 0
+    }
+  }
+}

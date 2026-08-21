@@ -1,0 +1,11 @@
+{
+  "scenario": "003-settlement-fee",
+  "description": "Validates that an amount difference within the configured amount_tolerance_minor resolves as a match.",
+  "expected": {
+    "summary": {
+      "matched": 1,
+      "unmatched_left": 0,
+      "unmatched_right": 0
+    }
+  }
+}

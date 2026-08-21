@@ -1,0 +1,11 @@
+{
+  "scenario": "001-missing-payment",
+  "description": "Validates that a row present in the left file but missing in the right file is correctly identified as unmatched_left.",
+  "expected": {
+    "summary": {
+      "matched": 0,
+      "unmatched_left": 1,
+      "unmatched_right": 0
+    }
+  }
+}

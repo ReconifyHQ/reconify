@@ -1,0 +1,11 @@
+{
+  "scenario": "006-many-to-many",
+  "description": "Validates that a many_to_many pass correctly groups multiple left and multiple right rows by reference.",
+  "expected": {
+    "summary": {
+      "matched": 1,
+      "unmatched_left": 0,
+      "unmatched_right": 0
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "scenario": "007-multi-provider",
+  "description": "Validates that left rows can be matched against multiple consecutive right counterparts using the rights array.",
+  "expected": {
+    "summary": {
+      "matched": 2,
+      "unmatched_left": 0,
+      "unmatched_right": 0
+    }
+  }
+}
