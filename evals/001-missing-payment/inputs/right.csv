@@ -1,0 +1,3 @@
+date,amount,currency,reference,description
+2024-01-01,150.00,USD,PAY-001,Customer payment
+2024-01-02,75.00,USD,ORPHAN-9,Second payment

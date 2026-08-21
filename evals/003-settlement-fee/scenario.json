@@ -1,11 +1,26 @@
 {
-  "scenario": "003-settlement-fee",
-  "description": "Validates that an amount difference within the configured amount_tolerance_minor resolves as a match.",
-  "expected": {
-    "summary": {
-      "matched": 1,
-      "unmatched_left": 0,
-      "unmatched_right": 0
-    }
-  }
+  "schema": "reconify.engine.eval-scenario.v1",
+  "id": "003-settlement-fee",
+  "prompt": "Our processor settles each sale net of its fee, so the amount that lands in the bank (`right.csv`) is slightly smaller than the sale we recorded (`left.csv`). The fee is never more than 2.00. One of these pairs differs by considerably more than a fee and should be reported rather than absorbed. Columns are date, amount, currency, reference, description; dates look like 2024-01-31. Write a `reconify.yaml` that reconciles the files.",
+  "inputs": [
+    "inputs/left.csv",
+    "inputs/right.csv"
+  ],
+  "reference_config": "reference/reconify.yaml",
+  "expected_result": "expected/result.json",
+  "pair": "left_vs_right",
+  "assertions": {
+    "matched": 1,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 1,
+    "timing_diff_count": 0,
+    "duplicate_count": 0,
+    "grouped_matched_count": 0,
+    "many_to_many_matched_count": 0,
+    "ambiguous_group_count": 0
+  },
+  "counter_examples": [
+    "counter_examples/tolerance-too-wide.yaml"
+  ]
 }

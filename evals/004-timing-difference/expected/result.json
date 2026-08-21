@@ -1,0 +1,96 @@
+{
+  "schema": "reconify.engine.result.v1",
+  "index_selection": {
+    "requested_backend": "memory",
+    "backend": "memory",
+    "reason": "memory estimate fits configured policy",
+    "estimated_memory_bytes": 201326656
+  },
+  "pair": "left_vs_right",
+  "left_source": "left",
+  "right_source": "right",
+  "summary": {
+    "currency": "USD",
+    "total_left": 2,
+    "total_right": 2,
+    "matched": 1,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 1,
+    "duplicate_count": 0,
+    "match_rate_pct": 50,
+    "reconciled_rate_pct": 100,
+    "matched_amount_left": 10000,
+    "matched_amount_right": 10000,
+    "unmatched_amount_left": 0,
+    "unmatched_amount_right": 0,
+    "amount_diff_total": 0,
+    "total_discrepancy": 0
+  },
+  "matched": [
+    {
+      "left": {
+        "id": "left-1",
+        "date": "2024-01-01T00:00:00Z",
+        "amount": 10000,
+        "currency": "USD",
+        "reference": "PAY-004",
+        "name": "Sale",
+        "source": "left",
+        "raw": {
+          "amount": "100.00",
+          "currency": "USD",
+          "date": "2024-01-01",
+          "description": "Sale",
+          "reference": "PAY-004"
+        },
+        "group_key": "PAY-004"
+      },
+      "right": {
+        "id": "right-1",
+        "date": "2024-01-03T00:00:00Z",
+        "amount": 10000,
+        "currency": "USD",
+        "reference": "PAY-004",
+        "name": "Settled",
+        "source": "right"
+      }
+    }
+  ],
+  "unmatched_left": null,
+  "unmatched_right": null,
+  "amount_diff": null,
+  "timing_diff": [
+    {
+      "left": {
+        "id": "left-2",
+        "date": "2024-01-01T00:00:00Z",
+        "amount": 6000,
+        "currency": "USD",
+        "reference": "PAY-904",
+        "name": "Sale",
+        "source": "left",
+        "raw": {
+          "amount": "60.00",
+          "currency": "USD",
+          "date": "2024-01-01",
+          "description": "Sale",
+          "reference": "PAY-904"
+        },
+        "group_key": "PAY-904"
+      },
+      "right": {
+        "id": "right-2",
+        "date": "2024-01-11T00:00:00Z",
+        "amount": 6000,
+        "currency": "USD",
+        "reference": "PAY-904",
+        "name": "Settled late",
+        "source": "right"
+      },
+      "days_diff": 10
+    }
+  ],
+  "duplicates": null
+}

@@ -1,11 +1,26 @@
 {
-  "scenario": "002-duplicate",
-  "description": "Validates that identical rows in the left file are correctly flagged by Reconify's duplicate detection.",
-  "expected": {
-    "summary": {
-      "matched": 1,
-      "unmatched_left": 0,
-      "unmatched_right": 0
-    }
-  }
+  "schema": "reconify.engine.eval-scenario.v1",
+  "id": "002-duplicate",
+  "prompt": "The ledger (`left.csv`) occasionally records the same payment twice when an operator submits a form again after a timeout. The bank (`right.csv`) shows the payment once, because it only happened once. Columns are date, amount, currency, reference, description; dates look like 2024-01-31. Write a `reconify.yaml` that reconciles the files and surfaces the repeated ledger entry.",
+  "inputs": [
+    "inputs/left.csv",
+    "inputs/right.csv"
+  ],
+  "reference_config": "reference/reconify.yaml",
+  "expected_result": "expected/result.json",
+  "pair": "left_vs_right",
+  "assertions": {
+    "matched": 1,
+    "unmatched_left": 1,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 0,
+    "duplicate_count": 2,
+    "grouped_matched_count": 0,
+    "many_to_many_matched_count": 0,
+    "ambiguous_group_count": 0
+  },
+  "counter_examples": [
+    "counter_examples/duplicates-kept.yaml"
+  ]
 }

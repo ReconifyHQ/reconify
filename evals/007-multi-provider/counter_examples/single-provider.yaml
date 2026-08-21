@@ -1,0 +1,46 @@
+version: 1
+timezone: "UTC"
+
+sources:
+  left:
+    file_pattern: "inputs/left.csv"
+    parser:
+      type: csv
+      date_col: date
+      date_layout: "2006-01-02"
+      amount_col: amount
+      currency_col: currency
+      ref_col: reference
+      name_col: description
+      multiplier: 100
+
+  stripe:
+    file_pattern: "inputs/stripe.csv"
+    parser:
+      type: csv
+      date_col: date
+      date_layout: "2006-01-02"
+      amount_col: amount
+      currency_col: currency
+      ref_col: reference
+      name_col: description
+      multiplier: 100
+
+  paypal:
+    file_pattern: "inputs/paypal.csv"
+    parser:
+      type: csv
+      date_col: date
+      date_layout: "2006-01-02"
+      amount_col: amount
+      currency_col: currency
+      ref_col: reference
+      name_col: description
+      multiplier: 100
+
+pairs:
+  left_vs_providers:
+    left: left
+    right: stripe
+    date_window: "1d"
+    amount_tolerance_minor: 0
