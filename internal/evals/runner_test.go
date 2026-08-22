@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -74,6 +75,43 @@ func TestMaterializeInstallsSkillsAtPublishedPaths(t *testing.T) {
 		path := filepath.Join(workspace, dir, "skills", "reconify-engine-reconcile", "SKILL.md")
 		if !fileExists(path) {
 			t.Fatalf("skill missing at %s", path)
+		}
+	}
+}
+
+func TestPublishedAdaptersPointToWorkspaceCanonicalSkills(t *testing.T) {
+	for _, adapter := range []string{
+		"../../skills/.claude/reconify-engine-reconcile/SKILL.md",
+		"../../skills/.codex/reconify-engine-reconcile/SKILL.md",
+	} {
+		data, err := os.ReadFile(adapter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		if strings.Contains(text, "../../.agents/skills") {
+			t.Fatalf("adapter %s contains a broken relative canonical path", adapter)
+		}
+		if !strings.Contains(text, ".agents/skills/reconify-engine-reconcile/SKILL.md") {
+			t.Fatalf("adapter %s does not point to the workspace canonical skill", adapter)
+		}
+	}
+}
+
+func TestTaskPromptRequiresRecoveryAndArtifacts(t *testing.T) {
+	prompt := taskPrompt(scenario{Prompt: "p", Pair: "left_vs_right"})
+	for _, required := range []string{
+		"reconify capabilities",
+		"reconify inspect",
+		"reconify config schema",
+		"reconify config validate",
+		"reconify config check-source",
+		"agent-result.json",
+		"agent-explanation.json",
+		"read the error, correct it, and rerun",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("prompt missing %q", required)
 		}
 	}
 }

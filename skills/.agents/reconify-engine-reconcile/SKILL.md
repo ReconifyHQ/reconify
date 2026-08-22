@@ -11,18 +11,40 @@ Your job is a config that is *correct*, not one that produces a high match rate.
 
 ## Ordered workflow
 
+Run the workflow from the directory containing `reconify.yaml`. Input paths may be
+nested (for example, `inputs/left.csv`); discover the actual paths before inspecting
+them and keep every `file_pattern` relative to the config file.
+
 ```bash
 reconify capabilities                         # 1. what this build supports
-reconify inspect left.csv                     # 2. profile EVERY input
-reconify inspect right.csv
+reconify inspect INPUT_LEFT                  # 2. profile EVERY input
+reconify inspect INPUT_RIGHT
 reconify config schema                        # 3. every config key, typed and documented
                                               # 4. write reconify.yaml (see reconify-engine-config)
 reconify config validate --config reconify.yaml
 reconify config check-source --config reconify.yaml --source left --file left.csv
 reconify reconcile --config reconify.yaml --pair left_vs_right \
-  --format json --deterministic --out result.json
-reconify explain result.json                  # 5. bounded, deterministic summary
+  --format json --deterministic --out agent-result.json
+reconify explain agent-result.json > agent-explanation.json
 ```
+
+Complete each checkpoint before advancing:
+
+1. Confirm `capabilities` lists the commands and formats needed for the task.
+2. Locate and inspect every input. If a guessed path fails, read the error, discover
+   the real path, and rerun the inspection; a path error is recoverable, not a reason
+   to stop.
+3. Read `config schema` before writing YAML. Do not invent keys, pass names, or units.
+4. Validate the config, then check every configured source against its real file. Fix
+   the config and rerun both checks after any validation or source error.
+5. Reconcile only after validation and source checks pass. Confirm that
+   `agent-result.json` exists and is valid JSON.
+6. Explain the exact result file and redirect the deterministic explanation to
+   `agent-explanation.json`. Confirm that both artifacts exist before reporting.
+
+Never stop after writing YAML or after a successful reconciliation. The deliverables
+are the validated config, `agent-result.json`, and `agent-explanation.json`; the final
+summary must state the result counters and any unresolved error.
 
 `reconify config schema` is the authoritative description of every configuration key: type,
 required flag, default, and enum values. Read it before writing YAML. Never guess a key name.

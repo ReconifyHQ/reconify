@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/reconifyhq/reconify/schemas"
@@ -73,6 +74,7 @@ type TrialReport struct {
 	Explanation    bool     `json:"explanation"`
 	ExactResult    bool     `json:"exact_result"`
 	Commands       []string `json:"commands"`
+	AgentOutput    string   `json:"agent_output,omitempty"`
 	Error          string   `json:"error,omitempty"`
 }
 
@@ -114,12 +116,18 @@ func Run(ctx context.Context, options Options) (Report, error) {
 	for _, agent := range agents {
 		current := AgentReport{Agent: string(agent)}
 		for _, item := range scenarios {
-			entry := ScenarioReport{ID: item.ID}
+			entry := ScenarioReport{ID: item.ID, Trials: make([]TrialReport, options.Trials)}
+			var group sync.WaitGroup
 			for trial := 1; trial <= options.Trials; trial++ {
-				trialCtx, cancel := context.WithTimeout(ctx, options.Timeout)
-				entry.Trials = append(entry.Trials, runTrial(trialCtx, options, agent, item, trial))
-				cancel()
+				group.Add(1)
+				go func(index int) {
+					defer group.Done()
+					trialCtx, cancel := context.WithTimeout(ctx, options.Timeout)
+					entry.Trials[index-1] = runTrial(trialCtx, options, agent, item, index)
+					cancel()
+				}(trial)
 			}
+			group.Wait()
 			entry.Classification = metrics(entry.Trials, func(result TrialReport) bool { return result.Classification })
 			entry.ExactResult = metrics(entry.Trials, func(result TrialReport) bool { return result.ExactResult })
 			current.Scenarios = append(current.Scenarios, entry)
@@ -250,8 +258,10 @@ func runTrial(ctx context.Context, options Options, agent Agent, item scenario, 
 		return report
 	}
 	defer cleanup()
-	if _, err := runAgent(ctx, agent, workspace, taskPrompt(item), options.ReconifyPath); err != nil {
-		report.Error = err.Error()
+	output, agentErr := runAgent(ctx, agent, workspace, taskPrompt(item), options.ReconifyPath)
+	report.AgentOutput = boundAgentOutput(output)
+	if agentErr != nil {
+		report.Error = agentErr.Error()
 	}
 	commands, readErr := readCommands(filepath.Join(workspace, ".reconify-eval-commands.log"))
 	if readErr != nil && report.Error == "" {
@@ -288,6 +298,15 @@ func runTrial(ctx context.Context, options Options, agent Agent, item scenario, 
 		report.Explanation = readErr == nil && containsCommand(commands, "explain") && bytes.Equal(bytes.TrimSpace(agentExplanation), bytes.TrimSpace(expectedExplanation))
 	}
 	return report
+}
+
+const maxAgentOutputBytes = 40000
+
+func boundAgentOutput(output []byte) string {
+	if len(output) <= maxAgentOutputBytes {
+		return string(output)
+	}
+	return string(output[:maxAgentOutputBytes]) + "\n[agent output truncated]"
 }
 
 func assertionsMatch(data []byte, expected schemas.EvalAssertions) bool {
@@ -367,7 +386,7 @@ func writeWrapper(workspace string) error {
 }
 
 func taskPrompt(item scenario) string {
-	return fmt.Sprintf("%s\n\nWork only in this temporary workspace. First run `reconify capabilities`. Then write reconify.yaml at the workspace root, validate it, reconcile pair %q to agent-result.json with deterministic JSON output, and run `reconify explain agent-result.json` to agent-explanation.json. Use the installed Reconify Engine skills under .agents/skills.", item.Prompt, item.Pair)
+	return fmt.Sprintf("%s\n\nWork only in this temporary workspace and stay at its root. Follow the installed Reconify Engine skill under .agents/skills. Complete and verify this ordered workflow: (1) run `reconify capabilities`; (2) discover the actual input paths and run `reconify inspect` on every input; (3) run `reconify config schema`; (4) write reconify.yaml at the workspace root using paths relative to that file; (5) run `reconify config validate --config reconify.yaml`; (6) run `reconify config check-source` for every configured source; (7) reconcile pair %q with `--format json --deterministic --out agent-result.json`; (8) run `reconify explain agent-result.json > agent-explanation.json`. After each step, verify its output or artifact before continuing. If a command fails because of a wrong path, flag, schema key, or config value, read the error, correct it, and rerun the failed step. Do not stop after creating YAML or after reconciliation: leave reconify.yaml, agent-result.json, and agent-explanation.json in the workspace.", item.Prompt, item.Pair)
 }
 
 func runReconify(ctx context.Context, binary, dir string, args ...string) error {
