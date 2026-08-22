@@ -84,7 +84,7 @@ func TestPublishedAdaptersPointToWorkspaceCanonicalSkills(t *testing.T) {
 		"../../skills/.claude/reconify-engine-reconcile/SKILL.md",
 		"../../skills/.codex/reconify-engine-reconcile/SKILL.md",
 	} {
-		data, err := os.ReadFile(adapter)
+		data, err := os.ReadFile(adapter) // #nosec G304 -- fixed repository test paths.
 		if err != nil {
 			t.Fatal(err)
 		}
