@@ -1,6 +1,6 @@
 ---
 name: reconify-engine-bootstrap
-description: Claude Code adapter for Reconify Engine setup.
+description: Bootstrap a Reconify workspace. Use when no reconify.yaml exists and the requested outcome is a validated config plus the first explained result.
 ---
 
-Read `.agents/skills/reconify-engine-bootstrap/SKILL.md` and follow that canonical workflow.
+Read `.agents/skills/reconify-engine-bootstrap/SKILL.md` and complete every checkpoint in that canonical workflow.

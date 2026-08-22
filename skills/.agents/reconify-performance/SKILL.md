@@ -1,6 +1,7 @@
 ---
 name: reconify-performance
-description: Deprecated compatibility adapter for Reconify Engine performance work.
+description: Compatibility alias for reconify-engine-performance.
+disable-model-invocation: true
 ---
 
-Deprecated: read `../reconify-engine-performance/SKILL.md` and follow that workflow.
+Read `../reconify-engine-performance/SKILL.md` and complete every checkpoint in that workflow.

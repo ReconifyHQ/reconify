@@ -1,6 +1,6 @@
 ---
 name: reconify-engine-reconcile
-description: This skill should be used whenever Codex reconciles unfamiliar financial files, creates reconify.yaml, diagnoses matching results, or runs the Reconify Engine workflow. Read the canonical workflow from the workspace root and complete every checkpoint.
+description: Reconcile unfamiliar financial files end to end. Use when one task spans input discovery, config creation or repair, Engine execution, and result explanation.
 ---
 
-Read `.agents/skills/reconify-engine-reconcile/SKILL.md` and follow that canonical workflow.
+Read `.agents/skills/reconify-engine-reconcile/SKILL.md` and complete every checkpoint in that canonical workflow.

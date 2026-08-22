@@ -1,6 +1,7 @@
 ---
 name: reconify-bootstrap
-description: Deprecated compatibility adapter for Reconify Engine setup.
+description: Compatibility alias for reconify-engine-bootstrap.
+disable-model-invocation: true
 ---
 
-Deprecated: read `../reconify-engine-bootstrap/SKILL.md` and follow that workflow.
+Read `../reconify-engine-bootstrap/SKILL.md` and complete every checkpoint in that workflow.

@@ -1,63 +1,25 @@
 ---
 name: reconify-engine-bootstrap
-description: Take a new reconciliation from two unfamiliar files to a validated config and a first explained result. Use when there is no reconify.yaml yet.
+description: Bootstrap a Reconify workspace. Use when no reconify.yaml exists and the requested outcome is a validated config plus the first explained result.
 ---
 
 # Reconify Engine Bootstrap
 
-Zero to a first trustworthy result. For the full graded workflow see `reconify-engine-reconcile`;
-for key-by-key configuration detail see `reconify-engine-config`.
+Read `../reconify-engine-reconcile/SKILL.md` and execute its complete workflow. This skill supplies
+the bootstrap decisions required at its evidence-and-policy checkpoint.
 
-## 1. Learn the build and the data
+## Bootstrap intake
 
-```bash
-reconify capabilities
-reconify inspect left.csv
-reconify inspect right.csv
-```
+Settle these questions from the files and the user:
 
-`inspect` gives you each column's `inferred_type`, `sample_values`, and the exact `date_layout` for
-date columns. Copy those values; do not guess them.
+- Which system-issued value identifies the same transaction on both sides?
+- What amount difference is acceptable, in minor units?
+- How many calendar days may settlement shift?
+- What does a repeated reference mean in each source?
+- Which files and pair name should become the stable workspace interface?
 
-## 2. Ask the questions the files cannot answer
+Record an explicit assumption for any answer the files and user cannot supply. Use `inspect` evidence
+for column mappings and `config schema` for YAML shape; examples and memory are not config sources.
 
-Before writing YAML, settle with the user:
-
-- Which column is the reliable shared identifier? Descriptions and memo text usually repeat across
-  unrelated payments; a system-issued reference usually does not.
-- Are the amounts expected to differ, and by how much at most? That threshold becomes
-  `amount_tolerance_minor`, **in minor units** — 2.00 with `multiplier: 100` is `200`.
-- Can the same transaction appear on different dates on each side? That becomes `date_window`.
-
-If you cannot get answers, state the assumption you made in your summary rather than burying it in
-the config.
-
-## 3. Write and prove the config
-
-```bash
-reconify config schema                       # every key, typed
-reconify config validate --config reconify.yaml
-reconify config check-source --config reconify.yaml --source left --file left.csv
-reconify config check-source --config reconify.yaml --source right --file right.csv
-```
-
-`file_pattern` is a glob resolved relative to the config file's own directory, not your working
-directory.
-
-## 4. First run
-
-```bash
-reconify reconcile --config reconify.yaml --pair left_vs_right \
-  --format json --deterministic --out result.json
-reconify explain result.json
-```
-
-Use `--format ndjson` instead for large files, so memory stays bounded and each event is on its own
-line.
-
-## 5. Sanity-check before reporting
-
-Compare the summary against what the user described. If they mentioned a missing payment and
-`unmatched_left` is `0`, the config is absorbing it — most often through a tolerance or date window
-that is too wide. Keep the validated config and the result file together; they are what makes the
-number reproducible.
+Bootstrap is complete only when the end-to-end workflow has produced a validated config, a retained
+result, and a retained explanation, and the final report names every assumption.

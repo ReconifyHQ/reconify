@@ -1,6 +1,7 @@
 ---
 name: reconify-ci
-description: Deprecated Codex compatibility adapter.
+description: Compatibility alias for reconify-engine-ci.
+disable-model-invocation: true
 ---
 
-Deprecated: read `.agents/skills/reconify-engine-ci/SKILL.md`.
+Read `.agents/skills/reconify-engine-ci/SKILL.md` and complete every checkpoint in that workflow.

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Reconify Config"
-  short_description: "Create and validate Reconify YAML configuration."
-  default_prompt: "Create, inspect, or validate a Reconify config."
+  display_name: "Reconify Config (compatibility alias)"
+  short_description: "Open the canonical Reconify Engine config workflow."
+  default_prompt: "Use reconify-engine-config and complete its canonical workflow."

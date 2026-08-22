@@ -1,6 +1,6 @@
 ---
 name: reconify-engine-debug
-description: Codex adapter for Reconify Engine debugging.
+description: Diagnose unexpected Reconify results. Use when counters, exception events, duplicates, or grouped matches disagree with the expected business scenario.
 ---
 
-Read `.agents/skills/reconify-engine-debug/SKILL.md` and follow that canonical workflow.
+Read `.agents/skills/reconify-engine-debug/SKILL.md` and complete every checkpoint in that canonical workflow.

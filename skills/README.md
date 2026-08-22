@@ -28,7 +28,8 @@ This copies skill files into your project:
 | `reconify-engine-bootstrap` | New reconciliation setup |
 | `reconify-engine-ci` | Deterministic CI workflows and exit codes |
 
-The former `reconify-*` names remain installed as deprecated compatibility adapters.
+The former `reconify-*` names remain available as explicit-invocation compatibility aliases. They
+route to the canonical `reconify-engine-*` workflows and stay out of automatic skill selection.
 
 ## Repository
 

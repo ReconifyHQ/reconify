@@ -6,8 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-22
+
 ### Added
 
+- **Reconify Engine Agent Protocol v1** — defines the stable discovery, inspection, configuration, execution, diagnosis, and evaluation contract for agents integrating with an installed Reconify Engine.
+- **`reconify capabilities`** — emits `reconify.engine.capabilities.v1`, allowing agents and scripts to discover supported commands, formats, matching passes, result modes, schemas, diagnostic codes, and exit codes from the installed binary.
+- **Published Engine schemas** — `reconify schema` now exposes versioned contracts for capabilities, reconciliation results, structured diagnostics, file profiles, config proposals, explanations, and evaluation scenarios.
+- **Structured diagnostics** — `--error-format json` emits `reconify.engine.diagnostic.v1` envelopes on stderr with stable codes, categories, structured details, and remediation suggestions.
+- **Canonical Engine agent skills** — `@reconifyhq/skills` now installs the complete `reconify-engine-reconcile`, `reconify-engine-cli`, `reconify-engine-config`, `reconify-engine-debug`, `reconify-engine-performance`, `reconify-engine-bootstrap`, and `reconify-engine-ci` workflows, plus deprecated `reconify-*` compatibility adapters.
 - **Engine agent evaluation corpus** — eight graded fixtures under `evals/` that measure how well an external coding agent can configure the Engine from a natural-language problem description: missing payment, duplicate, settlement fee, timing difference, one-to-many, many-to-many, multi-provider, and ambiguous reference. Each scenario publishes a `reconify.engine.eval-scenario.v1` contract (`reconify schema eval-scenario`) naming its inputs, reference config, expected result, and asserted summary counters. Candidates are graded on reconciliation behavior rather than YAML text, through four gates: `valid`, `runs`, `summary_match`, and `exact_match`. Every scenario also ships counter-examples that must *not* reproduce the expected result, so the corpus proves it discriminates on every `make check` ([#109](https://github.com/ReconifyHQ/reconify/issues/109)).
 - **Global `--agent` execution profile** — defaults errors to structured JSON and reconciliation output to NDJSON with `exceptions_only`, while preserving explicit flag overrides and rejecting interactive commands with a structured alternative ([#107](https://github.com/ReconifyHQ/reconify/issues/107)).
 - **`reconcile --auto`** — confidence-gated zero-config reconciliation from exactly two input files, with the inferred YAML and mapping confidence embedded in structured run metadata for reproducibility ([#112](https://github.com/ReconifyHQ/reconify/issues/112)).

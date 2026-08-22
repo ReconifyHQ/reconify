@@ -1,6 +1,7 @@
 ---
 name: reconify-debug
-description: Deprecated Claude Code compatibility adapter.
+description: Compatibility alias for reconify-engine-debug.
+disable-model-invocation: true
 ---
 
-Deprecated: read `.agents/skills/reconify-engine-debug/SKILL.md`.
+Read `.agents/skills/reconify-engine-debug/SKILL.md` and complete every checkpoint in that workflow.
