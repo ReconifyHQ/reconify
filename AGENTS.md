@@ -49,12 +49,21 @@ Use `go test ./...` for quick verification. Use `make test` when race detection 
 
 Canonical skills live under `.agents/skills/` and are intentionally tool-agnostic:
 
-- `.agents/skills/reconify-cli/SKILL.md` — CLI commands, flags, output formats, docs
-- `.agents/skills/reconify-config/SKILL.md` — YAML config creation, validation, source/pair setup
-- `.agents/skills/reconify-performance/SKILL.md` — benchmarking, streaming, index backends
-- `.agents/skills/reconify-debug/SKILL.md` — interpreting NDJSON/JSON output, diagnosing mismatches
-- `.agents/skills/reconify-bootstrap/SKILL.md` — end-to-end new project setup from scratch
-- `.agents/skills/reconify-ci/SKILL.md` — GitHub Actions, drift detection, --fail-if-unmatched
+- `.agents/skills/reconify-engine-reconcile/SKILL.md` — the full discover → configure → reconcile → explain workflow
+- `.agents/skills/reconify-engine-config/SKILL.md` — YAML config creation, validation, source/pair setup
+- `.agents/skills/reconify-engine-cli/SKILL.md` — commands, flags, output formats, exit codes
+- `.agents/skills/reconify-engine-debug/SKILL.md` — interpreting result events, diagnosing mismatches
+- `.agents/skills/reconify-engine-bootstrap/SKILL.md` — end-to-end new project setup from scratch
+- `.agents/skills/reconify-engine-ci/SKILL.md` — deterministic artifacts, exit-code policy
+- `.agents/skills/reconify-engine-performance/SKILL.md` — index backends, streaming, large files
+
+The former `reconify-*` names remain installed as deprecated adapters that redirect to these.
+
+These skills are written for an agent holding an installed `reconify` binary and someone else's
+files. They must not reference repository paths such as `config/config.go` or `docs/`, because
+`npx @reconifyhq/skills` ships them into projects where those paths do not exist. Route agents to
+the self-describing surface instead — `reconify capabilities`, `reconify inspect`, and
+`reconify config schema`. Contributor-facing guidance belongs in this file.
 
 Tool-specific files should be thin adapters that point back to these canonical skills. Do not duplicate long workflow instructions across Codex, Claude, Gemini, and Copilot files.
 
