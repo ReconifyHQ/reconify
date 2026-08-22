@@ -1,5 +1,5 @@
 {
-  "schema": "reconify.engine.eval-scenario.v1",
+  "schema": "reconify.engine.eval-scenario.v2",
   "id": "001-missing-payment",
   "prompt": "Our internal ledger (`left.csv`) should account for every payment that reached the bank (`right.csv`). One ledger entry never showed up on the bank statement, and the bank statement carries a credit our ledger has no record of. Every payment we issue gets a unique reference from our own system, and that reference is the only reliable way to tell two payments apart \u2014 the bank echoes back whatever memo text the payer typed, so descriptions repeat across unrelated payments. Both files share the columns date, amount, currency, reference, description, and dates are written like 2024-01-31. Write a `reconify.yaml` that reconciles the two files so the missing entry is reported rather than silently absorbed.",
   "inputs": [
@@ -8,6 +8,7 @@
   ],
   "reference_config": "reference/reconify.yaml",
   "expected_result": "expected/result.json",
+  "expected_explanation": "expected/explanation.json",
   "pair": "left_vs_right",
   "assertions": {
     "matched": 1,

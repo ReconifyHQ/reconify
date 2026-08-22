@@ -1,8 +1,6 @@
 ---
 name: reconify-config
-description: Create, validate, review, or document Reconify YAML configuration, parser mappings, pair rules, examples, and config CLI behavior.
+description: Deprecated Claude Code compatibility adapter.
 ---
 
-# Reconify Config
-
-Open and follow `.agents/skills/reconify-config/SKILL.md`. That file is the canonical workflow. Keep this Claude adapter short and do not duplicate the full instructions here.
+Deprecated: read `.agents/skills/reconify-engine-config/SKILL.md`.

@@ -1,0 +1,104 @@
+{
+  "$id": "urn:reconify:engine:eval-scenario:v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reconify Engine agent evaluation scenario v2",
+  "description": "Versioned full-workflow fixture contract for the Engine agent evaluation corpus.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "reconify.engine.eval-scenario.v2"
+        },
+        "id": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reference_config": {
+          "type": "string"
+        },
+        "expected_result": {
+          "type": "string"
+        },
+        "expected_explanation": {
+          "type": "string"
+        },
+        "pair": {
+          "type": "string"
+        },
+        "assertions": {
+          "type": "object",
+          "properties": {
+            "matched": {
+              "type": "integer"
+            },
+            "unmatched_left": {
+              "type": "integer"
+            },
+            "unmatched_right": {
+              "type": "integer"
+            },
+            "amount_diff_count": {
+              "type": "integer"
+            },
+            "timing_diff_count": {
+              "type": "integer"
+            },
+            "duplicate_count": {
+              "type": "integer"
+            },
+            "grouped_matched_count": {
+              "type": "integer"
+            },
+            "many_to_many_matched_count": {
+              "type": "integer"
+            },
+            "ambiguous_group_count": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "matched",
+            "unmatched_left",
+            "unmatched_right",
+            "amount_diff_count",
+            "timing_diff_count",
+            "duplicate_count",
+            "grouped_matched_count",
+            "many_to_many_matched_count",
+            "ambiguous_group_count"
+          ],
+          "additionalProperties": false
+        },
+        "counter_examples": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "id",
+        "prompt",
+        "inputs",
+        "reference_config",
+        "expected_result",
+        "expected_explanation",
+        "pair",
+        "assertions",
+        "counter_examples"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

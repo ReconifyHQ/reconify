@@ -7,6 +7,11 @@ import _ "embed"
 // (AP-10) consumes.
 const EvalScenarioSchemaV1 = "reconify.engine.eval-scenario.v1"
 
+// EvalScenarioSchemaV2 extends the corpus contract with an expected explanation
+// artifact. V1 remains supported for third-party fixtures that only grade the
+// reconciliation result.
+const EvalScenarioSchemaV2 = "reconify.engine.eval-scenario.v2"
+
 // EvalScenario is one graded fixture in the Engine agent evaluation corpus. It
 // pairs a natural-language prompt with the inputs an agent is given, the
 // reference config a correct answer is expected to behave like, and the
@@ -26,6 +31,23 @@ type EvalScenario struct {
 	Pair            string         `json:"pair"`
 	Assertions      EvalAssertions `json:"assertions"`
 	CounterExamples []string       `json:"counter_examples"`
+}
+
+// EvalScenarioV2 is a full workflow fixture. Agents must discover the Engine,
+// validate their configuration, reconcile deterministically, and explain the
+// result they produced. ExpectedExplanation is relative to the scenario
+// directory and captures the deterministic explanation answer key.
+type EvalScenarioV2 struct {
+	Schema              string         `json:"schema"`
+	ID                  string         `json:"id"`
+	Prompt              string         `json:"prompt"`
+	Inputs              []string       `json:"inputs"`
+	ReferenceConfig     string         `json:"reference_config"`
+	ExpectedResult      string         `json:"expected_result"`
+	ExpectedExplanation string         `json:"expected_explanation"`
+	Pair                string         `json:"pair"`
+	Assertions          EvalAssertions `json:"assertions"`
+	CounterExamples     []string       `json:"counter_examples"`
 }
 
 // EvalAssertions is the subset of reconciliation summary counters that
@@ -53,7 +75,15 @@ type EvalAssertions struct {
 //go:embed reconify.engine.eval-scenario.v1.json
 var evalScenarioSchemaV1 []byte
 
+//go:embed reconify.engine.eval-scenario.v2.json
+var evalScenarioSchemaV2 []byte
+
 // EvalScenarioV1 returns a copy of the published eval scenario schema document.
 func EvalScenarioV1() []byte {
 	return append([]byte(nil), evalScenarioSchemaV1...)
+}
+
+// EvalScenarioV2Schema returns a copy of the published v2 scenario contract.
+func EvalScenarioV2Schema() []byte {
+	return append([]byte(nil), evalScenarioSchemaV2...)
 }

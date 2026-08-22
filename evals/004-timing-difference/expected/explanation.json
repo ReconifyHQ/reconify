@@ -1,0 +1,112 @@
+{
+  "schema": "reconify.engine.explanation.v1",
+  "summary": {
+    "currency": "USD",
+    "total_left": 2,
+    "total_right": 2,
+    "matched": 1,
+    "unmatched_left": 0,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 1,
+    "duplicate_count": 0,
+    "match_rate_pct": 50,
+    "reconciled_rate_pct": 100,
+    "matched_amount_left": 10000,
+    "matched_amount_right": 10000,
+    "unmatched_amount_left": 0,
+    "unmatched_amount_right": 0,
+    "amount_diff_total": 0,
+    "total_discrepancy": 0
+  },
+  "findings": [
+    {
+      "category": "matched",
+      "count": 1
+    },
+    {
+      "category": "unmatched_left",
+      "count": 0
+    },
+    {
+      "category": "unmatched_right",
+      "count": 0
+    },
+    {
+      "category": "amount_diff",
+      "count": 0
+    },
+    {
+      "category": "timing_diff",
+      "count": 1
+    },
+    {
+      "category": "duplicates",
+      "count": 0
+    },
+    {
+      "category": "grouped_matched",
+      "count": 0
+    },
+    {
+      "category": "grouped_amount_diff",
+      "count": 0
+    },
+    {
+      "category": "grouped_timing_diff",
+      "count": 0
+    },
+    {
+      "category": "many_to_many_matched",
+      "count": 0
+    },
+    {
+      "category": "many_to_many_amount_diff",
+      "count": 0
+    },
+    {
+      "category": "many_to_many_timing_diff",
+      "count": 0
+    },
+    {
+      "category": "ambiguous_group",
+      "count": 0
+    }
+  ],
+  "top_exceptions": [
+    {
+      "type": "timing_diff",
+      "data": {
+        "days_diff": 10,
+        "left": {
+          "amount": 6000,
+          "currency": "USD",
+          "date": "2024-01-01T00:00:00Z",
+          "group_key": "PAY-904",
+          "id": "left-2",
+          "name": "Sale",
+          "raw": {
+            "amount": "60.00",
+            "currency": "USD",
+            "date": "2024-01-01",
+            "description": "Sale",
+            "reference": "PAY-904"
+          },
+          "reference": "PAY-904",
+          "source": "left"
+        },
+        "right": {
+          "amount": 6000,
+          "currency": "USD",
+          "date": "2024-01-11T00:00:00Z",
+          "id": "right-2",
+          "name": "Settled late",
+          "reference": "PAY-904",
+          "source": "right"
+        }
+      }
+    }
+  ],
+  "exceptions_total": 1,
+  "truncated": false
+}

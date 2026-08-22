@@ -261,7 +261,7 @@ Reconify is an open-source CLI and library. For private deployments with multi-u
 
 ### Agent Experience
 
-Reconify includes agent-facing project context in [AGENTS.md](AGENTS.md), tool-specific adapters for Claude, Codex, Gemini, and Copilot, and reusable workflows under [.agents/skills/](.agents/skills/). Use [llms.txt](llms.txt) as the compact index for AI tools.
+Reconify includes agent-facing project context in [AGENTS.md](AGENTS.md), tool-specific adapters for Claude, Codex, Gemini, and Copilot, and reusable Engine workflows under [.agents/skills/](.agents/skills/). Start with `reconify-engine-reconcile` for the full discover → configure → reconcile → explain workflow; legacy `reconify-*` names remain compatibility adapters. Use [llms.txt](llms.txt) as the compact index for AI tools.
 
 ### Build
 

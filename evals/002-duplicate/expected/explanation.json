@@ -1,0 +1,143 @@
+{
+  "schema": "reconify.engine.explanation.v1",
+  "summary": {
+    "currency": "USD",
+    "total_left": 2,
+    "total_right": 1,
+    "matched": 1,
+    "unmatched_left": 1,
+    "unmatched_right": 0,
+    "amount_diff_count": 0,
+    "timing_diff_count": 0,
+    "duplicate_count": 2,
+    "match_rate_pct": 50,
+    "reconciled_rate_pct": 50,
+    "matched_amount_left": 10000,
+    "matched_amount_right": 10000,
+    "unmatched_amount_left": 10000,
+    "unmatched_amount_right": 0,
+    "amount_diff_total": 0,
+    "total_discrepancy": 10000
+  },
+  "findings": [
+    {
+      "category": "matched",
+      "count": 1
+    },
+    {
+      "category": "unmatched_left",
+      "count": 1
+    },
+    {
+      "category": "unmatched_right",
+      "count": 0
+    },
+    {
+      "category": "amount_diff",
+      "count": 0
+    },
+    {
+      "category": "timing_diff",
+      "count": 0
+    },
+    {
+      "category": "duplicates",
+      "count": 2
+    },
+    {
+      "category": "grouped_matched",
+      "count": 0
+    },
+    {
+      "category": "grouped_amount_diff",
+      "count": 0
+    },
+    {
+      "category": "grouped_timing_diff",
+      "count": 0
+    },
+    {
+      "category": "many_to_many_matched",
+      "count": 0
+    },
+    {
+      "category": "many_to_many_amount_diff",
+      "count": 0
+    },
+    {
+      "category": "many_to_many_timing_diff",
+      "count": 0
+    },
+    {
+      "category": "ambiguous_group",
+      "count": 0
+    }
+  ],
+  "top_exceptions": [
+    {
+      "type": "unmatched_left",
+      "data": {
+        "amount": 10000,
+        "currency": "USD",
+        "date": "2024-01-01T00:00:00Z",
+        "group_key": "PAY-002",
+        "id": "left-2",
+        "name": "Customer payment",
+        "raw": {
+          "amount": "100.00",
+          "currency": "USD",
+          "date": "2024-01-01",
+          "description": "Customer payment",
+          "reference": "PAY-002"
+        },
+        "reference": "PAY-002",
+        "source": "left"
+      }
+    },
+    {
+      "type": "duplicate",
+      "data": {
+        "reference": "PAY-002",
+        "source": "left",
+        "transactions": [
+          {
+            "amount": 10000,
+            "currency": "USD",
+            "date": "2024-01-01T00:00:00Z",
+            "group_key": "PAY-002",
+            "id": "left-1",
+            "name": "Customer payment",
+            "raw": {
+              "amount": "100.00",
+              "currency": "USD",
+              "date": "2024-01-01",
+              "description": "Customer payment",
+              "reference": "PAY-002"
+            },
+            "reference": "PAY-002",
+            "source": "left"
+          },
+          {
+            "amount": 10000,
+            "currency": "USD",
+            "date": "2024-01-01T00:00:00Z",
+            "group_key": "PAY-002",
+            "id": "left-2",
+            "name": "Customer payment",
+            "raw": {
+              "amount": "100.00",
+              "currency": "USD",
+              "date": "2024-01-01",
+              "description": "Customer payment",
+              "reference": "PAY-002"
+            },
+            "reference": "PAY-002",
+            "source": "left"
+          }
+        ]
+      }
+    }
+  ],
+  "exceptions_total": 2,
+  "truncated": false
+}
