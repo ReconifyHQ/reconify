@@ -99,6 +99,24 @@ func (w *partitionCarryWriter) WriteManyToManyTimingDiff(p ManyToManyTimingDiffP
 	}
 	return nil
 }
+func (w *partitionCarryWriter) WriteSubsetSumMatch(p SubsetSumMatchedPair) error {
+	if sw, ok := w.inner.(SubsetSumEventWriter); ok {
+		return sw.WriteSubsetSumMatch(p)
+	}
+	return nil
+}
+func (w *partitionCarryWriter) WriteSubsetSumAmbiguous(p SubsetSumAmbiguousPair) error {
+	if sw, ok := w.inner.(SubsetSumEventWriter); ok {
+		return sw.WriteSubsetSumAmbiguous(p)
+	}
+	return nil
+}
+func (w *partitionCarryWriter) WriteSubsetSumSkipped(p SubsetSumSkippedPair) error {
+	if sw, ok := w.inner.(SubsetSumEventWriter); ok {
+		return sw.WriteSubsetSumSkipped(p)
+	}
+	return nil
+}
 func (w *partitionCarryWriter) WriteSourceSummary(name string, sum Summary) error {
 	if sbw, ok := w.inner.(SourceBreakdownWriter); ok {
 		return sbw.WriteSourceSummary(name, sum)
@@ -264,7 +282,8 @@ func finalizeAggregateSummary(summary *Summary) {
 		summary.MatchRatePct = roundPct(float64(summary.MatchedCount) / float64(denom))
 		reconciled := summary.MatchedCount + summary.AmountDiffCount + summary.TimingDiffCount +
 			summary.GroupedMatchedCount + summary.GroupedAmountDiffCount + summary.GroupedTimingDiffCount +
-			summary.ManyToManyMatchedCount + summary.ManyToManyAmountDiffCount + summary.ManyToManyTimingDiffCount
+			summary.ManyToManyMatchedCount + summary.ManyToManyAmountDiffCount + summary.ManyToManyTimingDiffCount +
+			summary.SubsetSumMatchedCount
 		summary.ReconciledRatePct = roundPct(float64(reconciled) / float64(denom))
 	}
 	summary.TotalDiscrepancy = summary.UnmatchedAmountLeft + summary.UnmatchedAmountRight + summary.AmountDiffTotal +

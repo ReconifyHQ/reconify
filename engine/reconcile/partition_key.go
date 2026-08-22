@@ -38,6 +38,10 @@ func partitionKeyColumns(pair config.Pair, leftCfg, rightCfg config.ParserCfg) (
 		switch pass.Type {
 		case config.PassTypeReferenceOneToOne:
 			lc, rc, sel = leftCfg.RefCol, rightCfg.RefCol, "reference"
+		case config.PassTypeSubsetSum:
+			// subset_sum uses constraint-based candidate filtering, not a shared key join.
+			// The partitioned backend cannot route rows for it; fall back to memory/disk.
+			return "", "", "", false, "subset_sum pass is not supported by the partitioned backend; use backend: memory or backend: disk"
 		case config.PassTypeOneToMany, config.PassTypeManyToMany:
 			switch pass.ResolvedGroupBy() {
 			case config.GroupByReference:

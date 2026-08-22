@@ -64,6 +64,11 @@ const (
 	PassTypeNameTokensOneToOne = "name_tokens_one_to_one"
 	PassTypeOneToMany          = "one_to_many"
 	PassTypeManyToMany         = "many_to_many"
+	// PassTypeSubsetSum is a bounded combinatorial pass that searches subsets of
+	// right-side rows whose sum equals one left row's amount (within tolerance).
+	// It runs after cheaper passes and enforces hard limits on candidate count,
+	// subset size, and search time to prevent unbounded work.
+	PassTypeSubsetSum = "subset_sum"
 )
 
 // GroupBy constants for grouped passes.
@@ -104,12 +109,47 @@ const (
 	DuplicatePolicyLatest DuplicatePolicy = "latest"
 )
 
+// SubsetSumFilters controls which candidate constraints the subset_sum pass
+// applies before attempting combinatorial search. All filters default to true.
+type SubsetSumFilters struct {
+	// Currency, when true, restricts candidates to rows whose currency matches
+	// the left row. Default true.
+	Currency bool `yaml:"currency"`
+	// DateWindow, when true, restricts candidates to rows within the pair's
+	// date_window. Default true.
+	DateWindow bool `yaml:"date_window"`
+	// SameSign, when true, restricts candidates to rows whose amount has the same
+	// sign as the left row. Default true.
+	SameSign bool `yaml:"same_sign"`
+}
+
 // PassConfig defines a single matching pass within a pair's pipeline.
 // Passes run in configured order; each pass only sees rows left unmatched
 // by earlier passes.
 type PassConfig struct {
 	Type    string `yaml:"type"`
 	GroupBy string `yaml:"group_by,omitempty"`
+
+	// Fields below apply only to the subset_sum pass type.
+
+	// MaxCandidates is the maximum number of right-side rows considered as
+	// subset candidates for one left row. Rows exceeding this limit emit a
+	// SubsetSumSkippedPair. Default 24.
+	MaxCandidates int `yaml:"max_candidates,omitempty"`
+	// MaxSubsetSize is the maximum subset cardinality searched. Default 8.
+	MaxSubsetSize int `yaml:"max_subset_size,omitempty"`
+	// MaxAlternatives is the maximum number of valid subsets returned before
+	// a result is classified as ambiguous. Default 3.
+	MaxAlternatives int `yaml:"max_alternatives,omitempty"`
+	// TimeoutMS is the per-left-row search deadline in milliseconds. When
+	// exceeded, a SubsetSumSkippedPair is emitted. Default 50.
+	TimeoutMS int `yaml:"timeout_ms,omitempty"`
+	// CandidateFilters restricts which right-side rows are eligible candidates.
+	// A nil value (the field omitted) defaults all filters to true. An explicit
+	// value — including one with all fields false — is honored as-is, so
+	// `candidate_filters: {currency: false, date_window: false, same_sign: false}`
+	// genuinely disables every filter.
+	CandidateFilters *SubsetSumFilters `yaml:"candidate_filters,omitempty"`
 }
 
 // ResolvedGroupBy returns the configured group_by key, defaulting to
@@ -119,6 +159,48 @@ func (p PassConfig) ResolvedGroupBy() string {
 		return p.GroupBy
 	}
 	return GroupByReference
+}
+
+// ResolvedMaxCandidates returns the configured value or the default of 24.
+func (p PassConfig) ResolvedMaxCandidates() int {
+	if p.MaxCandidates > 0 {
+		return p.MaxCandidates
+	}
+	return 24
+}
+
+// ResolvedMaxSubsetSize returns the configured value or the default of 8.
+func (p PassConfig) ResolvedMaxSubsetSize() int {
+	if p.MaxSubsetSize > 0 {
+		return p.MaxSubsetSize
+	}
+	return 8
+}
+
+// ResolvedMaxAlternatives returns the configured value or the default of 3.
+func (p PassConfig) ResolvedMaxAlternatives() int {
+	if p.MaxAlternatives > 0 {
+		return p.MaxAlternatives
+	}
+	return 3
+}
+
+// ResolvedTimeoutMS returns the configured value or the default of 50.
+func (p PassConfig) ResolvedTimeoutMS() int {
+	if p.TimeoutMS > 0 {
+		return p.TimeoutMS
+	}
+	return 50
+}
+
+// ResolvedCandidateFilters returns the configured filters, defaulting all
+// fields to true when CandidateFilters was left unset (nil). An explicitly
+// configured value, including one with every field false, is returned as-is.
+func (p PassConfig) ResolvedCandidateFilters() SubsetSumFilters {
+	if p.CandidateFilters == nil {
+		return SubsetSumFilters{Currency: true, DateWindow: true, SameSign: true}
+	}
+	return *p.CandidateFilters
 }
 
 // ResolvedDuplicatePolicy returns the configured policy, defaulting to
@@ -420,12 +502,13 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 			PassTypeNameTokensOneToOne: true,
 			PassTypeOneToMany:          true,
 			PassTypeManyToMany:         true,
+			PassTypeSubsetSum:          true,
 		}
 		for i, pass := range pair.Passes {
 			if !validPassTypes[pass.Type] {
-				errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].type: unknown pass type %q (valid: %s, %s, %s, %s)",
+				errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].type: unknown pass type %q (valid: %s, %s, %s, %s, %s)",
 					name, i, pass.Type,
-					PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne, PassTypeOneToMany, PassTypeManyToMany))
+					PassTypeReferenceOneToOne, PassTypeNameTokensOneToOne, PassTypeOneToMany, PassTypeManyToMany, PassTypeSubsetSum))
 			}
 			if (pass.Type == PassTypeOneToMany || pass.Type == PassTypeManyToMany) && pass.GroupBy != "" {
 				switch pass.GroupBy {
@@ -435,6 +518,20 @@ func validatePair(name string, pair Pair, sources map[string]Source) []error {
 					errs = append(errs, fmt.Errorf(
 						"pairs.%s.passes[%d].group_by: unknown group key %q (built-in keys: reference, name, group_key)",
 						name, i, pass.GroupBy))
+				}
+			}
+			if pass.Type == PassTypeSubsetSum {
+				if pass.MaxCandidates < 0 {
+					errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].max_candidates: must be >= 0 (got %d)", name, i, pass.MaxCandidates))
+				}
+				if pass.MaxSubsetSize < 0 {
+					errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].max_subset_size: must be >= 0 (got %d)", name, i, pass.MaxSubsetSize))
+				}
+				if pass.MaxAlternatives < 0 {
+					errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].max_alternatives: must be >= 0 (got %d)", name, i, pass.MaxAlternatives))
+				}
+				if pass.TimeoutMS < 0 {
+					errs = append(errs, fmt.Errorf("pairs.%s.passes[%d].timeout_ms: must be >= 0 (got %d)", name, i, pass.TimeoutMS))
 				}
 			}
 		}

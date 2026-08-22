@@ -283,6 +283,15 @@
             "ambiguous_group_count": {
               "type": "integer"
             },
+            "subset_sum_matched_count": {
+              "type": "integer"
+            },
+            "subset_sum_ambiguous_count": {
+              "type": "integer"
+            },
+            "subset_sum_skipped_count": {
+              "type": "integer"
+            },
             "matched_amount_left": {
               "type": "integer"
             },
@@ -1658,6 +1667,300 @@
             "additionalProperties": false
           }
         },
+        "subset_sum_matched": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "rights": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "left",
+              "rights"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "subset_sum_ambiguous": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "alternatives": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "date": {
+                        "type": "string"
+                      },
+                      "amount": {
+                        "type": "integer"
+                      },
+                      "currency": {
+                        "type": "string"
+                      },
+                      "reference": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "raw": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "group_key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "date",
+                      "amount",
+                      "currency",
+                      "reference",
+                      "name",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            },
+            "required": [
+              "left",
+              "alternatives"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "subset_sum_skipped": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "left": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "left",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
         "warnings": {
           "type": [
             "null",
@@ -1730,6 +2033,15 @@
                 "type": "integer"
               },
               "ambiguous_group_count": {
+                "type": "integer"
+              },
+              "subset_sum_matched_count": {
+                "type": "integer"
+              },
+              "subset_sum_ambiguous_count": {
+                "type": "integer"
+              },
+              "subset_sum_skipped_count": {
                 "type": "integer"
               },
               "matched_amount_left": {
@@ -3616,6 +3928,15 @@
                     "ambiguous_group_count": {
                       "type": "integer"
                     },
+                    "subset_sum_matched_count": {
+                      "type": "integer"
+                    },
+                    "subset_sum_ambiguous_count": {
+                      "type": "integer"
+                    },
+                    "subset_sum_skipped_count": {
+                      "type": "integer"
+                    },
                     "matched_amount_left": {
                       "type": "integer"
                     },
@@ -3748,6 +4069,15 @@
                   "type": "integer"
                 },
                 "ambiguous_group_count": {
+                  "type": "integer"
+                },
+                "subset_sum_matched_count": {
+                  "type": "integer"
+                },
+                "subset_sum_ambiguous_count": {
+                  "type": "integer"
+                },
+                "subset_sum_skipped_count": {
                   "type": "integer"
                 },
                 "matched_amount_left": {

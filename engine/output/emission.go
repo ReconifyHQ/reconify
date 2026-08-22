@@ -81,6 +81,26 @@ func WriteResultEvents(w ResultWriter, res *Result, suppressWarnings bool) error
 	} else if hasManyToMany && !suppressWarnings {
 		observeWarning(w, Warning{Code: WarningUnsupportedManyToManyEvents, Message: "current output format does not support many_to_many match events; use --format=json or --format=ndjson to capture all many_to_many output"})
 	}
+	hasSubsetSum := len(res.SubsetSumMatched)+len(res.SubsetSumAmbiguous)+len(res.SubsetSumSkipped) > 0
+	if sw, ok := w.(SubsetSumEventWriter); ok {
+		for _, sm := range res.SubsetSumMatched {
+			if err := sw.WriteSubsetSumMatch(sm); err != nil {
+				return err
+			}
+		}
+		for _, sa := range res.SubsetSumAmbiguous {
+			if err := sw.WriteSubsetSumAmbiguous(sa); err != nil {
+				return err
+			}
+		}
+		for _, sk := range res.SubsetSumSkipped {
+			if err := sw.WriteSubsetSumSkipped(sk); err != nil {
+				return err
+			}
+		}
+	} else if hasSubsetSum && !suppressWarnings {
+		observeWarning(w, Warning{Code: WarningUnsupportedSubsetSumEvents, Message: "current output format does not support subset_sum match events; use --format=json or --format=ndjson to capture all subset_sum output"})
+	}
 	for _, warning := range res.Warnings {
 		observeWarning(w, Warning{Code: WarningEmptyCurrency, Message: warning})
 	}

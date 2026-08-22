@@ -11,12 +11,13 @@ import (
 // drop-in replacement for the inner writer. Optional interface calls are forwarded
 // to the inner writer only when the inner writer supports them.
 type filteredWriter struct {
-	inner         ResultWriter
-	mode          config.ResultMode
-	runID         string
-	warnings      WarningObserver
-	warnedNoGroup bool
-	warnedNoM2M   bool
+	inner          ResultWriter
+	mode           config.ResultMode
+	runID          string
+	warnings       WarningObserver
+	warnedNoGroup  bool
+	warnedNoM2M    bool
+	warnedNoSubset bool
 }
 
 func (f *filteredWriter) ObserveWarning(warning Warning) {
@@ -217,6 +218,50 @@ func (f *filteredWriter) WriteManyToManyTimingDiff(p ManyToManyTimingDiffPair) e
 	if !f.warnedNoM2M {
 		f.warnedNoM2M = true
 		f.ObserveWarning(Warning{Code: WarningUnsupportedManyToManyEvents, Message: "current output format does not support many_to_many match events; use --format=json or --format=ndjson to capture all many_to_many output"})
+	}
+	return nil
+}
+
+// --- SubsetSumEventWriter (optional) ---
+
+func (f *filteredWriter) WriteSubsetSumMatch(p SubsetSumMatchedPair) error {
+	if f.mode == config.ResultModeSummaryOnly || f.mode == config.ResultModeExceptionsOnly {
+		return nil
+	}
+	if sw, ok := f.inner.(SubsetSumEventWriter); ok {
+		return sw.WriteSubsetSumMatch(p)
+	}
+	if !f.warnedNoSubset {
+		f.warnedNoSubset = true
+		f.ObserveWarning(Warning{Code: WarningUnsupportedSubsetSumEvents, Message: "current output format does not support subset_sum match events; use --format=json or --format=ndjson to capture all subset_sum output"})
+	}
+	return nil
+}
+
+func (f *filteredWriter) WriteSubsetSumAmbiguous(p SubsetSumAmbiguousPair) error {
+	if f.mode == config.ResultModeSummaryOnly {
+		return nil
+	}
+	if sw, ok := f.inner.(SubsetSumEventWriter); ok {
+		return sw.WriteSubsetSumAmbiguous(p)
+	}
+	if !f.warnedNoSubset {
+		f.warnedNoSubset = true
+		f.ObserveWarning(Warning{Code: WarningUnsupportedSubsetSumEvents, Message: "current output format does not support subset_sum match events; use --format=json or --format=ndjson to capture all subset_sum output"})
+	}
+	return nil
+}
+
+func (f *filteredWriter) WriteSubsetSumSkipped(p SubsetSumSkippedPair) error {
+	if f.mode == config.ResultModeSummaryOnly {
+		return nil
+	}
+	if sw, ok := f.inner.(SubsetSumEventWriter); ok {
+		return sw.WriteSubsetSumSkipped(p)
+	}
+	if !f.warnedNoSubset {
+		f.warnedNoSubset = true
+		f.ObserveWarning(Warning{Code: WarningUnsupportedSubsetSumEvents, Message: "current output format does not support subset_sum match events; use --format=json or --format=ndjson to capture all subset_sum output"})
 	}
 	return nil
 }

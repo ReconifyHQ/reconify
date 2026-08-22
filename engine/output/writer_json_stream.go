@@ -42,6 +42,10 @@ type jsonStreamWriter struct {
 	manyToManyMatched    []json.RawMessage
 	manyToManyAmountDiff []json.RawMessage
 	manyToManyTimingDiff []json.RawMessage
+	// subset_sum events — only emitted when non-empty
+	subsetSumMatched   []json.RawMessage
+	subsetSumAmbiguous []json.RawMessage
+	subsetSumSkipped   []json.RawMessage
 }
 
 func newJSONStreamWriter(w io.Writer) *jsonStreamWriter {
@@ -168,6 +172,32 @@ func (j *jsonStreamWriter) WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPa
 	return nil
 }
 
+// SubsetSumEventWriter implementation — buffers encoded JSON; emitted in Flush() only when non-empty.
+func (j *jsonStreamWriter) WriteSubsetSumMatch(pair SubsetSumMatchedPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.subsetSumMatched = append(j.subsetSumMatched, b)
+	return nil
+}
+func (j *jsonStreamWriter) WriteSubsetSumAmbiguous(pair SubsetSumAmbiguousPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.subsetSumAmbiguous = append(j.subsetSumAmbiguous, b)
+	return nil
+}
+func (j *jsonStreamWriter) WriteSubsetSumSkipped(pair SubsetSumSkippedPair) error {
+	b, err := j.encode(pair)
+	if err != nil {
+		return err
+	}
+	j.subsetSumSkipped = append(j.subsetSumSkipped, b)
+	return nil
+}
+
 func (j *jsonStreamWriter) Flush() error {
 	result := map[string]any{
 		"schema":       ResultSchemaV1,
@@ -218,6 +248,16 @@ func (j *jsonStreamWriter) Flush() error {
 	}
 	if len(j.manyToManyTimingDiff) > 0 {
 		result[keyManyToManyTimingDiff] = j.manyToManyTimingDiff
+	}
+	// Subset-sum sections — only emitted when non-empty.
+	if len(j.subsetSumMatched) > 0 {
+		result[keySubsetSumMatched] = j.subsetSumMatched
+	}
+	if len(j.subsetSumAmbiguous) > 0 {
+		result[keySubsetSumAmbiguous] = j.subsetSumAmbiguous
+	}
+	if len(j.subsetSumSkipped) > 0 {
+		result[keySubsetSumSkipped] = j.subsetSumSkipped
 	}
 	enc := json.NewEncoder(j.w)
 	enc.SetIndent("", "  ")

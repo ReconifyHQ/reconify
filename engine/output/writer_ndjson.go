@@ -85,3 +85,14 @@ func (n *ndjsonWriter) WriteManyToManyAmountDiff(pair ManyToManyAmountDiffPair) 
 func (n *ndjsonWriter) WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPair) error {
 	return n.emit(keyManyToManyTimingDiff, pair)
 }
+
+// SubsetSumEventWriter implementation — one tagged line per event.
+func (n *ndjsonWriter) WriteSubsetSumMatch(pair SubsetSumMatchedPair) error {
+	return n.emit(eventSubsetSumMatch, pair)
+}
+func (n *ndjsonWriter) WriteSubsetSumAmbiguous(pair SubsetSumAmbiguousPair) error {
+	return n.emit(eventSubsetSumAmbiguous, pair)
+}
+func (n *ndjsonWriter) WriteSubsetSumSkipped(pair SubsetSumSkippedPair) error {
+	return n.emit(eventSubsetSumSkipped, pair)
+}

@@ -107,6 +107,22 @@ func assertRowCoverage(t *testing.T, left, right []Transaction, res *Result) {
 		}
 	}
 
+	for _, sm := range res.SubsetSumMatched {
+		gotLeft[sm.Left.ID] = true
+		for _, r := range sm.Rights {
+			gotRight[r.ID] = true
+		}
+	}
+	for _, sa := range res.SubsetSumAmbiguous {
+		// The left row stays unmatched (already counted via UnmatchedLeft);
+		// involved right rows are consumed and must not appear as unmatched.
+		for _, alt := range sa.Alternatives {
+			for _, r := range alt {
+				gotRight[r.ID] = true
+			}
+		}
+	}
+
 	for id := range wantLeft {
 		if !gotLeft[id] {
 			t.Errorf("assertRowCoverage: left row %q not accounted for in output", id)
@@ -184,6 +200,15 @@ func assertSummaryMatchesCounts(t *testing.T, res *Result) {
 	}
 	if res.Summary.AmbiguousGroupCount != len(res.AmbiguousGroups) {
 		t.Errorf("Summary.AmbiguousGroupCount=%d len(AmbiguousGroups)=%d", res.Summary.AmbiguousGroupCount, len(res.AmbiguousGroups))
+	}
+	if res.Summary.SubsetSumMatchedCount != len(res.SubsetSumMatched) {
+		t.Errorf("Summary.SubsetSumMatchedCount=%d len(SubsetSumMatched)=%d", res.Summary.SubsetSumMatchedCount, len(res.SubsetSumMatched))
+	}
+	if res.Summary.SubsetSumAmbiguousCount != len(res.SubsetSumAmbiguous) {
+		t.Errorf("Summary.SubsetSumAmbiguousCount=%d len(SubsetSumAmbiguous)=%d", res.Summary.SubsetSumAmbiguousCount, len(res.SubsetSumAmbiguous))
+	}
+	if res.Summary.SubsetSumSkippedCount != len(res.SubsetSumSkipped) {
+		t.Errorf("Summary.SubsetSumSkippedCount=%d len(SubsetSumSkipped)=%d", res.Summary.SubsetSumSkippedCount, len(res.SubsetSumSkipped))
 	}
 }
 
@@ -1107,6 +1132,74 @@ func TestManyToMany_BothFail_RowsNotConsumed(t *testing.T) {
 	}
 	if len(res.ManyToManyMatched)+len(res.ManyToManyAmountDiff)+len(res.ManyToManyTimingDiff) != 0 {
 		t.Fatal("expected no many_to_many outcomes when both amount and date fail")
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+func subsetSumPair() config.Pair {
+	return config.Pair{
+		DateWindow:           "0d",
+		AmountToleranceMinor: 0,
+		Passes:               []config.PassConfig{{Type: config.PassTypeSubsetSum}},
+	}
+}
+
+func TestSubsetSum_BasicMatch(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	left := []Transaction{makeTxFull("l1", 100, "", "", base)}
+	right := []Transaction{
+		makeTxFull("r1", 60, "", "", base),
+		makeTxFull("r2", 40, "", "", base),
+	}
+
+	res, err := Reconcile("p", "left", "right", left, right, subsetSumPair())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.SubsetSumMatched) != 1 {
+		t.Fatalf("SubsetSumMatched=%d want 1", len(res.SubsetSumMatched))
+	}
+	if res.Summary.MatchedAmountLeft != 100 || res.Summary.MatchedAmountRight != 100 {
+		t.Errorf("matched amounts = left %d right %d, want 100/100",
+			res.Summary.MatchedAmountLeft, res.Summary.MatchedAmountRight)
+	}
+	assertRowCoverage(t, left, right, res)
+	assertMonetaryInvariant(t, res.Summary)
+	assertSummaryMatchesCounts(t, res)
+}
+
+// TestSubsetSum_Ambiguous_RowsAndAmountsAccountedFor is a regression test:
+// multiple valid subsets consume right rows without matching them. Their
+// amounts must be tracked as ambiguous (not silently dropped) and every
+// consumed right row must be deduplicated exactly once across alternatives —
+// previously each right row was decremented from UnmatchedRight/-Amount once
+// per alternative it appeared in, driving those counters negative.
+func TestSubsetSum_Ambiguous_RowsAndAmountsAccountedFor(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	// L1=100; {R1,R2}=60+40=100 and {R3,R4}=70+30=100 are both valid subsets.
+	left := []Transaction{makeTxFull("l1", 100, "", "", base)}
+	right := []Transaction{
+		makeTxFull("r1", 60, "", "", base),
+		makeTxFull("r2", 40, "", "", base),
+		makeTxFull("r3", 70, "", "", base),
+		makeTxFull("r4", 30, "", "", base),
+	}
+
+	res, err := Reconcile("p", "left", "right", left, right, subsetSumPair())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.SubsetSumAmbiguous) != 1 {
+		t.Fatalf("SubsetSumAmbiguous=%d want 1", len(res.SubsetSumAmbiguous))
+	}
+	if res.Summary.UnmatchedRight < 0 || res.Summary.UnmatchedAmountRight < 0 {
+		t.Errorf("unmatched right counters went negative: count=%d amount=%d",
+			res.Summary.UnmatchedRight, res.Summary.UnmatchedAmountRight)
+	}
+	if res.Summary.AmbiguousAmountRight != 200 {
+		t.Errorf("AmbiguousAmountRight=%d want 200 (all 4 right rows consumed once each)", res.Summary.AmbiguousAmountRight)
 	}
 	assertRowCoverage(t, left, right, res)
 	assertMonetaryInvariant(t, res.Summary)

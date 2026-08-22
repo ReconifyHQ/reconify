@@ -105,6 +105,28 @@ func drainResultToWriter(w engine.ResultWriter, res *engine.Result) error {
 			"warning: current --format does not support many_to_many match events; "+
 				"use --format=json or --format=ndjson to capture all many_to_many output")
 	}
+	hasSubsetSum := len(res.SubsetSumMatched)+len(res.SubsetSumAmbiguous)+len(res.SubsetSumSkipped) > 0
+	if sw, ok := w.(engine.SubsetSumEventWriter); ok {
+		for _, sm := range res.SubsetSumMatched {
+			if err := sw.WriteSubsetSumMatch(sm); err != nil {
+				return err
+			}
+		}
+		for _, sa := range res.SubsetSumAmbiguous {
+			if err := sw.WriteSubsetSumAmbiguous(sa); err != nil {
+				return err
+			}
+		}
+		for _, sk := range res.SubsetSumSkipped {
+			if err := sw.WriteSubsetSumSkipped(sk); err != nil {
+				return err
+			}
+		}
+	} else if hasSubsetSum {
+		fmt.Fprintln(os.Stderr,
+			"warning: current --format does not support subset_sum match events; "+
+				"use --format=json or --format=ndjson to capture all subset_sum output")
+	}
 	// Emit warnings to stderr — mirrors what the streaming path does via cc.Warnings().
 	for _, warning := range res.Warnings {
 		fmt.Fprintln(os.Stderr, "warning:", warning)

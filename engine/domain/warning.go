@@ -11,6 +11,7 @@ type Warning struct {
 const (
 	WarningUnsupportedGroupedEvents    = "unsupported_grouped_events"
 	WarningUnsupportedManyToManyEvents = "unsupported_many_to_many_events"
+	WarningUnsupportedSubsetSumEvents  = "unsupported_subset_sum_events"
 	WarningTokenBufferPressure         = "token_buffer_pressure"
 	WarningCarryBufferPressure         = "carry_buffer_pressure"
 	WarningEmptyCurrency               = "empty_currency"

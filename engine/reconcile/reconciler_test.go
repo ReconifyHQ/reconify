@@ -142,6 +142,97 @@ func TestReconcileStreaming_MonetaryTotalsInvariant(t *testing.T) {
 	}
 }
 
+// TestReconcileStreaming_SubsetSumAmbiguous_NoNegativeCounters is a regression
+// test for the streaming subset_sum path: when multiple right-row subsets sum
+// within tolerance of one left row, the involved right rows must be
+// deduplicated across alternatives before adjusting UnmatchedRight /
+// UnmatchedAmountRight — otherwise each row is decremented once per
+// alternative it appears in, driving those counters negative.
+func TestReconcileStreaming_SubsetSumAmbiguous_NoNegativeCounters(t *testing.T) {
+	dir := t.TempDir()
+	leftPath := filepath.Join(dir, "left.csv")
+	rightPath := filepath.Join(dir, "right.csv")
+
+	// L1=1.00; {R1,R2}=0.60+0.40=1.00 and {R3,R4}=0.70+0.30=1.00 both valid.
+	leftCSV := strings.Join([]string{
+		"id,date,amount,currency,reference,name",
+		"l1,2024-01-01,1.00,USD,,Left Settlement",
+	}, "\n") + "\n"
+	rightCSV := strings.Join([]string{
+		"id,date,amount,currency,reference,name",
+		"r1,2024-01-01,0.60,USD,,Right A",
+		"r2,2024-01-01,0.40,USD,,Right B",
+		"r3,2024-01-01,0.70,USD,,Right C",
+		"r4,2024-01-01,0.30,USD,,Right D",
+	}, "\n") + "\n"
+
+	if err := os.WriteFile(leftPath, []byte(leftCSV), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rightPath, []byte(rightCSV), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	parserCfg := config.CSVParserCfg{
+		Type:        "csv",
+		DateCol:     "date",
+		DateLayout:  "2006-01-02",
+		AmountCol:   "amount",
+		Decimal:     ".",
+		Thousands:   ",",
+		Multiplier:  100,
+		CurrencyCol: "currency",
+		RefCol:      "reference",
+		NameCol:     "name",
+	}
+	pair := config.Pair{
+		DateWindow:           "0d",
+		AmountToleranceMinor: 0,
+		Passes: []config.PassConfig{
+			{Type: config.PassTypeReferenceOneToOne},
+			{Type: config.PassTypeSubsetSum},
+		},
+	}
+
+	var out bytes.Buffer
+	w := output.NewJSONWriter(&out)
+	w.SetMeta("p", "left", "right")
+	idx := NewMemoryIndex()
+	defer idx.Close()
+
+	if err := ReconcileStreaming(
+		context.Background(),
+		"p", "left", "right",
+		leftPath, rightPath,
+		parserCfg, parserCfg,
+		pair, idx, w, 0,
+	); err != nil {
+		t.Fatalf("ReconcileStreaming error: %v", err)
+	}
+
+	var res Result
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	s := res.Summary
+	if s.SubsetSumAmbiguousCount != 1 {
+		t.Fatalf("SubsetSumAmbiguousCount = %d, want 1", s.SubsetSumAmbiguousCount)
+	}
+	if s.UnmatchedRight < 0 || s.UnmatchedAmountRight < 0 {
+		t.Errorf("unmatched right counters went negative: count=%d amount=%d", s.UnmatchedRight, s.UnmatchedAmountRight)
+	}
+	if s.TotalDiscrepancy < 0 {
+		t.Errorf("TotalDiscrepancy went negative: %d", s.TotalDiscrepancy)
+	}
+	if s.AmbiguousAmountRight != 200 {
+		t.Errorf("AmbiguousAmountRight = %d, want 200 (all 4 right rows consumed once each)", s.AmbiguousAmountRight)
+	}
+	computed := s.UnmatchedAmountLeft + s.UnmatchedAmountRight + s.AmountDiffTotal + s.AmbiguousAmountRight
+	if s.TotalDiscrepancy != computed {
+		t.Errorf("TotalDiscrepancy invariant broken: got %d, computed %d", s.TotalDiscrepancy, computed)
+	}
+}
+
 func TestReconcileStreaming_MixedJSONAndXLSXInputs(t *testing.T) {
 	dir := t.TempDir()
 	leftPath := filepath.Join(dir, "left.json")

@@ -171,11 +171,18 @@ func reconcileStreamingWithOptions(
 	tolerance := pair.AmountToleranceMinor
 	cc := matching.CurrencyTracker{}
 
-	// Derive whether the name-token pass should run. Passes takes precedence;
-	// fall back to the legacy NameMode field when no explicit passes are set.
+	// Derive whether the name-token pass and/or subset-sum pass should run.
+	// Passes takes precedence; fall back to the legacy NameMode field when no
+	// explicit passes are set.
 	effectiveTokenMode := pair.NameMode == "tokens"
+	effectiveSubsetSumMode := false
+	var subsetSumPassCfg config.PassConfig
 	if len(pair.Passes) > 0 {
 		effectiveTokenMode = containsPass(pair.Passes, config.PassTypeNameTokensOneToOne)
+		effectiveSubsetSumMode = containsPass(pair.Passes, config.PassTypeSubsetSum)
+		if effectiveSubsetSumMode {
+			subsetSumPassCfg = findPassConfig(pair.Passes, config.PassTypeSubsetSum)
+		}
 		if err := validateStreamingPassOrder(pair.Passes); err != nil {
 			return err
 		}
@@ -305,6 +312,7 @@ func reconcileStreamingWithOptions(
 		unmatchedAmtLeft  int64
 		unmatchedAmtRight int64
 		amountDiffTotal   int64
+		ambiguousAmtRight int64
 	)
 	var totalLeft int
 
@@ -315,7 +323,7 @@ func reconcileStreamingWithOptions(
 		if ltx.Reference == "" {
 			unmatchedLeftCount++
 			unmatchedAmtLeft += ltx.Amount
-			if effectiveTokenMode {
+			if effectiveTokenMode || effectiveSubsetSumMode {
 				tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
 				return nil
 			}
@@ -363,7 +371,7 @@ func reconcileStreamingWithOptions(
 		}
 		unmatchedLeftCount++
 		unmatchedAmtLeft += ltx.Amount
-		if effectiveTokenMode {
+		if effectiveTokenMode || effectiveSubsetSumMode {
 			tokenUnmatchedLeft = append(tokenUnmatchedLeft, ltx)
 			return nil
 		}
@@ -453,7 +461,7 @@ func reconcileStreamingWithOptions(
 	if err := idx.IterateUnused(func(tx Transaction) error {
 		unmatchedRightCount++
 		unmatchedAmtRight += tx.Amount
-		if effectiveTokenMode {
+		if effectiveTokenMode || effectiveSubsetSumMode {
 			tokenUnmatchedRight = append(tokenUnmatchedRight, tx)
 			return nil
 		}
@@ -469,6 +477,17 @@ func reconcileStreamingWithOptions(
 	// from both sides. Worst case (all unmatched): O(n_total) memory.
 	// Guarded by maxTokenBuffer advisory limit.
 	// -----------------------------------------------------------------------
+	var (
+		subsetSumMatchedCount   int
+		subsetSumAmbiguousCount int
+		subsetSumSkippedCount   int
+	)
+
+	// postLeft/postRight hold the unmatched buffers available for the next
+	// optional pass (subset_sum). After token mode they contain its remainders;
+	// when token mode is absent but subset_sum is present they are the raw buffers.
+	var postLeft, postRight []Transaction
+
 	if effectiveTokenMode {
 		reporter.Start("token_match", leftSource, rightSource, nil)
 		bufTotal := len(tokenUnmatchedLeft) + len(tokenUnmatchedRight)
@@ -494,17 +513,105 @@ func reconcileStreamingWithOptions(
 				return err
 			}
 		}
-		for _, tx := range remainLeft {
+		if effectiveSubsetSumMode {
+			postLeft = remainLeft
+			postRight = remainRight
+		} else {
+			for _, tx := range remainLeft {
+				if err := w.WriteUnmatched(tx, "left"); err != nil {
+					return err
+				}
+			}
+			for _, tx := range remainRight {
+				if err := w.WriteUnmatched(tx, "right"); err != nil {
+					return err
+				}
+			}
+		}
+		reporter.Complete(bufTotal)
+	} else if effectiveSubsetSumMode {
+		postLeft = tokenUnmatchedLeft
+		postRight = tokenUnmatchedRight
+		bufTotal := len(postLeft) + len(postRight)
+		if maxTokenBuffer > 0 && bufTotal > maxTokenBuffer {
+			observeWarning(w, reporter, Warning{Code: WarningTokenBufferPressure, Message: fmt.Sprintf("subset_sum unmatched buffer is %d rows (limit %d); memory usage may be high", bufTotal, maxTokenBuffer)})
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Optional subset-sum pass — runs after reference (and optional token)
+	// matching on whatever rows remain unmatched. Uses a bounded combinatorial
+	// search; hard limits prevent unbounded work.
+	// -----------------------------------------------------------------------
+	if effectiveSubsetSumMode {
+		reporter.Start("subset_sum", leftSource, rightSource, nil)
+		// Build a temporary Result to hold the subset-sum events.
+		tmpResult := &Result{}
+		ssLeft, ssRight := matching.MatchBySubsetSum(
+			tmpResult, postLeft, postRight,
+			tolerance, dateWindowDays, subsetSumPassCfg,
+		)
+		subsetSumMatchedCount = len(tmpResult.SubsetSumMatched)
+		subsetSumAmbiguousCount = len(tmpResult.SubsetSumAmbiguous)
+		subsetSumSkippedCount = len(tmpResult.SubsetSumSkipped)
+
+		ssw, hasSSW := w.(SubsetSumEventWriter)
+		for _, sm := range tmpResult.SubsetSumMatched {
+			matchedAmtLeft += sm.Left.Amount
+			unmatchedAmtLeft -= sm.Left.Amount
+			unmatchedLeftCount--
+			for _, r := range sm.Rights {
+				matchedAmtRight += r.Amount
+				unmatchedAmtRight -= r.Amount
+				unmatchedRightCount--
+			}
+			if hasSSW {
+				if err := ssw.WriteSubsetSumMatch(sm); err != nil {
+					return err
+				}
+			}
+		}
+		for _, sa := range tmpResult.SubsetSumAmbiguous {
+			// Left row stays unmatched; right rows were consumed (not returned in
+			// ssRight) but may repeat across alternatives — dedupe by ID before
+			// adjusting counters so each right row is only counted once.
+			seen := make(map[string]bool)
+			for _, alt := range sa.Alternatives {
+				for _, r := range alt {
+					if seen[r.ID] {
+						continue
+					}
+					seen[r.ID] = true
+					unmatchedAmtRight -= r.Amount
+					unmatchedRightCount--
+					ambiguousAmtRight += r.Amount
+				}
+			}
+			if hasSSW {
+				if err := ssw.WriteSubsetSumAmbiguous(sa); err != nil {
+					return err
+				}
+			}
+		}
+		for _, sk := range tmpResult.SubsetSumSkipped {
+			_ = sk // left row stays unmatched, written below via ssLeft
+			if hasSSW {
+				if err := ssw.WriteSubsetSumSkipped(sk); err != nil {
+					return err
+				}
+			}
+		}
+		for _, tx := range ssLeft {
 			if err := w.WriteUnmatched(tx, "left"); err != nil {
 				return err
 			}
 		}
-		for _, tx := range remainRight {
+		for _, tx := range ssRight {
 			if err := w.WriteUnmatched(tx, "right"); err != nil {
 				return err
 			}
 		}
-		reporter.Complete(bufTotal)
+		reporter.Complete(len(postLeft) + len(postRight))
 	}
 
 	// -----------------------------------------------------------------------
@@ -518,7 +625,7 @@ func reconcileStreamingWithOptions(
 	if total > 0 {
 		matchRate = math.Round(float64(matchedCount)/float64(total)*10000) / 100
 	}
-	reconciledCount := matchedCount + amountDiffCount + timingDiffCount
+	reconciledCount := matchedCount + amountDiffCount + timingDiffCount + subsetSumMatchedCount
 	reconciledRate := 0.0
 	if total > 0 {
 		reconciledRate = math.Round(float64(reconciledCount)/float64(total)*10000) / 100
@@ -531,23 +638,27 @@ func reconcileStreamingWithOptions(
 	reporter.Start("finalization", leftSource, rightSource, nil)
 	reporter.Progress(totalLeft + totalRight)
 	if err := w.WriteSummary(Summary{
-		Currency:             cc.Currency(),
-		TotalLeft:            totalLeft,
-		TotalRight:           totalRight,
-		MatchedCount:         matchedCount,
-		UnmatchedLeft:        unmatchedLeftCount,
-		UnmatchedRight:       unmatchedRightCount,
-		AmountDiffCount:      amountDiffCount,
-		TimingDiffCount:      timingDiffCount,
-		DuplicateCount:       dupTxnCount,
-		MatchRatePct:         matchRate,
-		ReconciledRatePct:    reconciledRate,
-		MatchedAmountLeft:    matchedAmtLeft,
-		MatchedAmountRight:   matchedAmtRight,
-		UnmatchedAmountLeft:  unmatchedAmtLeft,
-		UnmatchedAmountRight: unmatchedAmtRight,
-		AmountDiffTotal:      amountDiffTotal,
-		TotalDiscrepancy:     unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal,
+		Currency:                cc.Currency(),
+		TotalLeft:               totalLeft,
+		TotalRight:              totalRight,
+		MatchedCount:            matchedCount,
+		UnmatchedLeft:           unmatchedLeftCount,
+		UnmatchedRight:          unmatchedRightCount,
+		AmountDiffCount:         amountDiffCount,
+		TimingDiffCount:         timingDiffCount,
+		DuplicateCount:          dupTxnCount,
+		MatchRatePct:            matchRate,
+		ReconciledRatePct:       reconciledRate,
+		SubsetSumMatchedCount:   subsetSumMatchedCount,
+		SubsetSumAmbiguousCount: subsetSumAmbiguousCount,
+		SubsetSumSkippedCount:   subsetSumSkippedCount,
+		MatchedAmountLeft:       matchedAmtLeft,
+		MatchedAmountRight:      matchedAmtRight,
+		UnmatchedAmountLeft:     unmatchedAmtLeft,
+		UnmatchedAmountRight:    unmatchedAmtRight,
+		AmountDiffTotal:         amountDiffTotal,
+		AmbiguousAmountRight:    ambiguousAmtRight,
+		TotalDiscrepancy:        unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal + ambiguousAmtRight,
 	}); err != nil {
 		return err
 	}
@@ -646,9 +757,24 @@ func validateStreamingPassOrder(passes []config.PassConfig) error {
 				return fmt.Errorf("streaming: %s at passes[%d] must be preceded by %s — streaming always indexes reference first",
 					config.PassTypeNameTokensOneToOne, i, config.PassTypeReferenceOneToOne)
 			}
+		case config.PassTypeSubsetSum:
+			if !sawRef {
+				return fmt.Errorf("streaming: %s at passes[%d] must be preceded by %s — subset_sum runs on unmatched rows after the reference pass",
+					config.PassTypeSubsetSum, i, config.PassTypeReferenceOneToOne)
+			}
 		default:
 			return fmt.Errorf("streaming: unsupported pass type %q at passes[%d]", p.Type, i)
 		}
 	}
 	return nil
+}
+
+// findPassConfig returns the first PassConfig with the given type, or a zero value.
+func findPassConfig(passes []config.PassConfig, passType string) config.PassConfig {
+	for _, p := range passes {
+		if p.Type == passType {
+			return p
+		}
+	}
+	return config.PassConfig{}
 }
