@@ -1,50 +1,45 @@
 ---
 name: reconify-engine-performance
-description: Run Reconify Engine reconciliations over large files within a memory budget — index backends, streaming formats, and the knobs that matter.
+description: Fit Reconify runs within resource limits. Use when inputs cause high memory, swapping, slow execution, large artifacts, or a need for progress telemetry.
 ---
 
 # Reconify Engine Performance
 
-Defaults are tuned for files that fit comfortably in memory. Reach for this when inputs are large
-enough that a run gets killed, swaps, or takes long enough to need progress output.
+Optimize against a measured baseline while preserving the result summary.
 
-## Index backends
+## 1. Define the budget and baseline
 
-Set under `index` in `reconify.yaml`:
+Record input sizes, wall time, peak memory, temporary disk, output size, config, Engine version, and
+the complete summary counters. This checkpoint is complete when one repeatable command reproduces
+the baseline and its correctness signature.
 
-| Backend | Use when |
+## 2. Load the available controls
+
+```bash
+reconify capabilities
+reconify config schema
+reconify reconcile --help
+```
+
+Read the result's `index_selection` block before choosing a change. This checkpoint is complete when
+the backend that actually ran and the relevant limits are known.
+
+## 3. Change one resource lever
+
+| Pressure | First lever |
 |---|---|
-| `memory` (default) | The right-hand side fits in RAM. Fastest. |
-| `disk` | Lower RAM via SQLite-backed index. |
-| `auto` | Resource-aware selection between memory and disk. |
-| `partitioned` | Very large inputs; bounded memory through partitioned processing. |
+| Right-side index exceeds RAM | Select `disk`, `auto`, or `partitioned` from the installed schema |
+| Result artifact grows beyond RAM | Use `ndjson` or `csv` with `--out` |
+| Raw row maps dominate allocation | Set parser `skip_raw` when raw columns are not required |
+| Long silent run | Enable progress or a separate telemetry output |
+| Partition throughput or spool pressure | Tune workers, queue capacity, and chunk limits from command help |
 
-Related keys: `max_memory_mb` caps the estimated memory budget (`0` = uncapped),
-`max_temp_disk_mb` caps temporary disk for `disk`/`partitioned`, `spill_dir` chooses where those
-temp files live, and `auto_max_right_file_mb` (default `2048`) is the right-file size at which
-`auto` switches to disk. Run `reconify config schema` for the current defaults on your build.
+Keep diagnostics on stderr and result data in the declared output file. Apply one lever per
+measurement so its effect remains attributable.
 
-Every result reports an `index_selection` block naming the backend chosen and why — read it before
-assuming which one ran.
+## 4. Re-run and compare
 
-## Streaming output
-
-`--format ndjson`, `json-stream`, and `csv` stream; `json` and `table` buffer the whole result.
-Use a streaming format for large runs and `--out FILE` rather than a shell redirect, so diagnostics
-on stderr stay out of the data.
-
-`--deterministic` sorts output sections and costs sort time and memory; it applies to `json` only,
-so it is inherently for results small enough to buffer.
-
-## Other knobs
-
-- `skip_raw: true` on a parser skips allocating the raw field map — a straightforward memory win
-  when you do not need original columns echoed back.
-- `--progress` logs progress to stderr, `--progress-every N` sets the row interval, and
-  `--progress-out FILE` writes live telemetry as NDJSON.
-- `--partition-workers`, `--partition-max-chunk-mb`, and `--partition-queue-capacity` tune the
-  `partitioned` backend. `0` workers means serial.
-- `--max-token-buffer` bounds the unmatched buffer in token matching mode (`0` = unlimited).
-
-Measure before and after on the same inputs. Because the Engine is deterministic, a performance
-change that alters the summary is a correctness regression, not a speedup.
+Run the same inputs and compare resource measurements plus every summary counter. Performance work
+is complete when the run fits the stated budget, repeated measurements support the improvement, and
+the correctness signature is unchanged. A changed summary is a correctness regression and routes to
+`../reconify-engine-debug/SKILL.md`.

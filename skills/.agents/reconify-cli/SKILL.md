@@ -1,6 +1,7 @@
 ---
 name: reconify-cli
-description: Deprecated compatibility adapter for Reconify Engine CLI work.
+description: Compatibility alias for reconify-engine-cli.
+disable-model-invocation: true
 ---
 
-Deprecated: read `../reconify-engine-cli/SKILL.md` and follow that workflow.
+Read `../reconify-engine-cli/SKILL.md` and complete every checkpoint in that workflow.

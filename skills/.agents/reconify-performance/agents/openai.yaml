@@ -1,4 +1,4 @@
 interface:
-  display_name: "Reconify Performance"
-  short_description: "Benchmark and reason about Reconify performance."
-  default_prompt: "Run or interpret Reconify performance checks."
+  display_name: "Reconify Performance (compatibility alias)"
+  short_description: "Open the canonical Reconify Engine performance workflow."
+  default_prompt: "Use reconify-engine-performance and complete its canonical workflow."

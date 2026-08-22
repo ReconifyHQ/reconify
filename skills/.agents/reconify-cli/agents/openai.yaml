@@ -1,4 +1,4 @@
 interface:
-  display_name: "Reconify CLI"
-  short_description: "Work with the Reconify command-line interface."
-  default_prompt: "Inspect, document, or test the Reconify CLI."
+  display_name: "Reconify CLI (compatibility alias)"
+  short_description: "Open the canonical Reconify Engine CLI workflow."
+  default_prompt: "Use reconify-engine-cli and complete its canonical workflow."

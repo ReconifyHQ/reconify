@@ -1,6 +1,7 @@
 ---
 name: reconify-debug
-description: Deprecated compatibility adapter for Reconify Engine debugging.
+description: Compatibility alias for reconify-engine-debug.
+disable-model-invocation: true
 ---
 
-Deprecated: read `../reconify-engine-debug/SKILL.md` and follow that workflow.
+Read `../reconify-engine-debug/SKILL.md` and complete every checkpoint in that workflow.

@@ -1,52 +1,57 @@
 ---
 name: reconify-engine-ci
-description: Run Reconify Engine reconciliations in CI — deterministic artifacts, exit-code policy, and failing the build on the differences that matter.
+description: Automate Reconify in CI. Use when producing deterministic artifacts, mapping reconciliation outcomes to job status, or retaining failure evidence.
 ---
 
 # Reconify Engine CI
 
-## Deterministic artifacts
+## 1. Define the contract and policy
+
+Run `reconify capabilities` for the binary installed in CI. Choose whether unmatched rows or all
+exception events should fail the job, and record the corresponding flag and exit codes from that
+contract. This checkpoint is complete when config failures and reconciliation-policy failures have
+separate handling.
+
+## 2. Produce a complete artifact
 
 ```bash
 reconify reconcile --config reconify.yaml --pair PAIR \
-  --format json --deterministic --out result.json
+  --format json --result-mode all --deterministic --out result.json \
+  --fail-if-exceptions
 ```
 
-`--deterministic` sorts output sections so results diff cleanly between runs; it applies to the
-`json` format only. Add `--audit` when you need provenance (file hashes, tool version, config
-snapshot), and `--audit-fixed-timestamp RFC3339` so repeated runs over identical inputs are
-byte-identical — without it, the run timestamp changes every run and every diff is noise.
+Add `--audit` when provenance is required. Supply `--audit-fixed-timestamp RFC3339` when identical
+inputs must produce byte-identical artifacts. Keep the config in version control beside the
+workflow.
 
-Do not use `--agent` for a CI artifact: it suppresses clean matches, so the file you archive is not
-the full result.
+## 3. Preserve the Engine exit code
 
-## Failing the build deliberately
-
-| Flag | Exit | Fails on |
-|---|---|---|
-| _(none)_ | `0` | nothing; unmatched rows are a normal result |
-| `--fail-if-unmatched` | `3` | any unmatched row on either side |
-| `--fail-if-exceptions` | `4` | any `amount_diff`, `timing_diff`, or unmatched row |
-
-`--fail-if-exceptions` is a superset of `--fail-if-unmatched` and its code `4` takes precedence
-when both are set. Exit `2` always means a config error — a red build from `2` is a broken pipeline,
-not a broken ledger, and should be triaged differently.
-
-Branch on the exit code, never on stderr text:
+GitHub Actions runs shell steps with fail-fast behavior, so capture the status before applying the
+job policy:
 
 ```bash
-reconify reconcile --config reconify.yaml --pair PAIR --format json --deterministic \
-  --out result.json --fail-if-exceptions
-case $? in
+set +e
+reconify reconcile --config reconify.yaml --pair PAIR \
+  --format json --result-mode all --deterministic --out result.json \
+  --fail-if-exceptions
+status=$?
+set -e
+
+case "$status" in
   0) echo "clean" ;;
-  2) echo "config error"; exit 1 ;;
-  3|4) echo "differences found"; exit 1 ;;
+  2) echo "configuration failure" >&2; exit 1 ;;
+  3|4) echo "reconciliation differences" >&2; exit 1 ;;
+  *) echo "unexpected Engine failure: $status" >&2; exit "$status" ;;
 esac
 ```
 
-## Practicalities
+Verify these codes against `capabilities` when adopting a different Engine protocol version.
 
-Upload `result.json` as a build artifact **even when the job fails** — the failing run is the one
-whose result someone needs to read. For large inputs use `--format ndjson` and an appropriate index
-backend (see `reconify-engine-performance`). Keep the config in version control next to the
-workflow so a result can always be reproduced from a commit.
+## 4. Retain evidence on failure
+
+Upload `result.json` with the CI platform's always-run condition so policy failures retain the
+artifact that explains them. For large inputs, read `../reconify-engine-performance/SKILL.md` and
+choose a streaming artifact plus explicit retention limits.
+
+CI work is complete when the same commit and inputs reproduce the artifact, every opted-in exit code
+has a deliberate job outcome, and failure evidence remains downloadable.

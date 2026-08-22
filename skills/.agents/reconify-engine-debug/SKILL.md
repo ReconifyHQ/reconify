@@ -1,47 +1,53 @@
 ---
 name: reconify-engine-debug
-description: Diagnose a Reconify Engine reconciliation that produced unexpected numbers — read exception events, trace them to a config cause, and fix the mapping rather than the tolerance.
+description: Diagnose unexpected Reconify results. Use when counters, exception events, duplicates, or grouped matches disagree with the expected business scenario.
 ---
 
 # Reconify Engine Debug
 
-Start from the result, not from the config. `reconify explain RESULT.json` gives a deterministic,
-bounded summary; `--format ndjson` on the original run gives one event per line for inspection.
+Trace the first unsupported assumption; preserve the original config and result as evidence.
 
-## Event types
+## 1. Read the result contract and explanation
 
-| Event | Meaning |
+```bash
+reconify schema result
+reconify explain RESULT > explanation.json
+```
+
+For NDJSON, inspect individual events as well as the final summary. This checkpoint is complete when
+the unexpected counter is tied to concrete event rows and source names.
+
+## 2. Trace symptom to cause
+
+| Symptom | First evidence to test |
 |---|---|
-| `match` | Left+right pair reconciled cleanly |
-| `unmatched_left` / `unmatched_right` | A row with no counterpart |
-| `amount_diff` | Reference matched, amount differs beyond `amount_tolerance_minor` |
-| `timing_diff` | Reference and amount matched, date outside `date_window` |
-| `duplicate` | Two rows in the *same* source share a reference |
-| `ambiguous_group` | Several left rows share one reference; needs manual review |
-| `grouped_match` / `grouped_amount_diff` / `grouped_timing_diff` | 1-N results from a `one_to_many` pass |
-| `many_to_many_match` / `many_to_many_amount_diff` / `many_to_many_timing_diff` | N:M results |
-| `source_summary` | Per-counterpart summary in a 1-N run |
-| `summary` | Aggregate counts; always the last event |
+| Everything unmatched | Both `ref_col` mappings contain the same identifier domain; both date layouts parse |
+| Similar `amount_diff` values | A documented fee or FX policy explains the magnitude |
+| Amounts differ by a factor of 100 | Both source multipliers express the same minor unit |
+| One- or two-day `timing_diff` events | A documented settlement delay explains the offset |
+| Duplicate events | The mapped reference is unique, or the config intentionally groups repeats |
+| Ambiguous groups | The chosen group key and pass express the real cardinality |
+| Empty names | Each parser maps the intended name column |
 
-## From symptom to cause
+This checkpoint is complete when one mapping, parser rule, pass, or business policy explains the
+observed rows.
 
-| Symptom | Look at |
-|---|---|
-| Everything unmatched | `ref_col` maps to different identifiers on each side, or `date_layout` is wrong and no date parsed |
-| Many `amount_diff` at a similar magnitude | A real fee or FX spread — set `amount_tolerance_minor` from the stated threshold, in minor units |
-| Many `amount_diff` off by a factor of 100 | `multiplier` is wrong on one side |
-| Many `timing_diff` of one or two days | Settlement delay — widen `date_window`, not the amount tolerance |
-| `duplicate` events | `ref_col` is not unique in that source; consider `group_col` or a `one_to_many` pass |
-| `ambiguous_group` | Reference repeats on the left; the data cannot be matched 1:1 as configured |
-| Counterpart names empty | `name_col` is not set on the parser |
+## 3. Prove the correction
 
-Reproduce with the smallest input that still shows the behaviour, then re-run and compare the
-summary. Because the Engine is deterministic, an unchanged config over unchanged inputs cannot
-produce a different result — if the numbers moved, something in the config or the files moved.
+Reduce the inputs to the smallest fixture that retains the symptom. Correct the mapping or parser
+first; change a tolerance only after identifying the exact rows it would newly absorb and confirming
+they are the same transaction.
 
-## The rule that matters
+Then rerun:
 
-A lower match rate is not a problem to be tuned away. Before widening any tolerance, identify the
-specific rows it would newly absorb and confirm they are the same transaction. Widening
-`amount_tolerance_minor`, `date_window`, or `name_match_threshold` to raise a match rate converts
-real financial differences into silence.
+```bash
+reconify config validate --config reconify.yaml
+reconify config check-source --config reconify.yaml --source SOURCE --file INPUT
+reconify reconcile --config reconify.yaml --pair PAIR --format json \
+  --result-mode all --deterministic --out corrected-result.json
+reconify explain corrected-result.json > corrected-explanation.json
+```
+
+Debugging is complete when the reduced fixture proves the correction, the full run preserves all
+expected counters, and the report names the causal config change. A lower match rate is acceptable;
+silencing an unverified financial difference is not.
