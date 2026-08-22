@@ -5,7 +5,7 @@ description: Normative spec for the versioned, agent-facing Reconify Engine inte
 
 This page is the normative specification for **Reconify Engine Agent Protocol v1**. It defines the
 commands, schema identifiers, error shape, exit codes, inference gates, and flag-precedence rules that
-external agents (Claude Code, Codex, Gemini CLI, OpenCode, MCP clients, or any scripted caller) can rely
+external agents (Claude Code, Codex, Gemini CLI, OpenCode, or any scripted caller) can rely
 on across releases.
 
 The keywords **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used as defined in RFC 2119.
@@ -20,18 +20,18 @@ already implemented.
 
 - The OSS executable name **MUST** remain `reconify`. This protocol does not rename the binary, the Go
   module, the repository, `reconify.yaml`, or the `RECONIFY_CONFIG` environment variable.
-- Agent-facing schemas, skills, capabilities, and any MCP surface **MUST** identify the interface as
+- Agent-facing schemas, skills, and capabilities **MUST** identify the interface as
   **Reconify Engine**.
 - Versioned schema identifiers **MUST** use the `reconify.engine.*` namespace (see
   [Schema identifiers](#schema-identifiers)).
-- A future hosted/platform CLI or MCP surface may use the name `reconify-cloud`. It is out of scope for
+- A future hosted/platform CLI may use the name `reconify-cloud`. It is out of scope for
   this repository and this protocol.
 - This protocol MUST NOT reorganize the documentation hierarchy in `docs/content/docs/`.
 
 ## Scope: Engine vs. Cloud
 
 Reconify Engine is the deterministic, local, file-oriented interface specified here: the `reconify`
-binary, its output formats, and (later) a local `reconify-engine` MCP server. It establishes
+binary and its output formats. It establishes
 deterministic financial facts from local files and requires no account, authentication, or network
 access.
 
@@ -306,24 +306,6 @@ Two roadmap issues extend this protocol without changing its schemas:
   expected behavior.
 - Canonical skills MUST be published under the `reconify-engine-*` namespace (AP-11); existing
   `reconify-*` skill names remain as deprecated thin adapters and MUST continue to work.
-
-## MCP alignment
-
-A future local `reconify-engine` MCP server (AP-13) is specified separately, but MUST reuse the Engine
-schema identifiers and diagnostic model defined on this page rather than defining parallel ones. The MCP
-contract issue is documentation- and schema-only; it does not change anything normative here.
-
-MCP tools MUST preserve the semantic categories represented by CLI exit codes, but MUST express them
-using MCP-appropriate error/result semantics rather than exposing process exit codes as a parallel
-transport mechanism — MCP does not have Unix process exit codes, and forcing that concept into tool
-responses would misrepresent outcomes. In particular:
-
-| CLI exit code | MCP equivalent |
-|---|---|
-| `0` | Successful tool result. |
-| `1` | Internal error (MCP error response). |
-| `2` | Invalid params / structured `reconify.engine.diagnostic.v1` (MCP error response). |
-| `3`, `4` | **Not an error.** A successful reconciliation result whose payload reports unmatched rows or exception events; these exit codes are CLI-only, policy-driven behavior (`--fail-if-unmatched` / `--fail-if-exceptions`) for scripting, not execution failures. An MCP client MUST see a completed `reconcile` or `reconcile_auto` tool call as successful even when the result contains unmatched rows or exceptions.
 
 ## Compatibility rules
 

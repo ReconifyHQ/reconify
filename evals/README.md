@@ -1,17 +1,17 @@
 # Reconify Engine agent evaluation corpus
 
 Graded fixtures that measure how well an external coding agent (Claude Code, Codex,
-Gemini CLI, OpenCode, an MCP client) can configure the Reconify Engine from a
+Gemini CLI, or OpenCode) can configure the Reconify Engine from a
 natural-language description of a reconciliation problem.
 
 This directory is fixture data plus a machine-readable contract. The cross-agent runner
-that consumes it is AP-10 (#110); the contract it consumes is
-`reconify.engine.eval-scenario.v1`, published in `schemas/` and printable with
-`reconify schema eval-scenario`.
+that consumes it is AP-10 (#110); the active contract is
+`reconify.engine.eval-scenario.v2`, published in `schemas/` and printable with
+`reconify schema eval-scenario-v2`. The original v1 contract remains published
+for third-party fixture compatibility.
 
-The corpus only exercises commands that exist today — `capabilities`, `config validate`,
-`config check-source`, and `reconcile`. It deliberately does not depend on `inspect`,
-`config infer`, or `explain`.
+The v2 corpus exercises the non-interactive workflow: `capabilities`, `config validate`,
+`reconcile`, and `explain`. It does not require `inspect` or `config infer`.
 
 ## Layout
 
@@ -23,6 +23,7 @@ evals/
     inputs/left.csv right.csv           # what the agent is given
     reference/reconify.yaml             # a config known to behave correctly
     expected/result.json                # the reconciliation outcome to reproduce
+    expected/explanation.json           # deterministic explanation answer key
     counter_examples/                   # configs that must NOT reproduce it
       tolerance-too-wide.yaml
 ```
@@ -41,19 +42,20 @@ Diffing an agent's YAML against `reference/reconify.yaml` produces false negativ
 the agent's config and compare the *result*. `reference/reconify.yaml` is a worked answer
 for human reviewers, not the grading key.
 
-Four ordered gates per scenario, each strictly harder than the last:
+The evaluator grades five observable workflow dimensions per trial:
 
-| Gate | Check | What it catches |
+| Dimension | Check | What it catches |
 |---|---|---|
-| `valid` | `config validate` exits 0 | missing required fields such as `multiplier` |
-| `runs` | `reconcile` exits 0 | file patterns that resolve to nothing |
-| `summary_match` | every counter in `assertions` equals the run's summary | the wrong matching strategy |
-| `exact_match` | the full result equals `expected/result.json` | right counts, wrong rows |
+| discovery | agent invokes `reconify capabilities` | unsupported assumptions about the installed Engine |
+| configuration | agent validates a root `reconify.yaml` | missing required fields such as `multiplier` |
+| execution | agent reconciles to `agent-result.json` | file patterns that resolve to nothing |
+| classification | every counter in `assertions` equals the verified run's summary | the wrong matching strategy |
+| explanation | agent writes the expected deterministic explanation | unexplained or incorrect result artifacts |
 
 **The headline metric is `summary_match` pass rate across the corpus.** Report
 `exact_match` separately rather than gating on it — it is stricter than "the agent
-understood the problem." `valid` and `runs` are diagnostic: they explain *why* an agent
-scored zero instead of only that it did.
+understood the problem." The evaluator reports both `pass@1` and `pass^k` for
+classification and exact-result correctness.
 
 Results are byte-stable. `reconcile --format json --deterministic` emits no `run_id` or
 timestamp (those appear only under `--audit`), so `exact_match` is a plain file
@@ -101,7 +103,9 @@ A third property is a review rule rather than a test, because it can't be automa
    ```
    reconcile -c reconify.yaml --pair <pair> --format json --deterministic
    ```
-   and save it as `expected/result.json`.
+   and save it as `expected/result.json`. Run
+   `go run ./cmd/generate-eval-explanations` to refresh every deterministic
+   `expected/explanation.json` fixture.
 4. Add at least one counter-example: a config a competent agent might plausibly write
    that is nonetheless wrong. If you can't make one fail, the fixture is too permissive —
    add a row that distinguishes the correct answer.

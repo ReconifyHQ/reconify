@@ -23,12 +23,13 @@ npx @reconifyhq/skills
 
 This writes skill files into `.agents/skills/`, `.claude/skills/`, and `.codex/skills/` in the current directory. Skills already present are overwritten with the latest version.
 
-- [CLI skill](/.agents/skills/reconify-cli/SKILL.md): add/change CLI commands, flags, output formats
-- [Config skill](/.agents/skills/reconify-config/SKILL.md): create or validate `reconify.yaml`
-- [Performance skill](/.agents/skills/reconify-performance/SKILL.md): benchmarks, streaming, index backends
-- [Debug skill](/.agents/skills/reconify-debug/SKILL.md): interpret output, diagnose mismatches, read NDJSON events
-- [Bootstrap skill](/.agents/skills/reconify-bootstrap/SKILL.md): end-to-end new project setup from scratch
-- [CI skill](/.agents/skills/reconify-ci/SKILL.md): GitHub Actions, `--fail-if-unmatched`, deterministic diff
+- [Reconcile skill](/.agents/skills/reconify-engine-reconcile/SKILL.md): full Engine workflow
+- [CLI skill](/.agents/skills/reconify-engine-cli/SKILL.md): commands, flags, output formats
+- [Config skill](/.agents/skills/reconify-engine-config/SKILL.md): create or validate `reconify.yaml`
+- [Performance skill](/.agents/skills/reconify-engine-performance/SKILL.md): benchmarks and indexes
+- [Debug skill](/.agents/skills/reconify-engine-debug/SKILL.md): interpret results and exceptions
+- [Bootstrap skill](/.agents/skills/reconify-engine-bootstrap/SKILL.md): new project setup
+- [CI skill](/.agents/skills/reconify-engine-ci/SKILL.md): deterministic CI workflows
 
 ## Commands
 

@@ -20,13 +20,13 @@ const evalsDir = "../../evals"
 // data that nothing exercises, and a wrong reference config fails silently by
 // grading every agent against the wrong answer.
 
-func loadScenarios(t *testing.T) map[string]schemas.EvalScenario {
+func loadScenarios(t *testing.T) map[string]schemas.EvalScenarioV2 {
 	t.Helper()
 	entries, err := os.ReadDir(evalsDir)
 	if err != nil {
 		t.Fatalf("read evals dir: %v", err)
 	}
-	scenarios := make(map[string]schemas.EvalScenario)
+	scenarios := make(map[string]schemas.EvalScenarioV2)
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -36,7 +36,7 @@ func loadScenarios(t *testing.T) map[string]schemas.EvalScenario {
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
 		}
-		var scenario schemas.EvalScenario
+		var scenario schemas.EvalScenarioV2
 		if err := json.Unmarshal(data, &scenario); err != nil {
 			t.Fatalf("unmarshal %s: %v", path, err)
 		}
@@ -133,8 +133,8 @@ func assertionsOf(t *testing.T, result []byte) schemas.EvalAssertions {
 func TestEvalReferenceConfigsProduceExpectedResults(t *testing.T) {
 	for name, scenario := range loadScenarios(t) {
 		t.Run(name, func(t *testing.T) {
-			if scenario.Schema != schemas.EvalScenarioSchemaV1 {
-				t.Fatalf("schema = %q, want %q", scenario.Schema, schemas.EvalScenarioSchemaV1)
+			if scenario.Schema != schemas.EvalScenarioSchemaV2 {
+				t.Fatalf("schema = %q, want %q", scenario.Schema, schemas.EvalScenarioSchemaV2)
 			}
 			if scenario.ID != name {
 				t.Fatalf("id = %q, want directory name %q", scenario.ID, name)
@@ -156,6 +156,21 @@ func TestEvalReferenceConfigsProduceExpectedResults(t *testing.T) {
 			}
 			if got := assertionsOf(t, result); got != scenario.Assertions {
 				t.Errorf("summary assertions drifted\n got: %+v\nwant: %+v", got, scenario.Assertions)
+			}
+			explainCmd := newRootCmd("test", "test")
+			var explanation bytes.Buffer
+			explainCmd.SetOut(&explanation)
+			explainCmd.SetErr(io.Discard)
+			explainCmd.SetArgs([]string{"explain", filepath.Join(workDir, "result.json")})
+			if err := explainCmd.Execute(); err != nil {
+				t.Fatalf("explain reference result: %v", err)
+			}
+			expectedExplanation, err := os.ReadFile(filepath.Join(scenarioDir, scenario.ExpectedExplanation)) // #nosec G304 -- checked-in corpus fixture.
+			if err != nil {
+				t.Fatalf("read %s: %v", scenario.ExpectedExplanation, err)
+			}
+			if !bytes.Equal(bytes.TrimSpace(explanation.Bytes()), bytes.TrimSpace(expectedExplanation)) {
+				t.Errorf("reference config no longer reproduces %s", scenario.ExpectedExplanation)
 			}
 		})
 	}

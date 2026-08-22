@@ -1,5 +1,5 @@
 {
-  "schema": "reconify.engine.eval-scenario.v1",
+  "schema": "reconify.engine.eval-scenario.v2",
   "id": "003-settlement-fee",
   "prompt": "Our processor settles each sale net of its fee, so the amount that lands in the bank (`right.csv`) is slightly smaller than the sale we recorded (`left.csv`). The fee is never more than 2.00. One of these pairs differs by considerably more than a fee and should be reported rather than absorbed. Columns are date, amount, currency, reference, description; dates look like 2024-01-31. Write a `reconify.yaml` that reconciles the files.",
   "inputs": [
@@ -8,6 +8,7 @@
   ],
   "reference_config": "reference/reconify.yaml",
   "expected_result": "expected/result.json",
+  "expected_explanation": "expected/explanation.json",
   "pair": "left_vs_right",
   "assertions": {
     "matched": 1,

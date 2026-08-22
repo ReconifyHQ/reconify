@@ -19,7 +19,23 @@ func newSchemaCmd() *cobra.Command {
 	cmd.AddCommand(newConfigProposalSchemaCmd())
 	cmd.AddCommand(newExplanationSchemaCmd())
 	cmd.AddCommand(newEvalScenarioSchemaCmd())
+	cmd.AddCommand(newEvalScenarioV2SchemaCmd())
 	return cmd
+}
+
+func newEvalScenarioV2SchemaCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "eval-scenario-v2",
+		Short: "Print the Engine full-workflow evaluation scenario schema",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = args
+			if _, err := cmd.OutOrStdout().Write(schemas.EvalScenarioV2Schema()); err != nil {
+				return fmt.Errorf("write eval scenario v2 schema: %w", err)
+			}
+			return nil
+		},
+	}
 }
 
 func newEvalScenarioSchemaCmd() *cobra.Command {

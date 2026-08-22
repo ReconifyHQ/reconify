@@ -12,10 +12,10 @@ if (TARGET === PKG_ROOT) {
   process.exit(0);
 }
 
-const DIRS = [
-  '.agents/skills',
-  '.claude/skills',
-  '.codex/skills',
+const SKILL_DIRS = [
+  { source: 'skills/.agents', target: '.agents/skills' },
+  { source: 'skills/.claude', target: '.claude/skills' },
+  { source: 'skills/.codex', target: '.codex/skills' },
 ];
 
 function copyDir(src, dst) {
@@ -35,10 +35,10 @@ function copyDir(src, dst) {
 console.log('Installing Reconify agent skills...\n');
 
 let installed = 0;
-for (const rel of DIRS) {
-  const src = path.join(PKG_ROOT, rel);
+for (const dir of SKILL_DIRS) {
+  const src = path.join(PKG_ROOT, dir.source);
   if (!fs.existsSync(src)) continue;
-  const dst = path.join(TARGET, rel);
+  const dst = path.join(TARGET, dir.target);
   copyDir(src, dst);
   installed++;
 }
@@ -48,5 +48,5 @@ if (installed === 0) {
   process.exit(1);
 }
 
-console.log(`\nDone. Skills installed into ${DIRS.join(', ')}.`);
+console.log(`\nDone. Skills installed into ${SKILL_DIRS.map((dir) => dir.target).join(', ')}.`);
 console.log('Run `go run ./cmd/reconify config schema` to verify the CLI is working.');

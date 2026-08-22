@@ -1,0 +1,112 @@
+{
+  "schema": "reconify.engine.explanation.v1",
+  "summary": {
+    "currency": "USD",
+    "total_left": 2,
+    "total_right": 2,
+    "matched": 1,
+    "unmatched_left": 1,
+    "unmatched_right": 1,
+    "amount_diff_count": 0,
+    "timing_diff_count": 0,
+    "duplicate_count": 0,
+    "match_rate_pct": 50,
+    "reconciled_rate_pct": 50,
+    "matched_amount_left": 15000,
+    "matched_amount_right": 15000,
+    "unmatched_amount_left": 7500,
+    "unmatched_amount_right": 7500,
+    "amount_diff_total": 0,
+    "total_discrepancy": 15000
+  },
+  "findings": [
+    {
+      "category": "matched",
+      "count": 1
+    },
+    {
+      "category": "unmatched_left",
+      "count": 1
+    },
+    {
+      "category": "unmatched_right",
+      "count": 1
+    },
+    {
+      "category": "amount_diff",
+      "count": 0
+    },
+    {
+      "category": "timing_diff",
+      "count": 0
+    },
+    {
+      "category": "duplicates",
+      "count": 0
+    },
+    {
+      "category": "grouped_matched",
+      "count": 0
+    },
+    {
+      "category": "grouped_amount_diff",
+      "count": 0
+    },
+    {
+      "category": "grouped_timing_diff",
+      "count": 0
+    },
+    {
+      "category": "many_to_many_matched",
+      "count": 0
+    },
+    {
+      "category": "many_to_many_amount_diff",
+      "count": 0
+    },
+    {
+      "category": "many_to_many_timing_diff",
+      "count": 0
+    },
+    {
+      "category": "ambiguous_group",
+      "count": 0
+    }
+  ],
+  "top_exceptions": [
+    {
+      "type": "unmatched_left",
+      "data": {
+        "amount": 7500,
+        "currency": "USD",
+        "date": "2024-01-02T00:00:00Z",
+        "group_key": "PAY-002",
+        "id": "left-2",
+        "name": "Second payment",
+        "raw": {
+          "amount": "75.00",
+          "currency": "USD",
+          "date": "2024-01-02",
+          "description": "Second payment",
+          "reference": "PAY-002"
+        },
+        "reference": "PAY-002",
+        "source": "left"
+      }
+    },
+    {
+      "type": "unmatched_right",
+      "data": {
+        "amount": 7500,
+        "currency": "USD",
+        "date": "2024-01-02T00:00:00Z",
+        "id": "right-2",
+        "name": "Second payment",
+        "reference": "ORPHAN-9",
+        "source": "right"
+      }
+    }
+  ],
+  "exceptions_total": 2,
+  "truncated": false
+}
