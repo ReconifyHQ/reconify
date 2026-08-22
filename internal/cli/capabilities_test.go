@@ -38,8 +38,8 @@ func TestCapabilitiesCommandDescribesEngineSurface(t *testing.T) {
 	if got.Formats["reconcile"].Default != "json" {
 		t.Fatalf("reconcile default format = %q, want json", got.Formats["reconcile"].Default)
 	}
-	if len(got.Matching.Passes) != 4 {
-		t.Fatalf("matching passes = %d, want 4", len(got.Matching.Passes))
+	if len(got.Matching.Passes) != 5 {
+		t.Fatalf("matching passes = %d, want 5", len(got.Matching.Passes))
 	}
 	if got.Schemas["diagnostic"] != schemas.DiagnosticSchemaV1 {
 		t.Fatalf("diagnostic schema ID = %q, want %q", got.Schemas["diagnostic"], schemas.DiagnosticSchemaV1)

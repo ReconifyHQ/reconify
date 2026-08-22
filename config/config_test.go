@@ -712,3 +712,32 @@ pairs:
 		t.Errorf("ResultMode = %q, want %q", got, ResultModeExceptionsOnly)
 	}
 }
+
+func TestResolvedCandidateFilters(t *testing.T) {
+	t.Run("unset defaults all true", func(t *testing.T) {
+		p := PassConfig{Type: PassTypeSubsetSum}
+		got := p.ResolvedCandidateFilters()
+		want := SubsetSumFilters{Currency: true, DateWindow: true, SameSign: true}
+		if got != want {
+			t.Errorf("ResolvedCandidateFilters() = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("explicit all-false is honored, not treated as unset", func(t *testing.T) {
+		explicit := SubsetSumFilters{Currency: false, DateWindow: false, SameSign: false}
+		p := PassConfig{Type: PassTypeSubsetSum, CandidateFilters: &explicit}
+		got := p.ResolvedCandidateFilters()
+		if got != explicit {
+			t.Errorf("ResolvedCandidateFilters() = %+v, want %+v (explicit all-false should not fall back to defaults)", got, explicit)
+		}
+	})
+
+	t.Run("explicit partial override is honored", func(t *testing.T) {
+		explicit := SubsetSumFilters{Currency: true, DateWindow: false, SameSign: true}
+		p := PassConfig{Type: PassTypeSubsetSum, CandidateFilters: &explicit}
+		got := p.ResolvedCandidateFilters()
+		if got != explicit {
+			t.Errorf("ResolvedCandidateFilters() = %+v, want %+v", got, explicit)
+		}
+	})
+}

@@ -284,7 +284,7 @@ Agents can call this once to self-bootstrap context without reading the source c
 								"type": "array[pass]", "required": false,
 								"description": "Explicit reconciliation pass pipeline. Inferred from name_mode when absent.",
 								"item_schema": map[string]interface{}{
-									"type": map[string]interface{}{"type": "string", "enum": []string{"reference_one_to_one", "name_tokens_one_to_one", "one_to_many", "many_to_many"}, "required": true},
+									"type": map[string]interface{}{"type": "string", "enum": []string{"reference_one_to_one", "name_tokens_one_to_one", "one_to_many", "many_to_many", "subset_sum"}, "required": true},
 								},
 							},
 						},

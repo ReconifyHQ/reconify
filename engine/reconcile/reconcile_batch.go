@@ -87,6 +87,10 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 				unmatchedLeft, unmatchedRight = matching.MatchByReferenceManyToMany(
 					result, unmatchedLeft, unmatchedRight,
 					pair.AmountToleranceMinor, dateWindowDays, pass.ResolvedGroupBy())
+			case config.PassTypeSubsetSum:
+				unmatchedLeft, unmatchedRight = matching.MatchBySubsetSum(
+					result, unmatchedLeft, unmatchedRight,
+					pair.AmountToleranceMinor, dateWindowDays, pass)
 			default:
 				return nil, fmt.Errorf("unsupported pass type %q", pass.Type)
 			}
@@ -198,7 +202,7 @@ func buildSummary(totalLeft, totalRight int, result *Result, currency string) (S
 	if total > 0 {
 		matchRate = math.Round(float64(len(result.Matched))/float64(total)*10000) / 100
 	}
-	reconciledCount, err := CheckedAddInt("reconciled count", len(result.Matched), len(result.AmountDiff), len(result.TimingDiff), len(result.GroupedMatched), len(result.GroupedAmountDiff), len(result.GroupedTimingDiff), len(result.ManyToManyMatched), len(result.ManyToManyAmountDiff), len(result.ManyToManyTimingDiff))
+	reconciledCount, err := CheckedAddInt("reconciled count", len(result.Matched), len(result.AmountDiff), len(result.TimingDiff), len(result.GroupedMatched), len(result.GroupedAmountDiff), len(result.GroupedTimingDiff), len(result.ManyToManyMatched), len(result.ManyToManyAmountDiff), len(result.ManyToManyTimingDiff), len(result.SubsetSumMatched))
 	if err != nil {
 		return Summary{}, err
 	}
@@ -317,6 +321,40 @@ func buildSummary(totalLeft, totalRight int, result *Result, currency string) (S
 		}
 	}
 
+	// Subset-sum matched pairs contribute to matched monetary totals.
+	for _, sm := range result.SubsetSumMatched {
+		matchedAmtLeft, err = CheckedAddInt64("matched left amount", matchedAmtLeft, sm.Left.Amount)
+		if err != nil {
+			return Summary{}, err
+		}
+		for _, r := range sm.Rights {
+			matchedAmtRight, err = CheckedAddInt64("matched right amount", matchedAmtRight, r.Amount)
+			if err != nil {
+				return Summary{}, err
+			}
+		}
+	}
+
+	// Subset-sum ambiguous pairs consume their involved right rows (deduplicated
+	// across alternatives, matching MatchBySubsetSum's consumption logic) without
+	// matching them. Track those amounts as ambiguous so they aren't silently
+	// dropped from both row output and TotalDiscrepancy.
+	for _, sa := range result.SubsetSumAmbiguous {
+		seen := make(map[string]bool)
+		for _, alt := range sa.Alternatives {
+			for _, r := range alt {
+				if seen[r.ID] {
+					continue
+				}
+				seen[r.ID] = true
+				ambiguousAmtRight, err = CheckedAddInt64("ambiguous right amount", ambiguousAmtRight, r.Amount)
+				if err != nil {
+					return Summary{}, err
+				}
+			}
+		}
+	}
+
 	totalDiscrepancy, err := CheckedAddInt64("total discrepancy", unmatchedAmtLeft, unmatchedAmtRight, amountDiffTotal, ambiguousAmtLeft, ambiguousAmtRight)
 	if err != nil {
 		return Summary{}, err
@@ -340,6 +378,9 @@ func buildSummary(totalLeft, totalRight int, result *Result, currency string) (S
 		ManyToManyAmountDiffCount: len(result.ManyToManyAmountDiff),
 		ManyToManyTimingDiffCount: len(result.ManyToManyTimingDiff),
 		AmbiguousGroupCount:       len(result.AmbiguousGroups),
+		SubsetSumMatchedCount:     len(result.SubsetSumMatched),
+		SubsetSumAmbiguousCount:   len(result.SubsetSumAmbiguous),
+		SubsetSumSkippedCount:     len(result.SubsetSumSkipped),
 		MatchedAmountLeft:         matchedAmtLeft,
 		MatchedAmountRight:        matchedAmtRight,
 		UnmatchedAmountLeft:       unmatchedAmtLeft,

@@ -24,6 +24,9 @@ type ManyToManyMatchedPair = domain.ManyToManyMatchedPair
 type ManyToManyAmountDiffPair = domain.ManyToManyAmountDiffPair
 type ManyToManyTimingDiffPair = domain.ManyToManyTimingDiffPair
 type AmbiguousGroupPair = domain.AmbiguousGroupPair
+type SubsetSumMatchedPair = domain.SubsetSumMatchedPair
+type SubsetSumAmbiguousPair = domain.SubsetSumAmbiguousPair
+type SubsetSumSkippedPair = domain.SubsetSumSkippedPair
 type DuplicateGroup = domain.DuplicateGroup
 type Summary = domain.Summary
 type SourceSummary = domain.SourceSummary
@@ -53,6 +56,7 @@ type IndexSelectionSetter = output.IndexSelectionSetter
 type SourceBreakdownWriter = output.SourceBreakdownWriter
 type GroupedEventWriter = output.GroupedEventWriter
 type ManyToManyEventWriter = output.ManyToManyEventWriter
+type SubsetSumEventWriter = output.SubsetSumEventWriter
 
 // Telemetry aliases.
 type TelemetryEvent = telemetry.TelemetryEvent

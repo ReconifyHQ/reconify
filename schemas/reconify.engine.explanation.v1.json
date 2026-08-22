@@ -74,6 +74,15 @@
             "ambiguous_group_count": {
               "type": "integer"
             },
+            "subset_sum_matched_count": {
+              "type": "integer"
+            },
+            "subset_sum_ambiguous_count": {
+              "type": "integer"
+            },
+            "subset_sum_skipped_count": {
+              "type": "integer"
+            },
             "matched_amount_left": {
               "type": "integer"
             },
@@ -182,6 +191,15 @@
                 "type": "integer"
               },
               "ambiguous_group_count": {
+                "type": "integer"
+              },
+              "subset_sum_matched_count": {
+                "type": "integer"
+              },
+              "subset_sum_ambiguous_count": {
+                "type": "integer"
+              },
+              "subset_sum_skipped_count": {
                 "type": "integer"
               },
               "matched_amount_left": {

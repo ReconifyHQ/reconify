@@ -18,6 +18,7 @@ type IndexSelectionSetter = output.IndexSelectionSetter
 type SourceBreakdownWriter = output.SourceBreakdownWriter
 type GroupedEventWriter = output.GroupedEventWriter
 type ManyToManyEventWriter = output.ManyToManyEventWriter
+type SubsetSumEventWriter = output.SubsetSumEventWriter
 type ReconcileOptions = matching.ReconcileOptions
 type TelemetryEvent = telemetry.TelemetryEvent
 type TelemetryOptions = telemetry.TelemetryOptions

@@ -73,6 +73,15 @@ type ManyToManyEventWriter interface {
 	WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPair) error
 }
 
+// SubsetSumEventWriter is an optional interface implemented by writers that can
+// render events produced by the subset_sum pass. Writers that do not implement
+// this interface (csv, table) skip these events — the CLI warns when this occurs.
+type SubsetSumEventWriter interface {
+	WriteSubsetSumMatch(pair SubsetSumMatchedPair) error
+	WriteSubsetSumAmbiguous(pair SubsetSumAmbiguousPair) error
+	WriteSubsetSumSkipped(pair SubsetSumSkippedPair) error
+}
+
 // JSON section key names for grouped/ambiguous slices (used by jsonStreamWriter)
 // and ndjson event type tags (used by ndjsonWriter).
 // The JSON section keys mirror the Result struct field names (plural);
@@ -90,6 +99,14 @@ const (
 	eventGroupedMatch    = "grouped_match"      // ndjson type tag (singular)
 	eventAmbiguousGroup  = "ambiguous_group"    // ndjson type tag (singular)
 	eventManyToManyMatch = "many_to_many_match" // ndjson type tag (singular)
+
+	keySubsetSumMatched   = "subset_sum_matched"
+	keySubsetSumAmbiguous = "subset_sum_ambiguous"
+	keySubsetSumSkipped   = "subset_sum_skipped"
+
+	eventSubsetSumMatch     = "subset_sum_match"     // ndjson type tag (singular)
+	eventSubsetSumAmbiguous = "subset_sum_ambiguous" // ndjson type tag (singular)
+	eventSubsetSumSkipped   = "subset_sum_skipped"   // ndjson type tag (singular)
 )
 
 // NewResultWriter returns a ResultWriter for the given format name.

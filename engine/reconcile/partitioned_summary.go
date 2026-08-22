@@ -97,6 +97,26 @@ func (w *partitionSummaryWriter) WriteManyToManyTimingDiff(p ManyToManyTimingDif
 	return nil
 }
 
+// SubsetSumEventWriter forwarding.
+func (w *partitionSummaryWriter) WriteSubsetSumMatch(p SubsetSumMatchedPair) error {
+	if sw, ok := w.ResultWriter.(SubsetSumEventWriter); ok {
+		return sw.WriteSubsetSumMatch(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteSubsetSumAmbiguous(p SubsetSumAmbiguousPair) error {
+	if sw, ok := w.ResultWriter.(SubsetSumEventWriter); ok {
+		return sw.WriteSubsetSumAmbiguous(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteSubsetSumSkipped(p SubsetSumSkippedPair) error {
+	if sw, ok := w.ResultWriter.(SubsetSumEventWriter); ok {
+		return sw.WriteSubsetSumSkipped(p)
+	}
+	return nil
+}
+
 // SourceBreakdownWriter forwarding.
 func (w *partitionSummaryWriter) WriteSourceSummary(sourceName string, sum Summary) error {
 	if sbw, ok := w.ResultWriter.(SourceBreakdownWriter); ok {
@@ -140,6 +160,9 @@ func addSummaries(a, b Summary) Summary {
 	a.ManyToManyAmountDiffCount += b.ManyToManyAmountDiffCount
 	a.ManyToManyTimingDiffCount += b.ManyToManyTimingDiffCount
 	a.AmbiguousGroupCount += b.AmbiguousGroupCount
+	a.SubsetSumMatchedCount += b.SubsetSumMatchedCount
+	a.SubsetSumAmbiguousCount += b.SubsetSumAmbiguousCount
+	a.SubsetSumSkippedCount += b.SubsetSumSkippedCount
 	a.MatchedAmountLeft += b.MatchedAmountLeft
 	a.MatchedAmountRight += b.MatchedAmountRight
 	a.UnmatchedAmountLeft += b.UnmatchedAmountLeft
@@ -156,7 +179,8 @@ func addSummaries(a, b Summary) Summary {
 		a.MatchRatePct = math.Round(float64(a.MatchedCount)/float64(denom)*10000) / 100
 		reconciledCount := a.MatchedCount + a.AmountDiffCount + a.TimingDiffCount +
 			a.GroupedMatchedCount + a.GroupedAmountDiffCount + a.GroupedTimingDiffCount +
-			a.ManyToManyMatchedCount + a.ManyToManyAmountDiffCount + a.ManyToManyTimingDiffCount
+			a.ManyToManyMatchedCount + a.ManyToManyAmountDiffCount + a.ManyToManyTimingDiffCount +
+			a.SubsetSumMatchedCount
 		a.ReconciledRatePct = math.Round(float64(reconciledCount)/float64(denom)*10000) / 100
 	}
 	return a

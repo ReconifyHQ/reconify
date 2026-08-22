@@ -100,6 +100,30 @@ type AmbiguousGroupPair struct {
 	Rights    []Transaction `json:"rights"`
 }
 
+// SubsetSumMatchedPair is emitted by the subset_sum pass when exactly one subset of
+// right-side rows sums to the left row's amount (within tolerance and date window).
+// Rights are the specific rows that form the matching subset.
+type SubsetSumMatchedPair struct {
+	Left   Transaction   `json:"left"`
+	Rights []Transaction `json:"rights"`
+}
+
+// SubsetSumAmbiguousPair is emitted by the subset_sum pass when multiple valid subsets
+// satisfy the left row's constraints. Alternatives holds up to max_alternatives subsets;
+// all involved right rows are consumed to prevent further conflicting matches.
+type SubsetSumAmbiguousPair struct {
+	Left         Transaction     `json:"left"`
+	Alternatives [][]Transaction `json:"alternatives"`
+}
+
+// SubsetSumSkippedPair is emitted by the subset_sum pass when the search was not
+// attempted or aborted. Reason is one of "candidate_limit_exceeded" or "timeout".
+// The left row remains unmatched; right-side candidates are not consumed.
+type SubsetSumSkippedPair struct {
+	Left   Transaction `json:"left"`
+	Reason string      `json:"reason"`
+}
+
 // DuplicateGroup is a set of transactions in the same source sharing the same reference.
 type DuplicateGroup struct {
 	Source       string        `json:"source"`
@@ -146,6 +170,10 @@ type Summary struct {
 	// AmbiguousGroupCount is the number of reference groups where >1 left row shared the
 	// same reference, making grouping undetermined. These require manual reconciliation.
 	AmbiguousGroupCount int `json:"ambiguous_group_count,omitempty"`
+	// SubsetSum match counts (subset_sum pass). Omitted when zero.
+	SubsetSumMatchedCount   int `json:"subset_sum_matched_count,omitempty"`
+	SubsetSumAmbiguousCount int `json:"subset_sum_ambiguous_count,omitempty"`
+	SubsetSumSkippedCount   int `json:"subset_sum_skipped_count,omitempty"`
 
 	// Monetary totals (all values in minor units, e.g. cents).
 	// These are always populated regardless of --audit mode.
@@ -198,6 +226,11 @@ type Result struct {
 	// AmbiguousGroups holds reference groups where >1 left row shares a reference,
 	// making grouping undetermined. These rows require manual reconciliation.
 	AmbiguousGroups []AmbiguousGroupPair `json:"ambiguous_groups,omitempty"`
+	// SubsetSum slices are populated by the subset_sum pass. Omitted when empty
+	// so output remains backwards-compatible for runs without subset_sum.
+	SubsetSumMatched   []SubsetSumMatchedPair   `json:"subset_sum_matched,omitempty"`
+	SubsetSumAmbiguous []SubsetSumAmbiguousPair `json:"subset_sum_ambiguous,omitempty"`
+	SubsetSumSkipped   []SubsetSumSkippedPair   `json:"subset_sum_skipped,omitempty"`
 	// Warnings are non-fatal observations about the run (e.g. empty-currency rows
 	// mixed with a non-empty base currency). They never affect matching or totals.
 	Warnings []string `json:"warnings,omitempty"`

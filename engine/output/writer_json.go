@@ -104,6 +104,20 @@ func (j *jsonWriter) WriteManyToManyTimingDiff(pair ManyToManyTimingDiffPair) er
 	return nil
 }
 
+// SubsetSumEventWriter implementation — appends to the result struct fields flushed by Flush().
+func (j *jsonWriter) WriteSubsetSumMatch(pair SubsetSumMatchedPair) error {
+	j.result.SubsetSumMatched = append(j.result.SubsetSumMatched, pair)
+	return nil
+}
+func (j *jsonWriter) WriteSubsetSumAmbiguous(pair SubsetSumAmbiguousPair) error {
+	j.result.SubsetSumAmbiguous = append(j.result.SubsetSumAmbiguous, pair)
+	return nil
+}
+func (j *jsonWriter) WriteSubsetSumSkipped(pair SubsetSumSkippedPair) error {
+	j.result.SubsetSumSkipped = append(j.result.SubsetSumSkipped, pair)
+	return nil
+}
+
 // SetMeta sets pair and source names on the result. Fixes the pre-existing bug
 // where PairName/LeftSource/RightSource were never populated in the JSON output.
 func (j *jsonWriter) SetMeta(pairName, leftSource, rightSource string) {
@@ -172,6 +186,15 @@ func (j *jsonWriter) sortResult() {
 	})
 	sort.Slice(j.result.ManyToManyTimingDiff, func(i, k int) bool {
 		return firstTransactionID(j.result.ManyToManyTimingDiff[i].Lefts) < firstTransactionID(j.result.ManyToManyTimingDiff[k].Lefts)
+	})
+	sort.Slice(j.result.SubsetSumMatched, func(i, k int) bool {
+		return j.result.SubsetSumMatched[i].Left.ID < j.result.SubsetSumMatched[k].Left.ID
+	})
+	sort.Slice(j.result.SubsetSumAmbiguous, func(i, k int) bool {
+		return j.result.SubsetSumAmbiguous[i].Left.ID < j.result.SubsetSumAmbiguous[k].Left.ID
+	})
+	sort.Slice(j.result.SubsetSumSkipped, func(i, k int) bool {
+		return j.result.SubsetSumSkipped[i].Left.ID < j.result.SubsetSumSkipped[k].Left.ID
 	})
 }
 
