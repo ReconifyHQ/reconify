@@ -20,7 +20,7 @@ package and a no-skill control. It retains each trial workspace and report below
 `.context/evals/`:
 
 ```bash
-make eval-release BASELINE_VERSION=0.5.0 \
+make eval-release BASELINE_VERSION=0.6.0 \
   CLAUDE_MODEL=... CODEX_MODEL=... GEMINI_MODEL=... OPENCODE_MODEL=...
 ```
 

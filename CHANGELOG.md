@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-24
+
+### Added
+
+- **`subset_sum` matching pass** — matches one left row against a combinatorially bounded subset of right rows summing within tolerance, for settlement workflows with no reliable shared key. Includes candidate filters, branch-and-bound pruning over mixed-sign amounts, ambiguity detection, and a candidate limit; the pass, its events, and its config keys are published in the capabilities contract, the config schema, and the result and explanation schemas ([#38](https://github.com/ReconifyHQ/reconify/issues/38), [#42](https://github.com/ReconifyHQ/reconify/issues/42)).
+- **Agent skill release gate** — `reconify-eval release` evaluates the working-tree skills package against an explicitly published baseline and a no-skill control over the same corpus, with seeded arm randomization, explicit per-agent model selection, retained trial workspaces, resume, experiment provenance, arm comparisons, and a verdict. Available as `make eval-release BASELINE_VERSION=x.y.z`.
+- **Semantic result grading in the evaluator** — a trial's classification now compares a normalized event multiset against the independently verified answer key, so a config that produces the right summary counters through the wrong matching is graded as a failure. The counter equality check remains as the `assertions_match` diagnostic, and `exact_match` remains reported rather than gating.
+- **Skill routing table** — `reconify-engine-reconcile` now states which situation belongs to which skill, and that it owns the end-to-end sequence and delegates for detail rather than handing off the whole task.
+- **Repair workflow for existing configs** — the reconcile and config skills describe preserving the original `reconify.yaml`, then diagnosing with `config validate`, `config check-source`, and `reconcile` in that order, because each detects a different class of failure. `config check-source` takes an explicit `--file` and therefore cannot detect a stale `file_pattern`; only `reconcile` resolves the pattern.
+- **Ambiguity tiers** — the skills now separate values proven by the files, safe defaults that are recorded as assumptions, and decisions that require the user because plausible readings produce different matching outcomes, such as a repeated reference read as a duplicate versus a one-to-many settlement group.
+
+### Changed
+
+- **Agent artifact convention** — the skills now produce `reconify.yaml`, `result.json`, and `explanation.json`. The previous `agent-result.json` and `agent-explanation.json` names were evaluator-specific and no longer ship to users; the evaluator accepts either name so packages published before this release remain comparable in a release matrix.
+- **Neutral evaluation task prompt** — the evaluator's task wrapper states the business problem and the required artifacts instead of dictating the command sequence it is meant to be measuring.
+- **Agent final report** — the reconcile skill now requires a fixed report: config, result, and explanation paths, the pair reconciled, the summary counters, every assumption tagged with its tier, unresolved warnings, and the commands used to verify.
+
+### Fixed
+
+- `subset_sum` events were dropped in the batch CLI drain path.
+- Streaming ambiguous-match counters could go negative because right rows were decremented once per alternative instead of once per unique row.
+- Zero eligible candidates was reported as `candidate_limit_exceeded`.
+- An empty subset could satisfy a large tolerance and register as a match.
+- The batch summary dropped ambiguity-consumed right-row amounts from `TotalDiscrepancy` instead of tracking them as ambiguous.
+- `candidate_filters` with every field explicitly false was indistinguishable from unset and silently ignored.
+- Branch-and-bound pruning only handled non-negative amounts, so `same_sign: false` could miss valid mixed-sign subsets.
+- The token-buffer pressure warning did not fire for `subset_sum`-only streaming runs.
+- Bounded skills-package extraction in the release gate so a malformed archive cannot exhaust local disk.
+
 ## [0.5.0] - 2026-08-22
 
 ### Added
