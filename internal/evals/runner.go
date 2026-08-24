@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,13 +30,55 @@ type Options struct {
 	Trials                             int
 	Timeout                            time.Duration
 	LookPath                           func(string) (string, error)
+	ArtifactDir                        string
+	MaxParallel                        int
+	ModelArguments                     map[string]string
 }
 
 // Report is the aggregate machine-readable evaluator output.
 type Report struct {
-	Schema  string         `json:"schema"`
-	Agents  []AgentReport  `json:"agents"`
-	Skipped []SkippedAgent `json:"skipped,omitempty"`
+	Schema      string          `json:"schema"`
+	Agents      []AgentReport   `json:"agents"`
+	Skipped     []SkippedAgent  `json:"skipped,omitempty"`
+	Experiment  *Experiment     `json:"experiment,omitempty"`
+	Variants    []VariantReport `json:"variants,omitempty"`
+	Comparisons []Comparison    `json:"comparisons,omitempty"`
+	Verdict     *Verdict        `json:"verdict,omitempty"`
+}
+
+// Experiment and related fields are additive report-v1 provenance for release runs.
+type Experiment struct {
+	Seed            int64    `json:"seed"`
+	PromptVersion   string   `json:"prompt_version"`
+	CorpusDigest    string   `json:"corpus_digest,omitempty"`
+	CandidateDigest string   `json:"candidate_digest,omitempty"`
+	BaselineVersion string   `json:"baseline_version,omitempty"`
+	MaxParallel     int      `json:"max_parallel,omitempty"`
+	ModelArguments  []string `json:"model_arguments,omitempty"`
+	OS              string   `json:"os,omitempty"`
+	Arch            string   `json:"arch,omitempty"`
+}
+
+// VariantReport groups one arm's per-agent results in a release matrix.
+type VariantReport struct {
+	Name   string        `json:"name"`
+	Agents []AgentReport `json:"agents"`
+}
+
+// Comparison records one arm's task-success rate relative to another arm.
+type Comparison struct {
+	Variant  string  `json:"variant"`
+	Against  string  `json:"against"`
+	Passed   int     `json:"passed"`
+	Total    int     `json:"total"`
+	PassRate float64 `json:"pass_rate"`
+	Delta    float64 `json:"delta"`
+}
+
+// Verdict is the release gate's overall outcome for a matrix.
+type Verdict struct {
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // SkippedAgent records an unavailable agent from an `--agent all` run.
@@ -60,27 +103,36 @@ type ScenarioReport struct {
 
 // Metrics reports capability and reliability across a scenario's trials.
 type Metrics struct {
-	PassAt1 bool `json:"pass_at_1"`
-	PassAll bool `json:"pass_all"`
+	PassAt1         bool    `json:"pass_at_1"`
+	PassAll         bool    `json:"pass_all"`
+	Passed          int     `json:"passed"`
+	Total           int     `json:"total"`
+	PassRate        float64 `json:"pass_rate"`
+	PassAny         bool    `json:"pass_any"`
+	ConfidenceLower float64 `json:"confidence_lower"`
+	ConfidenceUpper float64 `json:"confidence_upper"`
 }
 
 // TrialReport records observable workflow evidence for one agent attempt.
 type TrialReport struct {
-	Trial          int      `json:"trial"`
-	Discovery      bool     `json:"discovery"`
-	Configuration  bool     `json:"configuration"`
-	Execution      bool     `json:"execution"`
-	Classification bool     `json:"classification"`
-	Explanation    bool     `json:"explanation"`
-	ExactResult    bool     `json:"exact_result"`
-	Commands       []string `json:"commands"`
-	AgentOutput    string   `json:"agent_output,omitempty"`
-	Error          string   `json:"error,omitempty"`
+	Trial           int      `json:"trial"`
+	Discovery       bool     `json:"discovery"`
+	Configuration   bool     `json:"configuration"`
+	Execution       bool     `json:"execution"`
+	Classification  bool     `json:"classification"`
+	Explanation     bool     `json:"explanation"`
+	ExactResult     bool     `json:"exact_result"`
+	AssertionsMatch bool     `json:"assertions_match"`
+	Commands        []string `json:"commands"`
+	AgentOutput     string   `json:"agent_output,omitempty"`
+	Error           string   `json:"error,omitempty"`
+	ArtifactPath    string   `json:"artifact_path,omitempty"`
 }
 
 type scenario struct {
 	ID, Prompt, ExpectedResult, ExpectedExplanation, Pair, Dir string
 	Inputs                                                     []string
+	InitialFiles                                               []string
 	Assertions                                                 schemas.EvalAssertions
 }
 
@@ -118,10 +170,18 @@ func Run(ctx context.Context, options Options) (Report, error) {
 		for _, item := range scenarios {
 			entry := ScenarioReport{ID: item.ID, Trials: make([]TrialReport, options.Trials)}
 			var group sync.WaitGroup
+			var limit chan struct{}
+			if options.MaxParallel > 0 {
+				limit = make(chan struct{}, options.MaxParallel)
+			}
 			for trial := 1; trial <= options.Trials; trial++ {
 				group.Add(1)
 				go func(index int) {
 					defer group.Done()
+					if limit != nil {
+						limit <- struct{}{}
+						defer func() { <-limit }()
+					}
 					trialCtx, cancel := context.WithTimeout(ctx, options.Timeout)
 					entry.Trials[index-1] = runTrial(trialCtx, options, agent, item, index)
 					cancel()
@@ -138,16 +198,40 @@ func Run(ctx context.Context, options Options) (Report, error) {
 }
 
 func metrics(trials []TrialReport, passed func(TrialReport) bool) Metrics {
-	result := Metrics{PassAll: len(trials) > 0}
+	result := Metrics{PassAll: len(trials) > 0, Total: len(trials)}
 	if len(trials) > 0 {
 		result.PassAt1 = passed(trials[0])
 	}
 	for _, trial := range trials {
-		if !passed(trial) {
+		if passed(trial) {
+			result.Passed++
+		} else {
 			result.PassAll = false
 		}
 	}
+	result.PassRate = rate(result.Passed, result.Total)
+	result.PassAny = result.Passed > 0
+	result.ConfidenceLower, result.ConfidenceUpper = wilson(result.Passed, result.Total)
 	return result
+}
+
+func rate(passed, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(passed) / float64(total)
+}
+
+func wilson(passed, total int) (float64, float64) {
+	if total == 0 {
+		return 0, 0
+	}
+	p := float64(passed) / float64(total)
+	z := 1.959963984540054
+	denom := 1 + z*z/float64(total)
+	centre := (p + z*z/(2*float64(total))) / denom
+	half := z * math.Sqrt((p*(1-p)+z*z/(4*float64(total)))/float64(total)) / denom
+	return math.Max(0, centre-half), math.Min(1, centre+half)
 }
 
 func resolveAgents(values []string, lookPath func(string) (string, error)) ([]Agent, []SkippedAgent, error) {
@@ -241,7 +325,7 @@ func loadScenarios(corpusDir string, only []string) ([]scenario, error) {
 		if err := json.Unmarshal(data, &document); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
 		}
-		found = append(found, scenario{ID: document.ID, Prompt: document.Prompt, Inputs: document.Inputs, ExpectedResult: document.ExpectedResult, ExpectedExplanation: document.ExpectedExplanation, Pair: document.Pair, Assertions: document.Assertions, Dir: filepath.Join(corpusDir, entry.Name())})
+		found = append(found, scenario{ID: document.ID, Prompt: document.Prompt, Inputs: document.Inputs, InitialFiles: document.InitialFiles, ExpectedResult: document.ExpectedResult, ExpectedExplanation: document.ExpectedExplanation, Pair: document.Pair, Assertions: document.Assertions, Dir: filepath.Join(corpusDir, entry.Name())})
 	}
 	if len(found) == 0 {
 		return nil, errors.New("no requested scenarios found")
@@ -257,8 +341,21 @@ func runTrial(ctx context.Context, options Options, agent Agent, item scenario, 
 		report.Error = err.Error()
 		return report
 	}
-	defer cleanup()
-	output, agentErr := runAgent(ctx, agent, workspace, taskPrompt(item), options.ReconifyPath)
+	defer func() {
+		if options.ArtifactDir == "" {
+			cleanup()
+			return
+		}
+		if err := os.MkdirAll(options.ArtifactDir, 0o750); err == nil {
+			destination := filepath.Join(options.ArtifactDir, fmt.Sprintf("%s-%s-%d", agent, item.ID, trial))
+			if os.Rename(workspace, destination) == nil {
+				report.ArtifactPath = destination
+				return
+			}
+		}
+		cleanup()
+	}()
+	output, agentErr := runAgent(ctx, agent, workspace, taskPrompt(item), options.ReconifyPath, options.ModelArguments[string(agent)])
 	report.AgentOutput = boundAgentOutput(output)
 	if agentErr != nil {
 		report.Error = agentErr.Error()
@@ -284,15 +381,22 @@ func runTrial(ctx context.Context, options Options, agent Agent, item scenario, 
 		}
 		return report
 	}
-	report.Execution = containsCommand(commands, "reconcile") && fileExists(filepath.Join(workspace, "agent-result.json"))
+	report.Execution = containsCommand(commands, "reconcile") && resolveArtifact(workspace, resultArtifactNames) != ""
 	actual, _ := os.ReadFile(verified)                                       // #nosec G304 -- evaluator workspace.
 	expected, _ := os.ReadFile(filepath.Join(item.Dir, item.ExpectedResult)) // #nosec G304 -- checked-in fixture.
 	report.ExactResult = bytes.Equal(bytes.TrimSpace(actual), bytes.TrimSpace(expected))
-	report.Classification = report.ExactResult || assertionsMatch(actual, item.Assertions)
+	// Assertions remain a diagnostic legacy gate; task success requires the
+	// normalized event set to agree with the independently verified answer key.
+	report.Classification = semanticResultEqual(actual, expected)
+	report.AssertionsMatch = assertionsMatch(actual, item.Assertions)
 	if item.ExpectedExplanation == "" {
 		return report
 	}
-	agentExplanation, err := os.ReadFile(filepath.Join(workspace, "agent-explanation.json")) // #nosec G304 -- evaluator workspace.
+	explanationPath := resolveArtifact(workspace, explanationArtifactNames)
+	if explanationPath == "" {
+		return report
+	}
+	agentExplanation, err := os.ReadFile(explanationPath) // #nosec G304 -- evaluator workspace.
 	if err == nil {
 		expectedExplanation, readErr := os.ReadFile(filepath.Join(item.Dir, item.ExpectedExplanation)) // #nosec G304 -- checked-in fixture.
 		report.Explanation = readErr == nil && containsCommand(commands, "explain") && bytes.Equal(bytes.TrimSpace(agentExplanation), bytes.TrimSpace(expectedExplanation))
@@ -316,6 +420,57 @@ func assertionsMatch(data []byte, expected schemas.EvalAssertions) bool {
 	return json.Unmarshal(data, &document) == nil && document.Summary == expected
 }
 
+// semanticResultEqual compares outcome events while deliberately ignoring
+// generated IDs, source labels, raw parser fields, ordering, and index metadata.
+func semanticResultEqual(actual, expected []byte) bool {
+	var left, right map[string]any
+	if json.Unmarshal(actual, &left) != nil || json.Unmarshal(expected, &right) != nil {
+		return false
+	}
+	return canonicalSemantic(left) == canonicalSemantic(right)
+}
+
+func canonicalSemantic(document map[string]any) string {
+	selected := map[string]any{}
+	for _, key := range []string{"matched", "unmatched_left", "unmatched_right", "amount_diff", "timing_diff", "duplicates"} {
+		if value, ok := document[key]; ok {
+			selected[key] = normalizeSemantic(value)
+		}
+	}
+	data, _ := json.Marshal(selected)
+	return string(data)
+}
+
+func normalizeSemantic(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			data, _ := json.Marshal(normalizeSemantic(item))
+			items = append(items, string(data))
+		}
+		sort.Strings(items)
+		result := make([]any, 0, len(items))
+		for _, item := range items {
+			var decoded any
+			_ = json.Unmarshal([]byte(item), &decoded)
+			result = append(result, decoded)
+		}
+		return result
+	case map[string]any:
+		result := map[string]any{}
+		for key, item := range typed {
+			if key == "id" || key == "source" || key == "raw" || key == "index_selection" || key == "run_id" {
+				continue
+			}
+			result[key] = normalizeSemantic(item)
+		}
+		return result
+	default:
+		return value
+	}
+}
+
 func materialize(options Options, item scenario) (string, func(), error) {
 	workspace, err := os.MkdirTemp("", "reconify-eval-")
 	if err != nil {
@@ -324,6 +479,16 @@ func materialize(options Options, item scenario) (string, func(), error) {
 	cleanup := func() { _ = os.RemoveAll(workspace) }
 	for _, input := range item.Inputs {
 		if err := copyFile(filepath.Join(item.Dir, input), filepath.Join(workspace, input)); err != nil {
+			cleanup()
+			return "", nil, err
+		}
+	}
+	for _, initial := range item.InitialFiles {
+		if filepath.IsAbs(initial) || strings.HasPrefix(filepath.Clean(initial), ".."+string(os.PathSeparator)) || filepath.Clean(initial) == ".." {
+			cleanup()
+			return "", nil, fmt.Errorf("initial file path escapes scenario: %q", initial)
+		}
+		if err := copyFile(filepath.Join(item.Dir, initial), filepath.Join(workspace, filepath.Clean(initial))); err != nil {
 			cleanup()
 			return "", nil, err
 		}
@@ -386,7 +551,7 @@ func writeWrapper(workspace string) error {
 }
 
 func taskPrompt(item scenario) string {
-	return fmt.Sprintf("%s\n\nWork only in this temporary workspace and stay at its root. Follow the installed Reconify Engine skill under .agents/skills. Complete and verify this ordered workflow: (1) run `reconify capabilities`; (2) discover the actual input paths and run `reconify inspect` on every input; (3) run `reconify config schema`; (4) write reconify.yaml at the workspace root using paths relative to that file; (5) run `reconify config validate --config reconify.yaml`; (6) run `reconify config check-source` for every configured source; (7) reconcile pair %q with `--format json --deterministic --out agent-result.json`; (8) run `reconify explain agent-result.json > agent-explanation.json`. After each step, verify its output or artifact before continuing. If a command fails because of a wrong path, flag, schema key, or config value, read the error, correct it, and rerun the failed step. Do not stop after creating YAML or after reconciliation: leave reconify.yaml, agent-result.json, and agent-explanation.json in the workspace.", item.Prompt, item.Pair)
+	return fmt.Sprintf("%s\n\nWork only in this temporary workspace. Solve the business reconciliation problem described above for pair %q. Leave a valid configuration, the resulting reconciliation artifact, and a concise explanation of that result at the workspace root. You may inspect the available files and installed documentation or tools as needed. Verify the configuration and result before finishing; recover from errors and do not stop at a partial artifact.", item.Prompt, item.Pair)
 }
 
 func runReconify(ctx context.Context, binary, dir string, args ...string) error {
@@ -415,6 +580,26 @@ func containsCommand(commands []string, fragment string) bool {
 	return false
 }
 func fileExists(path string) bool { _, err := os.Stat(path); return err == nil }
+
+// Skills from version 0.6.0 onward name the retained artifacts result.json and
+// explanation.json. Published baseline packages still instruct agents to write
+// the evaluator-specific agent-*.json names, so both are accepted here and the
+// release gate keeps comparing arms on equal terms.
+var (
+	resultArtifactNames      = []string{"result.json", "agent-result.json"}
+	explanationArtifactNames = []string{"explanation.json", "agent-explanation.json"}
+)
+
+// resolveArtifact returns the first candidate that exists in workspace, or "".
+func resolveArtifact(workspace string, candidates []string) string {
+	for _, name := range candidates {
+		path := filepath.Join(workspace, name)
+		if fileExists(path) {
+			return path
+		}
+	}
+	return ""
+}
 
 // WriteReport writes formatted JSON to stdout or an explicit output path.
 func WriteReport(report Report, output string, stdout io.Writer) error {

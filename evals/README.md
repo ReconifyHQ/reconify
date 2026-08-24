@@ -13,6 +13,24 @@ for third-party fixture compatibility.
 The v2 corpus exercises the non-interactive workflow: `capabilities`, `config validate`,
 `reconcile`, and `explain`. It does not require `inspect` or `config infer`.
 
+## Release gate
+
+The opt-in release gate compares the working tree package with an explicitly published
+package and a no-skill control. It retains each trial workspace and report below
+`.context/evals/`:
+
+```bash
+make eval-release BASELINE_VERSION=0.5.0 \
+  CLAUDE_MODEL=... CODEX_MODEL=... GEMINI_MODEL=... OPENCODE_MODEL=...
+```
+
+The qualifying matrix uses all four supported agents and three trials per scenario.
+Arm order is randomized from a recorded seed and defaults to one active agent call.
+The neutral task wrapper describes only the business problem and required artifacts;
+protocol evidence remains diagnostic while task success is the release metric. Exit
+status 3 means a confirmed regression, 2 means an invalid or inconclusive run, and 0
+means pass or pass-with-warnings.
+
 ## Layout
 
 ```
@@ -48,9 +66,14 @@ The evaluator grades five observable workflow dimensions per trial:
 |---|---|---|
 | discovery | agent invokes `reconify capabilities` | unsupported assumptions about the installed Engine |
 | configuration | agent validates a root `reconify.yaml` | missing required fields such as `multiplier` |
-| execution | agent reconciles to `agent-result.json` | file patterns that resolve to nothing |
-| classification | every counter in `assertions` equals the verified run's summary | the wrong matching strategy |
+| execution | agent reconciles to a retained result artifact (`result.json`, or `agent-result.json` from older packages) | file patterns that resolve to nothing |
+| classification | the verified run's event multiset semantically matches the answer key | the wrong matching strategy, including summary-equivalent wrong outcomes |
 | explanation | agent writes the expected deterministic explanation | unexplained or incorrect result artifacts |
+
+`assertions_match` is reported alongside these as a diagnostic: it records whether the
+scenario's declared `assertions` counters equal the verified run's summary. It is
+deliberately weaker than `classification`, because two different reconciliations can
+produce identical counters, so it does not gate a release.
 
 **The headline metric is `summary_match` pass rate across the corpus.** Report
 `exact_match` separately rather than gating on it — it is stricter than "the agent

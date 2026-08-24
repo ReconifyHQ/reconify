@@ -38,10 +38,13 @@ type EvalScenario struct {
 // result they produced. ExpectedExplanation is relative to the scenario
 // directory and captures the deterministic explanation answer key.
 type EvalScenarioV2 struct {
-	Schema              string         `json:"schema"`
-	ID                  string         `json:"id"`
-	Prompt              string         `json:"prompt"`
-	Inputs              []string       `json:"inputs"`
+	Schema string   `json:"schema"`
+	ID     string   `json:"id"`
+	Prompt string   `json:"prompt"`
+	Inputs []string `json:"inputs"`
+	// InitialFiles are files copied into the agent workspace before the task.
+	// They are useful for repair scenarios, such as an invalid existing config.
+	InitialFiles        []string       `json:"initial_files,omitempty"`
 	ReferenceConfig     string         `json:"reference_config"`
 	ExpectedResult      string         `json:"expected_result"`
 	ExpectedExplanation string         `json:"expected_explanation"`

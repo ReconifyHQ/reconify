@@ -48,6 +48,18 @@ func TestMetrics(t *testing.T) {
 	}
 }
 
+func TestSemanticResultEqualIgnoresGeneratedAndOrderingFields(t *testing.T) {
+	expected := []byte(`{"matched":[{"left":{"id":"a","source":"left","amount":10,"reference":"R"},"right":{"id":"b","source":"right","amount":10,"reference":"R"}}],"unmatched_left":[],"unmatched_right":[],"amount_diff":null,"timing_diff":null,"duplicates":null}`)
+	actual := []byte(`{"matched":[{"left":{"id":"new-a","source":"other","amount":10,"reference":"R"},"right":{"id":"new-b","source":"other","amount":10,"reference":"R"}}],"unmatched_left":[],"unmatched_right":[],"amount_diff":null,"timing_diff":null,"duplicates":null,"index_selection":{"backend":"memory"}}`)
+	if !semanticResultEqual(actual, expected) {
+		t.Fatal("semantically equal results differ")
+	}
+	wrong := []byte(`{"matched":[{"left":{"amount":11,"reference":"R"},"right":{"amount":11,"reference":"R"}}],"unmatched_left":[],"unmatched_right":[],"amount_diff":null,"timing_diff":null,"duplicates":null}`)
+	if semanticResultEqual(wrong, expected) {
+		t.Fatal("different transaction amounts compared equal")
+	}
+}
+
 func TestMaterializeInstallsSkillsAtPublishedPaths(t *testing.T) {
 	root := t.TempDir()
 	skills := filepath.Join(root, "skills")
@@ -98,20 +110,16 @@ func TestPublishedAdaptersPointToWorkspaceCanonicalSkills(t *testing.T) {
 	}
 }
 
-func TestTaskPromptRequiresRecoveryAndArtifacts(t *testing.T) {
+func TestTaskPromptIsNeutralAndRequiresArtifacts(t *testing.T) {
 	prompt := taskPrompt(scenario{Prompt: "p", Pair: "left_vs_right"})
-	for _, required := range []string{
-		"reconify capabilities",
-		"reconify inspect",
-		"reconify config schema",
-		"reconify config validate",
-		"reconify config check-source",
-		"agent-result.json",
-		"agent-explanation.json",
-		"read the error, correct it, and rerun",
-	} {
+	for _, required := range []string{"valid configuration", "reconciliation artifact", "explanation"} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("prompt missing %q", required)
+		}
+	}
+	for _, leaked := range []string{"reconify capabilities", "reconify inspect", "config schema", "config validate", "check-source"} {
+		if strings.Contains(prompt, leaked) {
+			t.Fatalf("prompt leaks workflow command %q", leaked)
 		}
 	}
 }
@@ -155,4 +163,55 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func TestResolveArtifactAcceptsCurrentAndPublishedNames(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		present   []string
+		candidate []string
+		want      string
+	}{
+		{name: "current result", present: []string{"result.json"}, candidate: resultArtifactNames, want: "result.json"},
+		{name: "published result", present: []string{"agent-result.json"}, candidate: resultArtifactNames, want: "agent-result.json"},
+		{name: "current wins", present: []string{"result.json", "agent-result.json"}, candidate: resultArtifactNames, want: "result.json"},
+		{name: "no result", present: []string{"verified-result.json"}, candidate: resultArtifactNames, want: ""},
+		{name: "current explanation", present: []string{"explanation.json"}, candidate: explanationArtifactNames, want: "explanation.json"},
+		{name: "published explanation", present: []string{"agent-explanation.json"}, candidate: explanationArtifactNames, want: "agent-explanation.json"},
+		{name: "no explanation", present: nil, candidate: explanationArtifactNames, want: ""},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			for _, name := range testCase.present {
+				if err := os.WriteFile(filepath.Join(workspace, name), []byte("{}"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			resolved := resolveArtifact(workspace, testCase.candidate)
+			want := ""
+			if testCase.want != "" {
+				want = filepath.Join(workspace, testCase.want)
+			}
+			if resolved != want {
+				t.Fatalf("resolveArtifact = %q, want %q", resolved, want)
+			}
+		})
+	}
+}
+
+func TestCanonicalSkillsUsePublicArtifactNames(t *testing.T) {
+	skill, err := os.ReadFile(filepath.Join("..", "..", "skills", ".agents", "reconify-engine-reconcile", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leaked := range []string{"agent-result.json", "agent-explanation.json"} {
+		if strings.Contains(string(skill), leaked) {
+			t.Fatalf("evaluator-specific name %q leaked into the shipped skill", leaked)
+		}
+	}
+	for _, required := range []string{"--out result.json", "explain result.json > explanation.json"} {
+		if !strings.Contains(string(skill), required) {
+			t.Fatalf("shipped skill missing %q", required)
+		}
+	}
 }

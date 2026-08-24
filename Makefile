@@ -1,4 +1,4 @@
-.PHONY: help build build-all test lint fmt-check mod-check dep-check security check preflight clean install bench-smoke bench-deterministic bench-realistic bench-adversarial-smoke bench-adversarial bench-adversarial-cold bench-full
+.PHONY: help build build-all test lint fmt-check mod-check dep-check security check preflight clean install eval-release bench-smoke bench-deterministic bench-realistic bench-adversarial-smoke bench-adversarial bench-adversarial-cold bench-full
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
@@ -28,6 +28,7 @@ help: ## Show this help message
 	@echo '  make bench-adversarial          - Run adversarial scale benchmark (100k rows)'
 	@echo '  make bench-adversarial-cold     - Run adversarial cold-cache measurement (local/manual)'
 	@echo '  make bench-full                 - Run larger benchmark suite (includes adversarial)'
+	@echo '  make eval-release BASELINE_VERSION=x.y.z - Run the local skill release gate'
 	@echo ''
 	@echo 'Clean:'
 	@echo '  make clean      - Clean build artifacts'
@@ -89,6 +90,10 @@ security: ## Run vulnerability and security checks
 	fi
 
 check: mod-check fmt-check dep-check lint security test build bench-smoke ## Run the local equivalent of GitHub Actions checks
+
+eval-release: ## Run the opt-in candidate/released/no-skill evaluation matrix
+	@test -n "$(BASELINE_VERSION)" || (echo 'BASELINE_VERSION is required'; exit 2)
+	go run ./cmd/reconify-eval release --baseline-version "$(BASELINE_VERSION)" --model claude=$${CLAUDE_MODEL:?set CLAUDE_MODEL} --model codex=$${CODEX_MODEL:?set CODEX_MODEL} --model gemini=$${GEMINI_MODEL:?set GEMINI_MODEL} --model opencode=$${OPENCODE_MODEL:?set OPENCODE_MODEL}
 
 preflight: check ## Alias for make check
 

@@ -29,6 +29,11 @@ and every date layout comes from the profile or a verified sample.
 
 ## 3. Establish mapping and policy
 
+When a config already exists, repair it instead of rewriting it. Preserve the original as
+`reconify.yaml.bak`, profile every source first, and change only the mappings the profiles
+contradict or `validate` and `check-source` reject. Report what you preserved and why, alongside
+what you changed.
+
 Apply these rules together with the schema:
 
 - Resolve `file_pattern` relative to the config file.

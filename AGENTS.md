@@ -57,6 +57,13 @@ Canonical skills live under `.agents/skills/` and are intentionally tool-agnosti
 - `.agents/skills/reconify-engine-ci/SKILL.md` — deterministic artifacts, exit-code policy
 - `.agents/skills/reconify-engine-performance/SKILL.md` — index backends, streaming, large files
 
+`reconify-engine-reconcile` carries the routing table: agents start there unless the task is clearly
+bootstrap, config, debug, performance, or CI work, and it delegates for detail rather than handing
+off the whole task. Keep that table and `skills/README.md` in sync when skills are added or renamed.
+
+The skills produce `reconify.yaml`, `result.json`, and `explanation.json` at the workspace root.
+This naming is the public convention; do not introduce evaluator-specific filenames into it.
+
 The former `reconify-*` names remain installed as deprecated adapters that redirect to these.
 
 These skills are written for an agent holding an installed `reconify` binary and someone else's

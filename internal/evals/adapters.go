@@ -24,20 +24,37 @@ func supportedAgents() []Agent {
 }
 
 func agentCommand(ctx context.Context, agent Agent, workspace, prompt string) *exec.Cmd {
+	return agentCommandWithModel(ctx, agent, workspace, prompt, "")
+}
+
+func agentCommandWithModel(ctx context.Context, agent Agent, workspace, prompt, model string) *exec.Cmd {
+	modelArgs := func(args []string, flag string) []string {
+		if model != "" {
+			args = append(args, flag, model)
+		}
+		return args
+	}
 	switch agent {
 	case AgentClaude:
-		return exec.CommandContext(ctx, "claude", "-p", "--output-format", "json", "--permission-mode", "acceptEdits", prompt) // #nosec G204 -- fixed adapter command.
+		args := modelArgs([]string{"-p", "--output-format", "json", "--permission-mode", "acceptEdits"}, "--model")
+		args = append(args, prompt)
+		return exec.CommandContext(ctx, "claude", args...) // #nosec G204 -- fixed adapter command.
 	case AgentCodex:
-		return exec.CommandContext(ctx, "codex", "exec", "-C", workspace, "--sandbox", "workspace-write", prompt) // #nosec G204 -- fixed adapter command.
+		args := modelArgs([]string{"exec", "-C", workspace, "--sandbox", "workspace-write"}, "-m")
+		args = append(args, prompt)
+		return exec.CommandContext(ctx, "codex", args...) // #nosec G204 -- fixed adapter command.
 	case AgentGemini:
-		return exec.CommandContext(ctx, "gemini", "--prompt", prompt, "--output-format", "json", "--approval-mode", "auto_edit", "--skip-trust") // #nosec G204 -- fixed adapter command.
+		args := modelArgs([]string{"--prompt", prompt, "--output-format", "json", "--approval-mode", "auto_edit", "--skip-trust"}, "--model")
+		return exec.CommandContext(ctx, "gemini", args...) // #nosec G204 -- fixed adapter command.
 	default:
-		return exec.CommandContext(ctx, "opencode", "run", "--dir", workspace, "--auto", prompt) // #nosec G204 -- fixed adapter command.
+		args := modelArgs([]string{"run", "--dir", workspace, "--auto"}, "--model")
+		args = append(args, prompt)
+		return exec.CommandContext(ctx, "opencode", args...) // #nosec G204 -- fixed adapter command.
 	}
 }
 
-func runAgent(ctx context.Context, agent Agent, workspace, prompt, reconifyPath string) ([]byte, error) {
-	cmd := agentCommand(ctx, agent, workspace, prompt)
+func runAgent(ctx context.Context, agent Agent, workspace, prompt, reconifyPath, model string) ([]byte, error) {
+	cmd := agentCommandWithModel(ctx, agent, workspace, prompt, model)
 	cmd.Dir = workspace
 	cmd.Env = append(os.Environ(),
 		"PATH="+filepath.Join(workspace, ".bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
