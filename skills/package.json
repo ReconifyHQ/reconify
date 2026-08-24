@@ -1,6 +1,6 @@
 {
   "name": "@reconifyhq/skills",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Install Reconify Engine skills and compatibility adapters for coding agents",
   "bin": {
     "skills": "scripts/install-skills.js"
