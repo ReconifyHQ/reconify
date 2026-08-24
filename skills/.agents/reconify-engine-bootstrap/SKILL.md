@@ -18,8 +18,11 @@ Settle these questions from the files and the user:
 - What does a repeated reference mean in each source?
 - Which files and pair name should become the stable workspace interface?
 
-Record an explicit assumption for any answer the files and user cannot supply. Use `inspect` evidence
-for column mappings and `config schema` for YAML shape; examples and memory are not config sources.
+Classify each answer with the tiers in the end-to-end workflow: use proven values, record an
+assumption for a safe default, and ask the user whenever plausible readings would produce different
+matching outcomes. Use `inspect` evidence for column mappings and `config schema` for YAML shape;
+examples and memory are not config sources.
 
-Bootstrap is complete only when the end-to-end workflow has produced a validated config, a retained
-result, and a retained explanation, and the final report names every assumption.
+Bootstrap is complete only when the end-to-end workflow has produced a validated `reconify.yaml`, a
+retained `result.json`, and a retained `explanation.json`, and the final report covers every item in
+that workflow's completion checklist.

@@ -51,3 +51,7 @@ reconify explain corrected-result.json > corrected-explanation.json
 Debugging is complete when the reduced fixture proves the correction, the full run preserves all
 expected counters, and the report names the causal config change. A lower match rate is acceptable;
 silencing an unverified financial difference is not.
+
+When the correction ends the task, promote the corrected artifacts to `result.json` and
+`explanation.json` and report them using the completion checklist in
+`../reconify-engine-reconcile/SKILL.md`.

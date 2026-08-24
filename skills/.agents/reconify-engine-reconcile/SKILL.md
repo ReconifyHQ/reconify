@@ -8,6 +8,31 @@ description: Reconcile unfamiliar financial files end to end. Use when one task 
 Produce a correct, reproducible reconciliation, not a high match rate. Complete the checkpoints in
 order from the directory that will contain `reconify.yaml`.
 
+## Routing
+
+| Situation | Skill |
+|---|---|
+| Unfamiliar files, or one task spanning discovery through explanation | stay here |
+| No `reconify.yaml` yet, and the outcome is a first validated config plus a first result | `reconify-engine-bootstrap` |
+| A `reconify.yaml` exists and needs creation detail, correction, or validation | `reconify-engine-config` |
+| A run succeeded but the counters contradict the business scenario | `reconify-engine-debug` |
+| Memory, wall time, or artifact size is the binding constraint | `reconify-engine-performance` |
+| The workflow must run unattended with an exit-code policy | `reconify-engine-ci` |
+
+This skill owns the end-to-end sequence. Delegate only for config detail at checkpoint 3, a large
+input at checkpoint 4, and diagnosis at checkpoint 5, then return here. Do not hand the whole task
+to another skill.
+
+## Artifact convention
+
+| File | Meaning |
+|---|---|
+| `reconify.yaml` | the validated config; commit it |
+| `result.json` | the retained reconciliation artifact; regenerate it, and commit only as a reviewed baseline |
+| `explanation.json` | the explanation of that result; regenerate it alongside |
+
+Any other file you create is scratch. Say so in the final report rather than leaving it unexplained.
+
 ## 1. Discover the build and inputs
 
 Locate every input before inspecting it, then query the installed binary:
@@ -22,6 +47,39 @@ Inspect every counterpart in a multi-source run. This checkpoint is complete whe
 paths are known and `capabilities` confirms the commands, formats, schemas, and passes needed by the
 task.
 
+## 1a. Repair an existing workspace
+
+If discovery finds a `reconify.yaml` already present, repair it rather than replacing it.
+
+Preserve the original first — copy it to `reconify.yaml.bak` and leave that copy uncommitted. Never
+overwrite the file before diagnosing it.
+
+Then diagnose in this order, because each command sees a different class of failure:
+
+```bash
+reconify config validate --config reconify.yaml
+reconify config check-source --config reconify.yaml --source SOURCE --file INPUT
+reconify reconcile --config reconify.yaml --pair PAIR --format json \
+  --result-mode all --deterministic --out result.json
+```
+
+| Command | What its failure means |
+|---|---|
+| `config validate` | The config shape is wrong: a missing required field, an unknown key, an invalid enum |
+| `config check-source` | The parser mapping no longer fits the file you named: a renamed header, an unparseable date layout, a wrong column |
+| `reconcile` | Everything above is consistent, but a `file_pattern` resolves to no file, or the pair is misnamed |
+
+`check-source` takes an explicit `--file` and therefore cannot detect a stale `file_pattern`; only
+`reconcile` resolves the pattern. Compare each configured `file_pattern` against the paths found in
+checkpoint 1 before assuming the mappings are at fault.
+
+Make the smallest change that clears the reported diagnostic, rerun from `validate`, and repeat. Do
+not rewrite mappings that already pass `check-source` against the real inputs.
+
+Treat any pre-existing `result.json` as stale evidence, not an answer key; regenerate it at
+checkpoint 4. Once validation and every source check pass but the counters still contradict the
+business scenario, read `../reconify-engine-debug/SKILL.md`.
+
 ## 2. Record the evidence and policy
 
 From each profile, record the candidate date, amount, reference, name, currency, and grouping
@@ -33,8 +91,21 @@ the user or state an explicit assumption:
 - the permitted date offset;
 - whether repeated references represent duplicates, one-to-many groups, or many-to-many groups.
 
-This checkpoint is complete when every mapping and tolerance has either file evidence, a user
-decision, or a named assumption.
+Classify every such decision before acting on it:
+
+| Tier | Definition | Action |
+|---|---|---|
+| Proven | The value is visible in `inspect` output or a source file | Use it and cite the evidence |
+| Safe default | Ambiguous, but every plausible reading produces the same matching outcome | Choose it and record it as an assumption |
+| User decision | Plausible readings produce different matching outcomes | Ask the user before proceeding |
+
+A repeated reference is the canonical user decision: read as a duplicate it raises
+`duplicate_count`, read as a one-to-many settlement group it raises `grouped_matched_count`, and
+the two answers are not interchangeable. A tolerance wide enough to absorb a real fee is the same
+kind of decision.
+
+This checkpoint is complete when every mapping and tolerance is proven, defaulted with a recorded
+assumption, or decided by the user.
 
 ## 3. Build and prove the config
 
@@ -55,7 +126,7 @@ Use explicit artifact settings so the result includes clean matches:
 
 ```bash
 reconify reconcile --config reconify.yaml --pair PAIR \
-  --format json --result-mode all --deterministic --out agent-result.json
+  --format json --result-mode all --deterministic --out result.json
 ```
 
 For inputs too large to buffer, read `../reconify-engine-performance/SKILL.md` and choose a streaming
@@ -65,7 +136,7 @@ its declared format, and its final summary is present.
 ## 5. Explain and challenge the result
 
 ```bash
-reconify explain agent-result.json > agent-explanation.json
+reconify explain result.json > explanation.json
 ```
 
 Compare the summary counters with the expected business scenario. A surprising counter is evidence
@@ -83,8 +154,17 @@ A missing guessed path is recoverable: discover the actual path and continue.
 Finish with all three deliverables:
 
 - validated `reconify.yaml`;
-- retained result artifact;
-- retained explanation artifact.
+- retained `result.json`;
+- retained `explanation.json`.
 
-The final report states the result counters, the artifact paths, all assumptions, and any unresolved
-error. Writing YAML or obtaining one successful command is an intermediate state, not completion.
+The final report states, in this order:
+
+- the config, result, and explanation paths;
+- the pair reconciled;
+- the summary counters: matched, unmatched left, unmatched right, amount differences, timing
+  differences, duplicates, and grouped matches;
+- every assumption, tagged with its tier from checkpoint 2;
+- unresolved warnings or diagnostics;
+- the exact commands used to verify the work.
+
+Writing YAML or obtaining one successful command is an intermediate state, not completion.

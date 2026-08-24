@@ -23,6 +23,15 @@
             "type": "string"
           }
         },
+        "initial_files": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
         "reference_config": {
           "type": "string"
         },
