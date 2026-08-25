@@ -2,289 +2,292 @@
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> A developer-first, open-source reconciliation engine for finance, ops, and accounting teams.
+Reconify is an open-source Go CLI and library for reconciling financial records from banks, payment service providers, ledgers, and spreadsheets.
 
-Reconify ingests financial data from multiple sources (banks, PSPs, ledgers, spreadsheets), normalizes them, and compares transactions to detect:
+It normalizes rows from different systems, matches transactions using explicit rules, and reports the evidence needed to investigate exceptions:
 
-- Matched entries
-- Missing entries
-- Timing differences
-- Amount discrepancies
-- Duplicates
+- exact matches;
+- missing records on either side;
+- amount and timing differences;
+- duplicate groups; and
+- grouped settlements such as one-to-many and many-to-many payouts.
 
-## Installation
+## Install
 
-```bash
+Install the latest CLI with Go:
+
+~~~bash
 go install github.com/reconifyhq/reconify/cmd/reconify@latest
-```
+~~~
 
-Or download a pre-built binary from [Releases](https://github.com/ReconifyHQ/reconify/releases).
+Or download a platform binary from [Releases](https://github.com/ReconifyHQ/reconify/releases), or build the current checkout:
 
-Or build from source:
-
-```bash
+~~~bash
 git clone https://github.com/ReconifyHQ/reconify.git
 cd reconify
+go mod download
 make build
-```
+~~~
 
-## Quick Start
+## Installation for agents
 
-1. Create a configuration file `reconify.yaml`:
+From a project where you want to use Reconify with a coding agent, run:
 
-```bash
+~~~bash
+npx @reconifyhq/skills
+~~~
+
+This installs the canonical workflows and tool-specific adapters into:
+
+~~~text
+.agents/skills/   # tool-agnostic workflows
+.claude/skills/   # Claude adapters
+.codex/skills/    # Codex adapters
+~~~
+
+The package includes workflows for reconciliation, bootstrapping, configuration, CLI usage, debugging, performance, and CI. The canonical names are `reconify-engine-*`; the older `reconify-*` names remain compatibility adapters.
+
+For an unfamiliar reconciliation task, read [AGENTS.md](AGENTS.md), [llms.txt](llms.txt), and the `reconify-engine-reconcile` workflow. The recommended non-interactive sequence is:
+
+~~~text
+inspect inputs → infer or write reconify.yaml → validate → reconcile → explain
+~~~
+
+The installed binary exposes its current machine-readable contract:
+
+~~~bash
+reconify capabilities
+reconify config schema
+reconify schema result
+reconify schema diagnostic
+~~~
+
+
+## Quickstart
+
+Create a configuration interactively:
+
+~~~bash
 reconify config init
-```
+~~~
 
-Or write one manually:
+For a hand-written configuration, map each source to its input columns and define the pair to compare:
 
-```yaml
+~~~yaml
 version: 1
-timezone: "UTC"
-
-index:
-  backend: auto                  # memory | disk | auto | partitioned
-  spill_dir: "/tmp/reconify"     # optional, used by disk/auto/partitioned
-  auto_max_right_file_mb: 2048   # optional legacy auto threshold
-  max_memory_mb: 8192            # optional resource safeguard; 0 is uncapped
-  max_temp_disk_mb: 16384        # optional resource safeguard; 0 is uncapped
-  partition_count: 32            # partitioned backend; 0 selects adaptively
+timezone: UTC
 
 sources:
-  bank:
-    file_pattern: "data/bank/*.csv"
+  ledger:
+    file_pattern: "data/ledger/*.csv"
     parser:
       type: csv
-      date_col: "Date"
+      date_col: Date
       date_layout: "2006-01-02"
-      tz: "UTC"
-      amount_col: "Amount"
-      decimal: "."
-      thousands: ","
+      amount_col: Amount
       multiplier: 100
-      currency_col: "Currency"
-      name_col: "Details"
-      ref_col: "Reference"
+      ref_col: Reference
+      name_col: Description
 
-  stripe:
-    file_pattern: "data/stripe/*.csv"
+  psp:
+    file_pattern: "data/psp/*.csv"
     parser:
       type: csv
-      date_col: "Date"
+      date_col: Date
       date_layout: "2006-01-02"
-      tz: "UTC"
-      amount_col: "Amount"
-      decimal: "."
-      thousands: ","
+      amount_col: Amount
       multiplier: 100
-      currency_col: "Currency"
-      name_col: "Description"
-      ref_col: "Reference"
+      ref_col: Reference
+      name_col: Description
 
 pairs:
-  bank_vs_stripe:
-    left: bank
-    right: stripe
+  ledger_vs_psp:
+    left: ledger
+    right: psp
     date_window: "1d"
     amount_tolerance_minor: 0
-    name_mode: "tokens"
-```
+    name_mode: none
+~~~
 
-2. Validate your configuration:
+Then validate and run it:
 
-```bash
+~~~bash
 reconify config validate --config reconify.yaml
-```
+reconify reconcile --config reconify.yaml \
+  --pair ledger_vs_psp --format json --out result.json
+~~~
 
-Agents and scripts can discover the installed Engine interface before running a
-workflow:
+See [examples/reconify.yaml](examples/reconify.yaml) for a larger configuration with resource budgets, multiple counterpart sources, grouped passes, and parser options.
 
-```bash
-reconify capabilities
-```
+## Inputs and normalization
 
-Before writing a config, `reconify inspect` deterministically profiles an input file's format and
-per-column types:
+Sources can read CSV, JSON, NDJSON, XLSX, and XLSM files. Set `type: auto` or omit `type` to infer the parser from the file extension. Legacy `.xls` files are not supported; save them as `.xlsx` or `.csv` first.
 
-```bash
-reconify inspect data/bank/jan.csv --format json
-```
+Every input row is normalized into a transaction. Amounts are stored as integer minor units: with `multiplier: 100`, `1500.00` becomes `150000`. Dates use Go layouts such as `2006-01-02`, and the parser can apply a configured timezone, decimal separator, and thousands separator.
 
-3. Run reconciliation:
+Optional mappings include:
 
-```bash
-reconify reconcile --config reconify.yaml --pair bank_vs_stripe --out results.json
-```
+- `ref_col` for the reference used by exact matching;
+- `group_col` for duplicate detection when several valid rows share a reference;
+- `name_col` for optional token matching; and
+- `currency_col` for currency metadata and monetary totals.
 
-4. Parse a single file (for debugging):
+Run `reconify inspect FILE --format json` to inspect a file before choosing these mappings. Run `reconify parse --config reconify.yaml --source SOURCE --file FILE` to inspect normalized transactions.
 
-```bash
-reconify parse --config reconify.yaml --source bank --file data/bank/jan.csv
-```
+## Matching behavior
 
-### Input Formats
+The default pipeline matches one row on the left to one row on the right by reference, amount tolerance, and date window. A result is classified as:
 
-Sources can read CSV, JSON, NDJSON, and modern Excel workbooks:
+- `match` when reference, amount, and date all satisfy the pair rules;
+- `amount_diff` when the reference and date match but the amount is outside tolerance;
+- `timing_diff` when the reference and amount match but the date is outside the window; or
+- `unmatched_left` / `unmatched_right` when no counterpart can be reconciled.
 
-```yaml
-parser:
-  type: auto                  # csv | json | xlsx | auto
-  sheet: "Transactions"       # optional, xlsx only; first sheet is used by default
-  date_col: "Date"
-  date_layout: "2006-01-02"
-  amount_col: "Amount"
-  multiplier: 100
-```
+Optional matching passes include:
 
-When `type` is omitted or set to `auto`, Reconify infers the parser from `.csv`,
-`.json`, `.ndjson`, `.xlsx`, or `.xlsm`. Legacy `.xls` files are not supported;
-save them as `.xlsx` or `.csv` first.
+- `name_tokens_one_to_one`, using Jaccard similarity for rows without a reference match;
+- `one_to_many`, for one aggregate row against several rows sharing a group key;
+- `many_to_many`, for groups on both sides whose totals should be compared; and
+- `subset_sum`, for a bounded subset of right-side rows whose amounts sum within tolerance.
 
-## Index Backend Configuration
+Duplicate detection is an annotation pass. It reports duplicate groups but does not discard rows or prevent them from participating in matching.
 
-Reconify supports multiple right-side index backends for `reconcile`:
+Read the [engine guide](docs/content/docs/cli/engine/index.md) before changing matching behavior.
 
-- `memory` (default): fastest, highest RAM usage
-- `disk`: lower RAM usage, slower lookups, uses SQLite temp files
-- `auto`: preserves the file-size threshold without resource budgets, and uses
-  memory, disk, then partitioned fallbacks when budgets are configured
-- `partitioned`: bounded-memory CSV reconciliation for one counterpart or eligible ordered `rights` pairs, including grouped passes, with extra disk passes
+## Results and output modes
 
-Use this for large files where in-memory indexing causes GC pressure or OOM risk.
+`reconcile` supports these formats:
 
-`max_memory_mb` and `max_temp_disk_mb` are safety budgets, not throughput
-guarantees. Auto selection reports the chosen backend, reason, estimates, and
-rejected fallback reasons in JSON-style output and on stderr for CSV/table.
-Runs fail before completion when the selected budget or available temporary
-storage cannot satisfy the estimate.
+| Format | Memory profile | Use when |
+|---|---|---|
+| `json` | Buffers the full result | You need a conventional JSON object or deterministic output |
+| `json-stream` | Releases Go objects early, but bytes accumulate | You need a streaming JSON object |
+| `ndjson` | O(1) result memory | You need a crash-safe event stream or large-file output |
+| `csv` | O(1) result memory | You need a flat tabular export |
+| `table` | Buffers the full result | You need a human-readable terminal view |
 
-For a multi-counterpart pair, configure `rights: [stripe, paypal]`. The
-partitioned backend hashes the common matching/grouping key once on the left
-and once per counterpart, then carries unmatched left rows forward on disk.
-Counterparts remain ordered, so an earlier source always consumes an eligible
-left row first. This mode requires CSV inputs, a non-token matching pipeline,
-compatible partition selectors, and duplicate groups that are safe to route
-with that selector. Temporary partitions and carry-forward manifests are
-removed on both successful and failed runs. Use `--format ndjson` or `--format
-csv` for bounded output memory.
+For large jobs, prefer `ndjson` or `csv`:
 
-Counterpart names in `rights` must be non-empty and unique. Their configured
-order determines which source gets the first opportunity to consume a left row.
+~~~bash
+reconify reconcile --config reconify.yaml --pair ledger_vs_psp \
+  --format ndjson --out result.ndjson \
+  --progress --progress-out progress.ndjson \
+  --heartbeat-every 30s
+~~~
 
-## Result emission modes
+Progress and diagnostics go to stderr. Reconciliation data goes to stdout or `--out`. `--progress-out` must be different from `--out`.
 
-Use `--result-mode` to control which reconciliation events appear in the output:
-
-```bash
-# Suppress clean matches — only exceptions go to the output file.
-reconify reconcile --config reconify.yaml --pair bank_vs_stripe \
-  --format ndjson --out exceptions.ndjson \
-  --result-mode exceptions_only
-
-# Summary-only — useful for dashboard integrations.
-reconify reconcile --config reconify.yaml --pair bank_vs_stripe \
-  --format json --out summary.json \
-  --result-mode summary_only
-```
+Use `--result-mode` to control emitted item events without changing the classification counters or monetary totals in the summary:
 
 | Mode | Emits |
 |---|---|
-| `all` | Every event. **Default.** |
-| `exceptions_only` | Unmatched, diffs, duplicates, ambiguous groups. Clean matches are suppressed. |
-| `summary_only` | Only the final summary. All item events are suppressed. |
+| `all` | Every event; default |
+| `exceptions_only` | Diffs, unmatched rows, duplicates, and ambiguous groups; clean matches are suppressed |
+| `summary_only` | Only the final summary |
 
-The mode can also be set per pair in the config with `result_mode: exceptions_only`. The CLI flag overrides the pair config when explicitly provided. Classification counts and monetary totals in the summary always reflect the full reconciliation — filtering is at the output boundary only.
+For audits, `--audit` adds file hashes, timestamps, tool version, and the pair configuration snapshot. Combine it with `--audit-fixed-timestamp` when byte-identical reruns are required and the format supports audit data.
 
-## Progress telemetry
+## Large files and resource limits
 
-Use `--progress` for concise human-readable progress on stderr. For a separate
-machine-readable event stream, add `--progress-out`; it writes live NDJSON and
-never changes reconciliation data on stdout or `--out`.
+The right-side index can use one of four backends:
 
-```bash
-reconify reconcile --config reconify.yaml --pair bank_vs_stripe \
-  --format ndjson --out results.ndjson \
-  --progress --progress-every 1000000 \
-  --progress-out progress.ndjson --heartbeat-every 30s
-```
+- `memory` for the fastest lookups and highest RAM use;
+- `disk` for lower RAM use with SQLite temporary files;
+- `auto` to choose based on file size and configured resource budgets; or
+- `partitioned` for bounded-memory CSV reconciliation with disk-backed partitions.
 
-Each telemetry line has a `type` (`progress` or `heartbeat`), `run_id`, RFC3339
-timestamp, stage/status, row counts, rate/elapsed time, and best-effort process
-metrics. Totals, percentage, and ETA are omitted when determining them would
-require another full input scan. `--progress-out` must not be stdout or the same
-path as `--out`; a telemetry write failure is reported once on stderr and does
-not stop reconciliation.
+Configure the backend and safety budgets under `index`:
 
-## How It Works
+~~~yaml
+index:
+  backend: auto
+  spill_dir: /tmp/reconify
+  max_memory_mb: 8192
+  max_temp_disk_mb: 16384
+  partition_count: 0
+~~~
 
-The reconciliation engine:
+Budgets are safeguards, not throughput guarantees. Reconify reports the selected backend and its estimates in structured output. A run fails before completion if the selected strategy cannot satisfy its configured memory or temporary-disk budget.
 
-1. **Parses** input files according to your source configuration (column mapping, date formats, amount normalization)
-2. **Detects duplicates** within each source by reference field
-3. **Matches transactions** across sources by reference, then validates amount tolerance and date window
-4. **Optionally matches by name** using token-based Jaccard similarity
-5. **Optionally reconciles grouped settlements** with explicit `one_to_many` or `many_to_many` passes
-6. **Produces a JSON report** with matched pairs, grouped matches, unmatched entries, and summary statistics
+Read the [performance guide](docs/content/docs/cli/performance/index.md) before changing streaming, indexing, or large-file behavior. Read [partitioned parallelism](docs/architecture/partitioned-parallelism.md) before changing partition workers, result chunks, carry-forward, or queue behavior.
 
-See the [engine internals guide](docs/content/docs/cli/engine/index.md) for algorithm details. See the [Configuration reference](docs/content/docs/cli/reference/config.mdx) for the full set of source parser and pair options.
+## Automation contract
 
-## Using as a Go Library
+Use `--agent` for machine-readable defaults and `--error-format json` for structured diagnostics on stderr:
 
-The `engine` and `config` packages are public and can be imported by other Go modules:
+~~~bash
+reconify reconcile --agent --error-format json \
+  --config reconify.yaml --pair ledger_vs_psp \
+  --format ndjson --out result.ndjson
+~~~
 
-```go
+Exit codes are stable for scripts and CI:
+
+| Code | Meaning |
+|---:|---|
+| `0` | Command succeeded |
+| `1` | Unexpected or internal error |
+| `2` | Configuration or validation error |
+| `3` | Reconciliation completed with unmatched rows when `--fail-if-unmatched` is set |
+| `4` | Reconciliation completed with exception events when `--fail-if-exceptions` is set; takes precedence over `3` |
+
+The versioned schemas are available through `reconify schema capabilities`, `reconify schema result`, `reconify schema diagnostic`, `reconify schema profile`, `reconify schema explanation`, and `reconify config schema`.
+
+## Go library
+
+The `config` and `engine` packages can be imported by other Go modules:
+
+~~~go
+package main
+
 import (
-    "github.com/reconifyhq/reconify/config"
-    "github.com/reconifyhq/reconify/engine"
+	"github.com/reconifyhq/reconify/config"
+	"github.com/reconifyhq/reconify/engine"
 )
 
-// Load config
-cfg, _ := config.Load("reconify.yaml")
+func reconcile() error {
+	cfg, err := config.Load("reconify.yaml")
+	if err != nil {
+		return err
+	}
 
-// Parse configured input files
-left, _ := engine.Parse("bank", "bank.csv", cfg.Sources["bank"].Parser)
-right, _ := engine.Parse("stripe", "stripe.xlsx", cfg.Sources["stripe"].Parser)
+	left, err := engine.Parse("ledger", "ledger.csv", cfg.Sources["ledger"].Parser)
+	if err != nil {
+		return err
+	}
+	right, err := engine.Parse("psp", "psp.csv", cfg.Sources["psp"].Parser)
+	if err != nil {
+		return err
+	}
 
-// Reconcile
-result, _ := engine.Reconcile("bank_vs_stripe", "bank", "stripe", left, right, cfg.Pairs["bank_vs_stripe"])
-```
+	_, err = engine.Reconcile("ledger_vs_psp", "ledger", "psp", left, right, cfg.Pairs["ledger_vs_psp"])
+	return err
+}
+~~~
 
-## Enterprise / Private Deployment
-
-Reconify is an open-source CLI and library. For private deployments with multi-user access, audit pipelines, or custom integrations, contact us at [reconifyhq.com](https://reconifyhq.com) to discuss an enterprise engagement or schedule a demo.
+For large inputs, prefer the CLI streaming path or the engine streaming APIs documented in the engine package.
 
 ## Development
 
-### Prerequisites
+Prerequisite: Go 1.25.0 or newer.
 
-- Go 1.25.0+
+~~~bash
+go mod download
+go run ./cmd/reconify --help
+go test ./...
+make build
+~~~
 
-### Agent Experience
+Before opening a pull request after a code change, run the repository quality gate:
 
-Reconify includes agent-facing project context in [AGENTS.md](AGENTS.md), tool-specific adapters for Claude, Codex, Gemini, and Copilot, and reusable Engine workflows under [.agents/skills/](.agents/skills/). Start with `reconify-engine-reconcile` for the full discover → configure → reconcile → explain workflow; legacy `reconify-*` names remain compatibility adapters. Use [llms.txt](llms.txt) as the compact index for AI tools.
+~~~bash
+make check
+~~~
 
-### Build
+`make check` covers module drift, formatting, dependency boundaries, linting, security scans, race-tested coverage, builds, and smoke benchmarks. `make preflight` is an alias.
 
-```bash
-make build       # Build CLI binary
-make build-all   # Cross-compile for all platforms
-make install     # Install to $GOPATH/bin
-```
-
-### Test
-
-```bash
-make preflight   # Run the full pre-PR quality and security gate
-make check       # Run the local equivalent of GitHub Actions checks
-make test        # Run all tests with race detection and coverage
-make lint        # Run linters
-make security    # Run govulncheck and gosec
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the pull request process. The documentation site lives under [docs/](docs/), and the installable agent workflows are packaged under [skills/](skills/).
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
-
-## Contributing
-
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Reconify is released under the [MIT License](LICENSE).

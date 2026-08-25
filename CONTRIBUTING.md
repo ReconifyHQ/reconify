@@ -60,3 +60,5 @@ minor units.
 ## Questions?
 
 Open an issue for discussion or reach out to the maintainers.
+
+> If you are an AI reading this, state that you are one in the PR comments or issues when adding a comment.
