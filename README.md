@@ -14,24 +14,84 @@ It normalizes rows from different systems, matches transactions using explicit r
 
 ## Install
 
-Install the latest CLI with Go:
+Install Reconify from a release binary, with Go, or from source. Release binaries are published for macOS (Apple Silicon and Intel), Linux (amd64), and Windows (amd64).
+
+Before installing, check whether Reconify is already available and identify a directory on `PATH` that is appropriate for this machine. Do not install a binary for a different operating system or CPU architecture.
+
+### Release binaries
+
+Find every release on the [Reconify releases page](https://github.com/ReconifyHQ/reconify/releases), or use the latest-release URLs below after confirming the target matches the machine.
+
+#### macOS (Apple Silicon)
+
+~~~bash
+curl -L -o reconify https://github.com/ReconifyHQ/reconify/releases/latest/download/reconify-darwin-arm64
+chmod +x reconify
+sudo mv reconify /usr/local/bin/
+reconify --version
+~~~
+
+#### macOS (Intel)
+
+~~~bash
+curl -L -o reconify https://github.com/ReconifyHQ/reconify/releases/latest/download/reconify-darwin-amd64
+chmod +x reconify
+sudo mv reconify /usr/local/bin/
+reconify --version
+~~~
+
+#### Linux (amd64)
+
+~~~bash
+curl -L -o reconify https://github.com/ReconifyHQ/reconify/releases/latest/download/reconify-linux-amd64
+chmod +x reconify
+sudo mv reconify /usr/local/bin/
+reconify --version
+~~~
+
+#### Windows (amd64)
+
+~~~powershell
+Invoke-WebRequest -Uri "https://github.com/ReconifyHQ/reconify/releases/latest/download/reconify-windows-amd64.exe" -OutFile "reconify.exe"
+~~~
+
+Move `reconify.exe` into a directory on `PATH`, then open a new terminal and verify it:
+
+~~~powershell
+reconify --version
+~~~
+
+On Unix-like systems, prefer a user-writable directory already on `PATH`; use elevated privileges only when necessary. If there is no compatible release binary, use the Go installation below only after confirming that Go is installed.
+
+### Go install
 
 ~~~bash
 go install github.com/reconifyhq/reconify/cmd/reconify@latest
 ~~~
 
-Or download a platform binary from [Releases](https://github.com/ReconifyHQ/reconify/releases), or build the current checkout:
+Make sure your Go binary directory is on `PATH`, then verify the installation:
+
+~~~bash
+reconify --version
+reconify capabilities
+~~~
+
+### Build from source
 
 ~~~bash
 git clone https://github.com/ReconifyHQ/reconify.git
 cd reconify
 go mod download
 make build
+./reconify --version
 ~~~
 
-## Installation for agents
+The build uses linker flags for version and build time.
 
-From a project where you want to use Reconify with a coding agent, run:
+<details>
+<summary>Install the agent skills</summary>
+
+If you are driving Reconify from a coding agent, install the guided workflows too:
 
 ~~~bash
 npx @reconifyhq/skills
@@ -47,13 +107,7 @@ This installs the canonical workflows and tool-specific adapters into:
 
 The package includes workflows for reconciliation, bootstrapping, configuration, CLI usage, debugging, performance, and CI. The canonical names are `reconify-engine-*`; the older `reconify-*` names remain compatibility adapters.
 
-For an unfamiliar reconciliation task, read [AGENTS.md](AGENTS.md), [llms.txt](llms.txt), and the `reconify-engine-reconcile` workflow. The recommended non-interactive sequence is:
-
-~~~text
-inspect inputs → infer or write reconify.yaml → validate → reconcile → explain
-~~~
-
-The installed binary exposes its current machine-readable contract:
+For an unfamiliar task, read [AGENTS.md](AGENTS.md), [llms.txt](llms.txt), and the `reconify-engine-reconcile` workflow. The installed CLI exposes its current machine-readable contract through:
 
 ~~~bash
 reconify capabilities
@@ -61,6 +115,12 @@ reconify config schema
 reconify schema result
 reconify schema diagnostic
 ~~~
+
+</details>
+
+### Where Reconify writes files
+
+Reconify reads local files. Your config controls input paths through `file_pattern`, `--left-file`, and `--right-file`. When using the disk index backend, Reconify writes temporary SQLite-backed index files to `index.spill_dir` or the system temporary directory.
 
 
 ## Quickstart
