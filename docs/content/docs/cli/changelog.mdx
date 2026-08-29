@@ -3,9 +3,13 @@ title: Changelog
 description: Current notable Reconify changes, separated from planned upcoming behavior.
 ---
 
-## Unreleased
+## 0.7.0 - 2026-08-30
 
-The Reconify repository currently tracks changes under an `Unreleased` heading.
+The 0.7.0 release adds optional financial-effects and settlement reconciliation. Configure
+`parser.financials` to evaluate fixed, percentage, fixed-plus-percentage, or component-sum
+expectations in minor units. Results expose financial-effect and settlement events across all
+reconciliation output formats, and financial differences participate in `exceptions_only` and
+`--fail-if-exceptions`.
 
 ## Implemented docs surface
 
@@ -25,6 +29,9 @@ The docs site treats the following as implemented because the current CLI code c
 - Progress logging through `--progress`.
 - Memory, disk, and auto right-side index backends.
 - Published Engine capabilities schema `reconify.engine.capabilities.v1`.
+- Optional financial-effects and settlement checks through `parser.financials`.
+- Financial and settlement result events in JSON, JSON-stream, NDJSON, CSV, and table output.
+- Financial summary counters, explanations, published result schemas, and CI exit-policy support.
 
 ## Planned or not yet documented as implemented
 

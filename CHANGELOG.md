@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-30
+
+### Added
+
+- **Financial effects and settlement reconciliation** — optional `parser.financials` configuration supports fixed, percentage, fixed-plus-percentage, and component-sum expectations in minor units, with gross/net settlement checks, dependency validation, exact rounding, and overflow protection ([#131](https://github.com/ReconifyHQ/reconify/pull/131), [#132](https://github.com/ReconifyHQ/reconify/issues/132)).
+- **Financial result events** — reconciliation outputs now support `financial_effect_match`, `financial_effect_diff`, `financial_unchecked`, `settlement_match`, and `settlement_diff` across JSON, JSON-stream, NDJSON, CSV, and table formats.
+- **Financial CI and agent workflows** — financial differences participate in `exceptions_only`, `--fail-if-exceptions`, explanations, published schemas, and the canonical Reconify agent skills.
+
+### Changed
+
+- Financial findings are additive to ordinary matching; a fee or settlement discrepancy does not reclassify a normal transaction match.
+- The `@reconifyhq/skills` package and Reconify Engine release metadata are prepared for minor version `0.7.0`.
+
 ## [0.6.0] - 2026-08-24
 
 ### Added
