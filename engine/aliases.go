@@ -14,6 +14,9 @@ import (
 
 // Domain aliases.
 type Transaction = domain.Transaction
+type FinancialCheck = domain.FinancialCheck
+type FinancialEffectFinding = domain.FinancialEffectFinding
+type SettlementFinding = domain.SettlementFinding
 type MatchedPair = domain.MatchedPair
 type AmountDiffPair = domain.AmountDiffPair
 type TimingDiffPair = domain.TimingDiffPair
@@ -57,6 +60,7 @@ type SourceBreakdownWriter = output.SourceBreakdownWriter
 type GroupedEventWriter = output.GroupedEventWriter
 type ManyToManyEventWriter = output.ManyToManyEventWriter
 type SubsetSumEventWriter = output.SubsetSumEventWriter
+type FinancialEventWriter = output.FinancialEventWriter
 
 // Telemetry aliases.
 type TelemetryEvent = telemetry.TelemetryEvent

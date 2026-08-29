@@ -185,6 +185,29 @@ Sources can read CSV, JSON, NDJSON, XLSX, and XLSM files. Set `type: auto` or om
 
 Every input row is normalized into a transaction. Amounts are stored as integer minor units: with `multiplier: 100`, `1500.00` becomes `150000`. Dates use Go layouts such as `2006-01-02`, and the parser can apply a configured timezone, decimal separator, and thousands separator.
 
+### Financial effects and settlement checks
+
+Sources may declare additional monetary columns under `parser.financials`. They use the same
+normalization rules as `amount_col` and support field, fixed, percentage, fixed-plus-percentage,
+and component-sum expectations:
+
+~~~yaml
+financials:
+  gross_col: Gross
+  net_col: Net
+  fields: {fee: Fee, tax: Tax}
+  expectations:
+    fee:
+      percentage: {base: gross, rate: 1.5}
+      operation: subtract
+      tolerance_minor: 1
+~~~
+
+Configured cells must be present, non-empty, and valid. Financial findings are independent from
+transaction match classification. `financial_effect_diff` and `settlement_diff` are exception
+events; mapped fields without an expectation produce informational `financial_unchecked` events.
+Sources without `financials` retain the existing output behavior.
+
 Optional mappings include:
 
 - `ref_col` for the reference used by exact matching;

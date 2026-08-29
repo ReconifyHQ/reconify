@@ -82,6 +82,15 @@ type SubsetSumEventWriter interface {
 	WriteSubsetSumSkipped(pair SubsetSumSkippedPair) error
 }
 
+// FinancialEventWriter renders source-local fee and settlement checks.
+type FinancialEventWriter interface {
+	WriteFinancialEffectMatch(FinancialEffectFinding) error
+	WriteFinancialEffectDiff(FinancialEffectFinding) error
+	WriteFinancialUnchecked(FinancialEffectFinding) error
+	WriteSettlementMatch(SettlementFinding) error
+	WriteSettlementDiff(SettlementFinding) error
+}
+
 // JSON section key names for grouped/ambiguous slices (used by jsonStreamWriter)
 // and ndjson event type tags (used by ndjsonWriter).
 // The JSON section keys mirror the Result struct field names (plural);

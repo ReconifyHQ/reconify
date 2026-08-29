@@ -96,3 +96,19 @@ func (n *ndjsonWriter) WriteSubsetSumAmbiguous(pair SubsetSumAmbiguousPair) erro
 func (n *ndjsonWriter) WriteSubsetSumSkipped(pair SubsetSumSkippedPair) error {
 	return n.emit(eventSubsetSumSkipped, pair)
 }
+
+func (n *ndjsonWriter) WriteFinancialEffectMatch(f FinancialEffectFinding) error {
+	return n.emit("financial_effect_match", f)
+}
+func (n *ndjsonWriter) WriteFinancialEffectDiff(f FinancialEffectFinding) error {
+	return n.emit("financial_effect_diff", f)
+}
+func (n *ndjsonWriter) WriteFinancialUnchecked(f FinancialEffectFinding) error {
+	return n.emit("financial_unchecked", f)
+}
+func (n *ndjsonWriter) WriteSettlementMatch(f SettlementFinding) error {
+	return n.emit("settlement_match", f)
+}
+func (n *ndjsonWriter) WriteSettlementDiff(f SettlementFinding) error {
+	return n.emit("settlement_diff", f)
+}

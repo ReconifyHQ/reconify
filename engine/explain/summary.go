@@ -30,6 +30,21 @@ func buildExplanation(result domain.Result, topN int) (schemas.Explanation, erro
 	}
 
 	exceptions := collectExceptions(result)
+	if result.Summary.FinancialEffectMatchCount != 0 {
+		findings = append(findings, schemas.Finding{Category: "financial_effect_match", Count: result.Summary.FinancialEffectMatchCount})
+	}
+	if result.Summary.FinancialEffectDiffCount != 0 {
+		findings = append(findings, schemas.Finding{Category: "financial_effect_diff", Count: result.Summary.FinancialEffectDiffCount})
+	}
+	if result.Summary.FinancialUncheckedCount != 0 {
+		findings = append(findings, schemas.Finding{Category: "financial_unchecked", Count: result.Summary.FinancialUncheckedCount})
+	}
+	if result.Summary.SettlementMatchCount != 0 {
+		findings = append(findings, schemas.Finding{Category: "settlement_match", Count: result.Summary.SettlementMatchCount})
+	}
+	if result.Summary.SettlementDiffCount != 0 {
+		findings = append(findings, schemas.Finding{Category: "settlement_diff", Count: result.Summary.SettlementDiffCount})
+	}
 	total := exceptionCount(result, exceptions)
 	if topN > len(exceptions) {
 		topN = len(exceptions)
@@ -85,6 +100,12 @@ func collectExceptions(result domain.Result) []exception {
 	for _, value := range result.AmbiguousGroups {
 		items = append(items, exception{"ambiguous_group", value})
 	}
+	for _, value := range result.FinancialEffectDiffs {
+		items = append(items, exception{"financial_effect_diff", value})
+	}
+	for _, value := range result.SettlementDiffs {
+		items = append(items, exception{"settlement_diff", value})
+	}
 	return items
 }
 
@@ -107,6 +128,8 @@ func exceptionCount(result domain.Result, events []exception) int {
 		total += boolCount(result.Summary.DuplicateCount)
 	}
 	total += max(result.Summary.AmbiguousGroupCount, countType(events, "ambiguous_group"))
+	total += max(result.Summary.FinancialEffectDiffCount, countType(events, "financial_effect_diff"))
+	total += max(result.Summary.SettlementDiffCount, countType(events, "settlement_diff"))
 	if total == 0 {
 		return len(events)
 	}

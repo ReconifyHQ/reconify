@@ -53,6 +53,45 @@ type ParserCfg struct {
 	// DuplicatePolicy controls how transactions sharing the same GroupKey are handled.
 	// Valid values: "flag" (default), "keep", "merge", "latest".
 	DuplicatePolicy DuplicatePolicy `yaml:"duplicate_policy,omitempty"`
+	// Financials optionally maps additional monetary columns and declares
+	// source-local expectations (fees, taxes, and settlement identities).
+	Financials *FinancialsCfg `yaml:"financials,omitempty"`
+}
+
+// FinancialsCfg describes optional monetary fields beyond the transaction
+// amount. Values use the same decimal, thousands, and multiplier settings as
+// the source's primary amount column.
+type FinancialsCfg struct {
+	GrossCol     string                    `yaml:"gross_col,omitempty"`
+	NetCol       string                    `yaml:"net_col,omitempty"`
+	Fields       map[string]string         `yaml:"fields,omitempty"`
+	Expectations map[string]ExpectationCfg `yaml:"expectations,omitempty"`
+}
+
+// ExpectationCfg supports one expected-value form per named financial field.
+// Field refers to another normalized financial field; fixed and percentage
+// provide literal and rate-based expectations. FixedPlusPercentage combines
+// both components, while components sums named fields.
+type ExpectationCfg struct {
+	Field               string                  `yaml:"field,omitempty"`
+	Fixed               *int64                  `yaml:"fixed,omitempty"`
+	Percentage          *PercentageCfg          `yaml:"percentage,omitempty"`
+	FixedPlusPercentage *FixedPlusPercentageCfg `yaml:"fixed_plus_percentage,omitempty"`
+	Components          []string                `yaml:"components,omitempty"`
+	Operation           string                  `yaml:"operation,omitempty"`
+	ToleranceMinor      int64                   `yaml:"tolerance_minor,omitempty"`
+}
+
+// PercentageCfg defines a percentage of a named normalized financial field.
+type PercentageCfg struct {
+	Base string  `yaml:"base"`
+	Rate float64 `yaml:"rate"`
+}
+
+// FixedPlusPercentageCfg defines a fixed minor-unit amount plus a percentage.
+type FixedPlusPercentageCfg struct {
+	Fixed      int64         `yaml:"fixed"`
+	Percentage PercentageCfg `yaml:"percentage"`
 }
 
 // CSVParserCfg is kept as an alias for existing Go callers.
@@ -400,6 +439,91 @@ func validateSource(name string, source Source) []error {
 		errs = append(errs, fmt.Errorf(
 			"sources.%s.parser.duplicate_policy: must be one of [flag, keep, merge, latest] (got %q)",
 			name, parser.DuplicatePolicy))
+	}
+	if parser.Financials != nil {
+		if (parser.Financials.GrossCol == "") != (parser.Financials.NetCol == "") {
+			errs = append(errs, fmt.Errorf("sources.%s.parser.financials: gross_col and net_col must be configured together", name))
+		}
+		knownFields := make(map[string]bool, len(parser.Financials.Fields)+2)
+		for field := range parser.Financials.Fields {
+			knownFields[field] = true
+		}
+		if parser.Financials.GrossCol != "" {
+			knownFields["gross"] = true
+		}
+		if parser.Financials.NetCol != "" {
+			knownFields["net"] = true
+		}
+		for field, col := range parser.Financials.Fields {
+			if strings.TrimSpace(field) == "" || strings.TrimSpace(col) == "" {
+				errs = append(errs, fmt.Errorf("sources.%s.parser.financials.fields: names and columns must be non-empty", name))
+			}
+		}
+		for field, expectation := range parser.Financials.Expectations {
+			if !knownFields[field] {
+				errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations.%s: field is not mapped", name, field))
+			}
+			forms := 0
+			if expectation.Field != "" {
+				forms++
+			}
+			if expectation.Fixed != nil {
+				forms++
+			}
+			if expectation.Percentage != nil {
+				forms++
+			}
+			if expectation.FixedPlusPercentage != nil {
+				forms++
+			}
+			if len(expectation.Components) > 0 {
+				forms++
+			}
+			if forms != 1 {
+				errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations.%s: exactly one expectation form is required", name, field))
+			}
+			if expectation.ToleranceMinor < 0 {
+				errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations.%s.tolerance_minor: must be >= 0", name, field))
+			}
+			if expectation.Operation != "" && expectation.Operation != "add" && expectation.Operation != "subtract" {
+				errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations.%s.operation: must be add or subtract", name, field))
+			}
+			if expectation.Percentage != nil && (expectation.Percentage.Rate < 0 || math.IsNaN(expectation.Percentage.Rate) || math.IsInf(expectation.Percentage.Rate, 0)) {
+				errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations.%s.percentage.rate: must be finite and >= 0", name, field))
+			}
+			if expectation.Percentage != nil && !knownFields[expectation.Percentage.Base] {
+				errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations.%s.percentage.base: unknown field %q", name, field, expectation.Percentage.Base))
+			}
+			if expectation.FixedPlusPercentage != nil && !knownFields[expectation.FixedPlusPercentage.Percentage.Base] {
+				errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations.%s.percentage.base: unknown field %q", name, field, expectation.FixedPlusPercentage.Percentage.Base))
+			}
+			for _, component := range expectation.Components {
+				if !knownFields[component] {
+					errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations.%s.components: unknown field %q", name, field, component))
+				}
+				if component == field {
+					errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations.%s.components: self-reference is not allowed", name, field))
+				}
+			}
+		}
+		// Expectations may refer to other expectations through field form; reject
+		// cycles so evaluation cannot recurse indefinitely when that graph grows.
+		graph := make(map[string]string)
+		for field, expectation := range parser.Financials.Expectations {
+			if expectation.Field != "" && parser.Financials.Expectations[expectation.Field].Field != "" {
+				graph[field] = expectation.Field
+			}
+		}
+		for start := range graph {
+			seen := map[string]bool{}
+			for current := start; graph[current] != ""; current = graph[current] {
+				if seen[current] {
+					errs = append(errs, fmt.Errorf("sources.%s.parser.financials.expectations: dependency cycle involving %q", name, current))
+					break
+				}
+				seen[current] = true
+			}
+		}
 	}
 
 	return errs

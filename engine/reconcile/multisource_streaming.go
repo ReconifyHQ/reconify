@@ -118,6 +118,8 @@ func reconcileStreamingMultiSource(
 	var (
 		totalLeft, totalRight                                               int
 		matchedCount, amountDiffCount, timingDiffCount, unmatchedRightCount int
+		financialMatchCount, financialDiffCount, financialUncheckedCount    int
+		settlementMatchCount, settlementDiffCount                           int
 		matchedAmtLeft, matchedAmtRight, unmatchedAmtRight, amountDiffTotal int64
 		dupTxnCount                                                         int
 		leftover                                                            []Transaction
@@ -154,6 +156,11 @@ func reconcileStreamingMultiSource(
 		matchedAmtRight += passSummary.MatchedAmountRight
 		unmatchedAmtRight += passSummary.UnmatchedAmountRight
 		amountDiffTotal += passSummary.AmountDiffTotal
+		financialMatchCount += passSummary.FinancialEffectMatchCount
+		financialDiffCount += passSummary.FinancialEffectDiffCount
+		financialUncheckedCount += passSummary.FinancialUncheckedCount
+		settlementMatchCount += passSummary.SettlementMatchCount
+		settlementDiffCount += passSummary.SettlementDiffCount
 		dupTxnCount += passSummary.DuplicateCount // right-side dups for this counterpart
 
 		for _, g := range leftDups {
@@ -196,23 +203,28 @@ func reconcileStreamingMultiSource(
 	}
 
 	aggregate := Summary{
-		Currency:             cc.Currency(),
-		TotalLeft:            totalLeft,
-		TotalRight:           totalRight,
-		MatchedCount:         matchedCount,
-		UnmatchedLeft:        len(leftover),
-		UnmatchedRight:       unmatchedRightCount,
-		AmountDiffCount:      amountDiffCount,
-		TimingDiffCount:      timingDiffCount,
-		DuplicateCount:       dupTxnCount,
-		MatchRatePct:         matchRate,
-		ReconciledRatePct:    reconciledRate,
-		MatchedAmountLeft:    matchedAmtLeft,
-		MatchedAmountRight:   matchedAmtRight,
-		UnmatchedAmountLeft:  unmatchedAmtLeft,
-		UnmatchedAmountRight: unmatchedAmtRight,
-		AmountDiffTotal:      amountDiffTotal,
-		TotalDiscrepancy:     unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal,
+		Currency:                  cc.Currency(),
+		TotalLeft:                 totalLeft,
+		TotalRight:                totalRight,
+		MatchedCount:              matchedCount,
+		UnmatchedLeft:             len(leftover),
+		UnmatchedRight:            unmatchedRightCount,
+		AmountDiffCount:           amountDiffCount,
+		TimingDiffCount:           timingDiffCount,
+		DuplicateCount:            dupTxnCount,
+		MatchRatePct:              matchRate,
+		ReconciledRatePct:         reconciledRate,
+		MatchedAmountLeft:         matchedAmtLeft,
+		MatchedAmountRight:        matchedAmtRight,
+		UnmatchedAmountLeft:       unmatchedAmtLeft,
+		UnmatchedAmountRight:      unmatchedAmtRight,
+		AmountDiffTotal:           amountDiffTotal,
+		FinancialEffectMatchCount: financialMatchCount,
+		FinancialEffectDiffCount:  financialDiffCount,
+		FinancialUncheckedCount:   financialUncheckedCount,
+		SettlementMatchCount:      settlementMatchCount,
+		SettlementDiffCount:       settlementDiffCount,
+		TotalDiscrepancy:          unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal,
 	}
 
 	if sbw, ok := w.(SourceBreakdownWriter); ok {

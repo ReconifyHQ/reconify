@@ -62,6 +62,28 @@ func Reconcile(pairName, leftSource, rightSource string, left, right []Transacti
 		LeftSource:  leftSource,
 		RightSource: rightSource,
 	}
+	for _, tx := range append(append([]Transaction(nil), left...), right...) {
+		for _, check := range tx.FinancialChecks {
+			finding := FinancialEffectFinding{Transaction: tx, Check: check}
+			if check.Field == "settlement" {
+				switch check.Status {
+				case "match":
+					result.SettlementMatches = append(result.SettlementMatches, finding)
+				case "diff":
+					result.SettlementDiffs = append(result.SettlementDiffs, finding)
+				}
+				continue
+			}
+			switch check.Status {
+			case "match":
+				result.FinancialEffectMatches = append(result.FinancialEffectMatches, finding)
+			case "diff":
+				result.FinancialEffectDiffs = append(result.FinancialEffectDiffs, finding)
+			case "unchecked":
+				result.FinancialUnchecked = append(result.FinancialUnchecked, finding)
+			}
+		}
+	}
 
 	threshold := matching.ResolveNameMatchThreshold(pair.NameMatchThreshold)
 
@@ -381,6 +403,11 @@ func buildSummary(totalLeft, totalRight int, result *Result, currency string) (S
 		SubsetSumMatchedCount:     len(result.SubsetSumMatched),
 		SubsetSumAmbiguousCount:   len(result.SubsetSumAmbiguous),
 		SubsetSumSkippedCount:     len(result.SubsetSumSkipped),
+		FinancialEffectMatchCount: len(result.FinancialEffectMatches),
+		FinancialEffectDiffCount:  len(result.FinancialEffectDiffs),
+		FinancialUncheckedCount:   len(result.FinancialUnchecked),
+		SettlementMatchCount:      len(result.SettlementMatches),
+		SettlementDiffCount:       len(result.SettlementDiffs),
 		MatchedAmountLeft:         matchedAmtLeft,
 		MatchedAmountRight:        matchedAmtRight,
 		UnmatchedAmountLeft:       unmatchedAmtLeft,

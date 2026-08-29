@@ -292,6 +292,21 @@
             "subset_sum_skipped_count": {
               "type": "integer"
             },
+            "financial_effect_match_count": {
+              "type": "integer"
+            },
+            "financial_effect_diff_count": {
+              "type": "integer"
+            },
+            "financial_unchecked_count": {
+              "type": "integer"
+            },
+            "settlement_match_count": {
+              "type": "integer"
+            },
+            "settlement_diff_count": {
+              "type": "integer"
+            },
             "matched_amount_left": {
               "type": "integer"
             },
@@ -377,6 +392,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -422,6 +481,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -480,6 +583,50 @@
               },
               "group_key": {
                 "type": "string"
+              },
+              "financials": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              },
+              "financial_checks": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "actual": {
+                      "type": "integer"
+                    },
+                    "expected": {
+                      "type": "integer"
+                    },
+                    "diff_minor": {
+                      "type": "integer"
+                    },
+                    "tolerance_minor": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "actual",
+                    "expected",
+                    "diff_minor",
+                    "tolerance_minor",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -531,6 +678,50 @@
               },
               "group_key": {
                 "type": "string"
+              },
+              "financials": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              },
+              "financial_checks": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "actual": {
+                      "type": "integer"
+                    },
+                    "expected": {
+                      "type": "integer"
+                    },
+                    "diff_minor": {
+                      "type": "integer"
+                    },
+                    "tolerance_minor": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "actual",
+                    "expected",
+                    "diff_minor",
+                    "tolerance_minor",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -585,6 +776,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -630,6 +865,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -695,6 +974,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -740,6 +1063,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -816,6 +1183,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -879,6 +1290,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -929,6 +1384,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -991,6 +1490,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -1041,6 +1584,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1107,6 +1694,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -1157,6 +1788,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1228,6 +1903,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1279,6 +1998,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1346,6 +2109,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1397,6 +2204,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1468,6 +2319,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1519,6 +2414,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1593,6 +2532,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1644,6 +2627,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1707,6 +2734,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -1757,6 +2828,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1819,6 +2934,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -1874,6 +3033,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -1937,6 +3140,50 @@
                   },
                   "group_key": {
                     "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
                   }
                 },
                 "required": [
@@ -1957,6 +3204,691 @@
             "required": [
               "left",
               "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "financial_effect_match": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "transaction": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "check": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "actual": {
+                    "type": "integer"
+                  },
+                  "expected": {
+                    "type": "integer"
+                  },
+                  "diff_minor": {
+                    "type": "integer"
+                  },
+                  "tolerance_minor": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "field",
+                  "actual",
+                  "expected",
+                  "diff_minor",
+                  "tolerance_minor",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "transaction",
+              "check"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "financial_effect_diff": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "transaction": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "check": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "actual": {
+                    "type": "integer"
+                  },
+                  "expected": {
+                    "type": "integer"
+                  },
+                  "diff_minor": {
+                    "type": "integer"
+                  },
+                  "tolerance_minor": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "field",
+                  "actual",
+                  "expected",
+                  "diff_minor",
+                  "tolerance_minor",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "transaction",
+              "check"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "financial_unchecked": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "transaction": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "check": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "actual": {
+                    "type": "integer"
+                  },
+                  "expected": {
+                    "type": "integer"
+                  },
+                  "diff_minor": {
+                    "type": "integer"
+                  },
+                  "tolerance_minor": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "field",
+                  "actual",
+                  "expected",
+                  "diff_minor",
+                  "tolerance_minor",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "transaction",
+              "check"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "settlement_match": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "transaction": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "check": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "actual": {
+                    "type": "integer"
+                  },
+                  "expected": {
+                    "type": "integer"
+                  },
+                  "diff_minor": {
+                    "type": "integer"
+                  },
+                  "tolerance_minor": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "field",
+                  "actual",
+                  "expected",
+                  "diff_minor",
+                  "tolerance_minor",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "transaction",
+              "check"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "settlement_diff": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "transaction": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "raw": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "group_key": {
+                    "type": "string"
+                  },
+                  "financials": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  },
+                  "financial_checks": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string"
+                        },
+                        "actual": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "type": "integer"
+                        },
+                        "diff_minor": {
+                          "type": "integer"
+                        },
+                        "tolerance_minor": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "actual",
+                        "expected",
+                        "diff_minor",
+                        "tolerance_minor",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "date",
+                  "amount",
+                  "currency",
+                  "reference",
+                  "name",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "check": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "actual": {
+                    "type": "integer"
+                  },
+                  "expected": {
+                    "type": "integer"
+                  },
+                  "diff_minor": {
+                    "type": "integer"
+                  },
+                  "tolerance_minor": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "field",
+                  "actual",
+                  "expected",
+                  "diff_minor",
+                  "tolerance_minor",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "transaction",
+              "check"
             ],
             "additionalProperties": false
           }
@@ -2042,6 +3974,21 @@
                 "type": "integer"
               },
               "subset_sum_skipped_count": {
+                "type": "integer"
+              },
+              "financial_effect_match_count": {
+                "type": "integer"
+              },
+              "financial_effect_diff_count": {
+                "type": "integer"
+              },
+              "financial_unchecked_count": {
+                "type": "integer"
+              },
+              "settlement_match_count": {
+                "type": "integer"
+              },
+              "settlement_diff_count": {
                 "type": "integer"
               },
               "matched_amount_left": {
@@ -2395,6 +4342,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -2440,6 +4431,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -2514,6 +4549,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -2559,6 +4638,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -2637,6 +4760,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -2682,6 +4849,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -2757,6 +4968,50 @@
                 },
                 "group_key": {
                   "type": "string"
+                },
+                "financials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "financial_checks": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "actual": {
+                        "type": "integer"
+                      },
+                      "expected": {
+                        "type": "integer"
+                      },
+                      "diff_minor": {
+                        "type": "integer"
+                      },
+                      "tolerance_minor": {
+                        "type": "integer"
+                      },
+                      "status": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "actual",
+                      "expected",
+                      "diff_minor",
+                      "tolerance_minor",
+                      "status"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -2821,6 +5076,50 @@
                 },
                 "group_key": {
                   "type": "string"
+                },
+                "financials": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "financial_checks": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "actual": {
+                        "type": "integer"
+                      },
+                      "expected": {
+                        "type": "integer"
+                      },
+                      "diff_minor": {
+                        "type": "integer"
+                      },
+                      "tolerance_minor": {
+                        "type": "integer"
+                      },
+                      "status": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "actual",
+                      "expected",
+                      "diff_minor",
+                      "tolerance_minor",
+                      "status"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -2888,6 +5187,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -2938,6 +5281,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3013,6 +5400,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -3063,6 +5494,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3142,6 +5617,50 @@
                     },
                     "group_key": {
                       "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -3192,6 +5711,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3276,6 +5839,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3327,6 +5934,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3407,6 +6058,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3458,6 +6153,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3542,6 +6281,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3593,6 +6376,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3680,6 +6507,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3731,6 +6602,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3818,6 +6733,50 @@
                       },
                       "group_key": {
                         "type": "string"
+                      },
+                      "financials": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "integer"
+                        }
+                      },
+                      "financial_checks": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string"
+                            },
+                            "actual": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "type": "integer"
+                            },
+                            "diff_minor": {
+                              "type": "integer"
+                            },
+                            "tolerance_minor": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "actual",
+                            "expected",
+                            "diff_minor",
+                            "tolerance_minor",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
@@ -3935,6 +6894,21 @@
                       "type": "integer"
                     },
                     "subset_sum_skipped_count": {
+                      "type": "integer"
+                    },
+                    "financial_effect_match_count": {
+                      "type": "integer"
+                    },
+                    "financial_effect_diff_count": {
+                      "type": "integer"
+                    },
+                    "financial_unchecked_count": {
+                      "type": "integer"
+                    },
+                    "settlement_match_count": {
+                      "type": "integer"
+                    },
+                    "settlement_diff_count": {
                       "type": "integer"
                     },
                     "matched_amount_left": {
@@ -4080,6 +7054,21 @@
                 "subset_sum_skipped_count": {
                   "type": "integer"
                 },
+                "financial_effect_match_count": {
+                  "type": "integer"
+                },
+                "financial_effect_diff_count": {
+                  "type": "integer"
+                },
+                "financial_unchecked_count": {
+                  "type": "integer"
+                },
+                "settlement_match_count": {
+                  "type": "integer"
+                },
+                "settlement_diff_count": {
+                  "type": "integer"
+                },
                 "matched_amount_left": {
                   "type": "integer"
                 },
@@ -4132,6 +7121,756 @@
             "type": {
               "type": "string",
               "const": "summary"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "transaction": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "check": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "actual": {
+                      "type": "integer"
+                    },
+                    "expected": {
+                      "type": "integer"
+                    },
+                    "diff_minor": {
+                      "type": "integer"
+                    },
+                    "tolerance_minor": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "actual",
+                    "expected",
+                    "diff_minor",
+                    "tolerance_minor",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "transaction",
+                "check"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "financial_effect_match"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "transaction": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "check": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "actual": {
+                      "type": "integer"
+                    },
+                    "expected": {
+                      "type": "integer"
+                    },
+                    "diff_minor": {
+                      "type": "integer"
+                    },
+                    "tolerance_minor": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "actual",
+                    "expected",
+                    "diff_minor",
+                    "tolerance_minor",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "transaction",
+                "check"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "financial_effect_diff"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "transaction": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "check": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "actual": {
+                      "type": "integer"
+                    },
+                    "expected": {
+                      "type": "integer"
+                    },
+                    "diff_minor": {
+                      "type": "integer"
+                    },
+                    "tolerance_minor": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "actual",
+                    "expected",
+                    "diff_minor",
+                    "tolerance_minor",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "transaction",
+                "check"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "financial_unchecked"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "transaction": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "check": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "actual": {
+                      "type": "integer"
+                    },
+                    "expected": {
+                      "type": "integer"
+                    },
+                    "diff_minor": {
+                      "type": "integer"
+                    },
+                    "tolerance_minor": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "actual",
+                    "expected",
+                    "diff_minor",
+                    "tolerance_minor",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "transaction",
+                "check"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "settlement_match"
+            }
+          },
+          "required": [
+            "schema",
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "transaction": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reference": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "raw": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "group_key": {
+                      "type": "string"
+                    },
+                    "financials": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "financial_checks": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "actual": {
+                            "type": "integer"
+                          },
+                          "expected": {
+                            "type": "integer"
+                          },
+                          "diff_minor": {
+                            "type": "integer"
+                          },
+                          "tolerance_minor": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field",
+                          "actual",
+                          "expected",
+                          "diff_minor",
+                          "tolerance_minor",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "date",
+                    "amount",
+                    "currency",
+                    "reference",
+                    "name",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                "check": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "actual": {
+                      "type": "integer"
+                    },
+                    "expected": {
+                      "type": "integer"
+                    },
+                    "diff_minor": {
+                      "type": "integer"
+                    },
+                    "tolerance_minor": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "actual",
+                    "expected",
+                    "diff_minor",
+                    "tolerance_minor",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "transaction",
+                "check"
+              ],
+              "additionalProperties": false
+            },
+            "schema": {
+              "type": "string",
+              "const": "reconify.engine.result.v1"
+            },
+            "type": {
+              "type": "string",
+              "const": "settlement_diff"
             }
           },
           "required": [

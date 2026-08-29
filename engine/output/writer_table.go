@@ -137,6 +137,27 @@ func (t *tableWriter) WriteSummary(s Summary) error {
 	return nil
 }
 
+func (t *tableWriter) WriteFinancialEffectMatch(f FinancialEffectFinding) error {
+	return t.writeFinancial(f, "financial_effect_match")
+}
+func (t *tableWriter) WriteFinancialEffectDiff(f FinancialEffectFinding) error {
+	return t.writeFinancial(f, "financial_effect_diff")
+}
+func (t *tableWriter) WriteFinancialUnchecked(f FinancialEffectFinding) error {
+	return t.writeFinancial(f, "financial_unchecked")
+}
+func (t *tableWriter) WriteSettlementMatch(f SettlementFinding) error {
+	return t.writeFinancial(f, "settlement_match")
+}
+func (t *tableWriter) WriteSettlementDiff(f SettlementFinding) error {
+	return t.writeFinancial(f, "settlement_diff")
+}
+func (t *tableWriter) writeFinancial(f FinancialEffectFinding, typ string) error {
+	t.rows = append(t.rows, tableRow{typ: typ, leftID: f.Transaction.ID, leftDt: f.Transaction.Date.Format("2006-01-02"), leftAmt: fmtI64(f.Transaction.Amount), leftRef: f.Transaction.Reference, note: fmt.Sprintf("field=%s actual=%d expected=%d diff=%d status=%s", f.Check.Field, f.Check.Actual, f.Check.Expected, f.Check.DiffMinor, f.Check.Status)})
+	t.maybeWarn()
+	return nil
+}
+
 func (t *tableWriter) Flush() error {
 	tw := tabwriter.NewWriter(t.w, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintln(tw, "TYPE\tLEFT_ID\tLEFT_DATE\tLEFT_AMT\tLEFT_REF\tRIGHT_ID\tRIGHT_DATE\tRIGHT_AMT\tRIGHT_REF\tNOTE"); err != nil {

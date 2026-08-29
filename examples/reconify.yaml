@@ -26,6 +26,20 @@ sources:
       currency_col: "Currency"
       name_col: "Details"
       ref_col: "Reference"
+      # Optional financial semantics. Every configured cell is normalized to
+      # minor units and must be non-empty and valid. Expectations are checked
+      # independently from transaction matching.
+      # financials:
+      #   gross_col: "GrossAmount"
+      #   net_col: "NetAmount"
+      #   fields:
+      #     fee: "Fee"
+      #     tax: "Tax"
+      #   expectations:
+      #     fee:
+      #       percentage: {base: gross, rate: 1.5}
+      #       operation: subtract
+      #       tolerance_minor: 1
 
   stripe:
     file_pattern: "data/stripe/*.csv"

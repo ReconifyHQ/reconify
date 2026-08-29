@@ -102,6 +102,11 @@ func ReconcileMultiSource(
 		result.ManyToManyTimingDiff = append(result.ManyToManyTimingDiff, passResult.ManyToManyTimingDiff...)
 		result.AmbiguousGroups = append(result.AmbiguousGroups, passResult.AmbiguousGroups...)
 		result.Warnings = append(result.Warnings, passResult.Warnings...)
+		result.FinancialEffectMatches = append(result.FinancialEffectMatches, passResult.FinancialEffectMatches...)
+		result.FinancialEffectDiffs = append(result.FinancialEffectDiffs, passResult.FinancialEffectDiffs...)
+		result.FinancialUnchecked = append(result.FinancialUnchecked, passResult.FinancialUnchecked...)
+		result.SettlementMatches = append(result.SettlementMatches, passResult.SettlementMatches...)
+		result.SettlementDiffs = append(result.SettlementDiffs, passResult.SettlementDiffs...)
 		result.BySource[cp.SourceName] = passResult.Summary
 
 		// Only keep this pass's right-side duplicate groups — its left-side

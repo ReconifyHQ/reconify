@@ -93,6 +93,53 @@ func (f *filteredWriter) WriteSummary(s Summary) error {
 
 func (f *filteredWriter) Flush() error { return f.inner.Flush() }
 
+func (f *filteredWriter) WriteFinancialEffectMatch(v FinancialEffectFinding) error {
+	if f.mode != config.ResultModeAll {
+		return nil
+	}
+	if w, ok := f.inner.(FinancialEventWriter); ok {
+		return w.WriteFinancialEffectMatch(v)
+	}
+	return nil
+}
+func (f *filteredWriter) WriteFinancialEffectDiff(v FinancialEffectFinding) error {
+	if f.mode == config.ResultModeSummaryOnly {
+		return nil
+	}
+	if w, ok := f.inner.(FinancialEventWriter); ok {
+		return w.WriteFinancialEffectDiff(v)
+	}
+	return nil
+}
+func (f *filteredWriter) WriteFinancialUnchecked(v FinancialEffectFinding) error {
+	if f.mode != config.ResultModeAll {
+		return nil
+	}
+	if w, ok := f.inner.(FinancialEventWriter); ok {
+		return w.WriteFinancialUnchecked(v)
+	}
+	return nil
+}
+
+func (f *filteredWriter) WriteSettlementMatch(v SettlementFinding) error {
+	if f.mode != config.ResultModeAll {
+		return nil
+	}
+	if w, ok := f.inner.(FinancialEventWriter); ok {
+		return w.WriteSettlementMatch(v)
+	}
+	return nil
+}
+func (f *filteredWriter) WriteSettlementDiff(v SettlementFinding) error {
+	if f.mode == config.ResultModeSummaryOnly {
+		return nil
+	}
+	if w, ok := f.inner.(FinancialEventWriter); ok {
+		return w.WriteSettlementDiff(v)
+	}
+	return nil
+}
+
 // --- RunInfoSetter (optional) ---
 
 func (f *filteredWriter) SetRunInfo(info RunInfo) error {

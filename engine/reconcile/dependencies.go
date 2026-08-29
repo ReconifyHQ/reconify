@@ -19,6 +19,7 @@ type SourceBreakdownWriter = output.SourceBreakdownWriter
 type GroupedEventWriter = output.GroupedEventWriter
 type ManyToManyEventWriter = output.ManyToManyEventWriter
 type SubsetSumEventWriter = output.SubsetSumEventWriter
+type FinancialEventWriter = output.FinancialEventWriter
 type ReconcileOptions = matching.ReconcileOptions
 type TelemetryEvent = telemetry.TelemetryEvent
 type TelemetryOptions = telemetry.TelemetryOptions

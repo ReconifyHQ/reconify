@@ -188,6 +188,36 @@ func appendEvent(result *domain.Result, event envelope) error {
 			return err
 		}
 		result.AmbiguousGroups = append(result.AmbiguousGroups, value)
+	case "financial_effect_match":
+		var value domain.FinancialEffectFinding
+		if err := decode(&value); err != nil {
+			return err
+		}
+		result.FinancialEffectMatches = append(result.FinancialEffectMatches, value)
+	case "financial_effect_diff":
+		var value domain.FinancialEffectFinding
+		if err := decode(&value); err != nil {
+			return err
+		}
+		result.FinancialEffectDiffs = append(result.FinancialEffectDiffs, value)
+	case "financial_unchecked":
+		var value domain.FinancialEffectFinding
+		if err := decode(&value); err != nil {
+			return err
+		}
+		result.FinancialUnchecked = append(result.FinancialUnchecked, value)
+	case "settlement_match":
+		var value domain.SettlementFinding
+		if err := decode(&value); err != nil {
+			return err
+		}
+		result.SettlementMatches = append(result.SettlementMatches, value)
+	case "settlement_diff":
+		var value domain.SettlementFinding
+		if err := decode(&value); err != nil {
+			return err
+		}
+		result.SettlementDiffs = append(result.SettlementDiffs, value)
 	case "source_summary":
 		var value domain.SourceSummary
 		if err := decode(&value); err != nil {

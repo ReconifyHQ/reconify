@@ -99,6 +99,25 @@ func TestParseCSVEach_SkipRaw(t *testing.T) {
 	}
 }
 
+func TestParseCSVEach_NormalizesFinancialFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "financial.csv")
+	if err := os.WriteFile(path, []byte("date,amount,gross,fee\n2024-01-01,98.50,100.00,1.50\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.CSVParserCfg{Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", Multiplier: 100,
+		Financials: &config.FinancialsCfg{GrossCol: "gross", Fields: map[string]string{"fee": "fee"}}}
+	var got Transaction
+	rows, err := Parse("bank", path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = rows[0]
+	if got.Amount != 9850 || got.Financials["gross"] != 10000 || got.Financials["fee"] != 150 {
+		t.Fatalf("normalized values = %#v amount=%d", got.Financials, got.Amount)
+	}
+}
+
 func TestParseAmount_Precision(t *testing.T) {
 	tests := []struct {
 		name       string

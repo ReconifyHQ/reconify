@@ -3,11 +3,13 @@ package parser
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/reconifyhq/reconify/config"
 	. "github.com/reconifyhq/reconify/engine/domain"
+	"github.com/reconifyhq/reconify/engine/financial"
 )
 
 type rowNormalizer struct {
@@ -107,6 +109,96 @@ func (n *rowNormalizer) fromMap(values map[string]string, idRowNum, fileRowNum i
 		return Transaction{}, fmt.Errorf("%s: row %d: source %q: parse amount %q: %w",
 			n.filePath, fileRowNum, n.sourceName, amtStr, err)
 	}
+	var financials map[string]int64
+	if n.cfg.Financials != nil {
+		financials = make(map[string]int64, len(n.cfg.Financials.Fields)+2)
+		fields := make(map[string]string, len(n.cfg.Financials.Fields)+2)
+		for name, col := range n.cfg.Financials.Fields {
+			fields[name] = col
+		}
+		if n.cfg.Financials.GrossCol != "" {
+			fields["gross"] = n.cfg.Financials.GrossCol
+		}
+		if n.cfg.Financials.NetCol != "" {
+			fields["net"] = n.cfg.Financials.NetCol
+		}
+		for name, col := range fields {
+			value := strings.TrimSpace(getMapCol(values, col))
+			if value == "" {
+				return Transaction{}, fmt.Errorf("%s: row %d: source %q: financial column %q (%s) is empty", n.filePath, fileRowNum, n.sourceName, col, name)
+			}
+			parsed, parseErr := parseAmount(value, n.decimal, n.cfg.Thousands, n.multiplier)
+			if parseErr != nil {
+				return Transaction{}, fmt.Errorf("%s: row %d: source %q: parse financial %q (%s): %w", n.filePath, fileRowNum, n.sourceName, value, name, parseErr)
+			}
+			financials[name] = parsed
+		}
+	}
+	var financialChecks []FinancialCheck
+	if n.cfg.Financials != nil {
+		fields := make([]string, 0, len(financials))
+		for field := range financials {
+			fields = append(fields, field)
+		}
+		sort.Strings(fields)
+		for _, field := range fields {
+			actual := financials[field]
+			rule, configured := n.cfg.Financials.Expectations[field]
+			if !configured {
+				financialChecks = append(financialChecks, FinancialCheck{Field: field, Actual: actual, Status: "unchecked"})
+				continue
+			}
+			candidate := Transaction{Financials: financials}
+			expected, evalErr := financial.Evaluate(rule, candidate)
+			if evalErr != nil {
+				return Transaction{}, fmt.Errorf("%s: row %d: source %q: financial expectation %q: %w", n.filePath, fileRowNum, n.sourceName, field, evalErr)
+			}
+			diff, diffErr := CheckedAddInt64("financial difference", actual, -expected)
+			if diffErr != nil {
+				return Transaction{}, fmt.Errorf("%s: row %d: financial expectation %q: %w", n.filePath, fileRowNum, field, diffErr)
+			}
+			status := "diff"
+			if diff <= rule.ToleranceMinor && diff >= -rule.ToleranceMinor {
+				status = "match"
+			}
+			financialChecks = append(financialChecks, FinancialCheck{Field: field, Actual: actual, Expected: expected, DiffMinor: diff, ToleranceMinor: rule.ToleranceMinor, Status: status})
+		}
+		if _, hasGross := financials["gross"]; hasGross {
+			if net, hasNet := financials["net"]; hasNet {
+				expectedNet := financials["gross"]
+				settlementTolerance := int64(0)
+				for field, rule := range n.cfg.Financials.Expectations {
+					if field == "gross" || field == "net" {
+						continue
+					}
+					fee, exists := financials[field]
+					if !exists {
+						continue
+					}
+					if rule.Operation == "add" {
+						expectedNet, err = CheckedAddInt64("settlement expected net", expectedNet, fee)
+					} else {
+						expectedNet, err = CheckedAddInt64("settlement expected net", expectedNet, -fee)
+					}
+					if err != nil {
+						return Transaction{}, fmt.Errorf("%s: row %d: source %q: settlement: %w", n.filePath, fileRowNum, n.sourceName, err)
+					}
+					if rule.ToleranceMinor > settlementTolerance {
+						settlementTolerance = rule.ToleranceMinor
+					}
+				}
+				diff, diffErr := CheckedAddInt64("settlement difference", net, -expectedNet)
+				if diffErr != nil {
+					return Transaction{}, fmt.Errorf("%s: row %d: source %q: settlement: %w", n.filePath, fileRowNum, n.sourceName, diffErr)
+				}
+				status := "diff"
+				if diff <= settlementTolerance && diff >= -settlementTolerance {
+					status = "match"
+				}
+				financialChecks = append(financialChecks, FinancialCheck{Field: "settlement", Actual: net, Expected: expectedNet, DiffMinor: diff, ToleranceMinor: settlementTolerance, Status: status})
+			}
+		}
+	}
 
 	var raw map[string]string
 	if !n.cfg.SkipRaw {
@@ -123,15 +215,17 @@ func (n *rowNormalizer) fromMap(values map[string]string, idRowNum, fileRowNum i
 	}
 
 	return Transaction{
-		ID:        fmt.Sprintf("%s-%d", n.sourceName, idRowNum),
-		Date:      date,
-		Amount:    amount,
-		Source:    n.sourceName,
-		Raw:       raw,
-		Currency:  strings.TrimSpace(getMapCol(values, n.cfg.CurrencyCol)),
-		Reference: reference,
-		Name:      strings.TrimSpace(getMapCol(values, n.cfg.NameCol)),
-		GroupKey:  groupKey,
+		ID:              fmt.Sprintf("%s-%d", n.sourceName, idRowNum),
+		Date:            date,
+		Amount:          amount,
+		Source:          n.sourceName,
+		Raw:             raw,
+		Currency:        strings.TrimSpace(getMapCol(values, n.cfg.CurrencyCol)),
+		Reference:       reference,
+		Name:            strings.TrimSpace(getMapCol(values, n.cfg.NameCol)),
+		GroupKey:        groupKey,
+		Financials:      financials,
+		FinancialChecks: financialChecks,
 	}, nil
 }
 func getMapCol(values map[string]string, colName string) string {
