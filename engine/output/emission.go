@@ -101,6 +101,33 @@ func WriteResultEvents(w ResultWriter, res *Result, suppressWarnings bool) error
 	} else if hasSubsetSum && !suppressWarnings {
 		observeWarning(w, Warning{Code: WarningUnsupportedSubsetSumEvents, Message: "current output format does not support subset_sum match events; use --format=json or --format=ndjson to capture all subset_sum output"})
 	}
+	if fw, ok := w.(FinancialEventWriter); ok {
+		for _, finding := range res.FinancialEffectMatches {
+			if err := fw.WriteFinancialEffectMatch(finding); err != nil {
+				return err
+			}
+		}
+		for _, finding := range res.FinancialEffectDiffs {
+			if err := fw.WriteFinancialEffectDiff(finding); err != nil {
+				return err
+			}
+		}
+		for _, finding := range res.FinancialUnchecked {
+			if err := fw.WriteFinancialUnchecked(finding); err != nil {
+				return err
+			}
+		}
+		for _, finding := range res.SettlementMatches {
+			if err := fw.WriteSettlementMatch(finding); err != nil {
+				return err
+			}
+		}
+		for _, finding := range res.SettlementDiffs {
+			if err := fw.WriteSettlementDiff(finding); err != nil {
+				return err
+			}
+		}
+	}
 	for _, warning := range res.Warnings {
 		observeWarning(w, Warning{Code: WarningEmptyCurrency, Message: warning})
 	}

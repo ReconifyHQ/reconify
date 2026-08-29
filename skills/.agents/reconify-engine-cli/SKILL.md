@@ -38,6 +38,11 @@ text.
 `json-stream` releases encoded structs early but still accumulates one JSON document. Confirm the
 chosen behavior against `capabilities` and command help for the installed build.
 
+Financial-enabled runs add `financial_effect_match`, `financial_effect_diff`, `financial_unchecked`,
+`settlement_match`, and `settlement_diff` events plus financial counters in `summary`. Use
+`exceptions_only` to retain financial and settlement differences while suppressing clean financial
+matches and unchecked findings. `--fail-if-exceptions` also fails for those differences.
+
 ## Understand the agent profile
 
 `--agent` selects machine-readable defaults and exception-focused result emission. It fits callers

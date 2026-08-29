@@ -83,6 +83,21 @@
             "subset_sum_skipped_count": {
               "type": "integer"
             },
+            "financial_effect_match_count": {
+              "type": "integer"
+            },
+            "financial_effect_diff_count": {
+              "type": "integer"
+            },
+            "financial_unchecked_count": {
+              "type": "integer"
+            },
+            "settlement_match_count": {
+              "type": "integer"
+            },
+            "settlement_diff_count": {
+              "type": "integer"
+            },
             "matched_amount_left": {
               "type": "integer"
             },
@@ -200,6 +215,21 @@
                 "type": "integer"
               },
               "subset_sum_skipped_count": {
+                "type": "integer"
+              },
+              "financial_effect_match_count": {
+                "type": "integer"
+              },
+              "financial_effect_diff_count": {
+                "type": "integer"
+              },
+              "financial_unchecked_count": {
+                "type": "integer"
+              },
+              "settlement_match_count": {
+                "type": "integer"
+              },
+              "settlement_diff_count": {
                 "type": "integer"
               },
               "matched_amount_left": {

@@ -8,7 +8,7 @@ description: Automate Reconify in CI. Use when producing deterministic artifacts
 ## 1. Define the contract and policy
 
 Run `reconify capabilities` for the binary installed in CI. Choose whether unmatched rows or all
-exception events should fail the job, and record the corresponding flag and exit codes from that
+exception events—including financial-effect and settlement differences—should fail the job, and record the corresponding flag and exit codes from that
 contract. This checkpoint is complete when config failures and reconciliation-policy failures have
 separate handling.
 
@@ -46,6 +46,10 @@ esac
 ```
 
 Verify these codes against `capabilities` when adopting a different Engine protocol version.
+
+When financial checks are configured, retain `financial_effect_diff` and `settlement_diff` events in
+the failure artifact. `financial_unchecked` is informational and does not fail the job by itself;
+`--fail-if-exceptions` fails for financial and settlement differences as well as ordinary exceptions.
 
 ## 4. Retain evidence on failure
 

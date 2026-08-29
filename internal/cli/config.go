@@ -139,6 +139,26 @@ This validates that required columns exist and that sample data can be parsed.`,
 			} else {
 				cmd.PrintErrf("[ok] ref_col %q found\n", source.Parser.RefCol)
 			}
+			if source.Parser.Financials != nil {
+				financialColumns := make(map[string]string, len(source.Parser.Financials.Fields)+2)
+				for name, col := range source.Parser.Financials.Fields {
+					financialColumns[name] = col
+				}
+				if source.Parser.Financials.GrossCol != "" {
+					financialColumns["gross"] = source.Parser.Financials.GrossCol
+				}
+				if source.Parser.Financials.NetCol != "" {
+					financialColumns["net"] = source.Parser.Financials.NetCol
+				}
+				for name, col := range financialColumns {
+					if !hasHeader(headerSet, col) {
+						cmd.PrintErrf("[x] financial field %q column %q not found in input fields\n", name, col)
+						valid = false
+					} else {
+						cmd.PrintErrf("[ok] financial field %q column %q found\n", name, col)
+					}
+				}
+			}
 
 			if !valid {
 				cmd.PrintErrf("Available columns: %s\n", strings.Join(headers, ", "))
@@ -265,6 +285,11 @@ Agents can call this once to self-bootstrap context without reading the source c
 									"tz":           map[string]interface{}{"type": "string", "required": false, "description": "IANA timezone for dates without timezone info. Overridden by top-level timezone."},
 									"sheet":        map[string]interface{}{"type": "string", "required": false, "description": "Sheet name for xlsx files. Uses first sheet when empty."},
 									"skip_raw":     map[string]interface{}{"type": "boolean", "default": false, "description": "Skip allocating the Raw field map. Reduces memory for large files."},
+									"financials": map[string]interface{}{"type": "object", "required": false, "description": "Optional normalized monetary fields and source-local fee expectations.", "fields": map[string]interface{}{
+										"gross_col": map[string]interface{}{"type": "string", "required": false}, "net_col": map[string]interface{}{"type": "string", "required": false},
+										"fields":       map[string]interface{}{"type": "map[name]string", "required": false},
+										"expectations": map[string]interface{}{"type": "map[name]expectation", "required": false, "description": "Exactly one of field, fixed, percentage, fixed_plus_percentage, or components per expectation."},
+									}},
 								},
 							},
 						},

@@ -51,6 +51,11 @@ func capabilityNDJSONEvents() map[string]string {
 		"subset_sum_match":         "One left row matched to a bounded subset of right rows summing within tolerance (subset_sum pass). Payload: {left, rights: []Transaction}.",
 		"subset_sum_ambiguous":     "Multiple valid right-row subsets sum within tolerance of the left row; manual review required. Payload: {left, alternatives: [][]Transaction}.",
 		"subset_sum_skipped":       "Left row skipped by the subset_sum pass because its candidate pool or search exceeded configured bounds. Payload: {left, reason}.",
+		"financial_effect_match":   "Configured financial expectation matched. Payload: FinancialEffectFinding.",
+		"financial_effect_diff":    "Configured financial expectation exceeded tolerance. Payload: FinancialEffectFinding.",
+		"financial_unchecked":      "Mapped financial field had no expectation rule; informational only. Payload: FinancialEffectFinding.",
+		"settlement_match":         "Gross-to-net settlement identity matched within tolerance. Payload: SettlementFinding.",
+		"settlement_diff":          "Gross-to-net settlement identity differed beyond tolerance. Payload: SettlementFinding.",
 		"ambiguous_group":          "Multiple left rows share the same reference; manual review required. Payload: {reference, left_rows, rights}.",
 		"duplicate":                "Transactions within the same source sharing the same reference. Payload: {source, reference, transactions}.",
 		"source_summary":           "Per-counterpart summary for 1-N runs. One per counterpart, before final summary. Payload: {source: string, summary: Summary}.",
@@ -64,7 +69,7 @@ func capabilityExitCodes() map[string]string {
 		"1": "Unexpected or internal error.",
 		"2": "Config or validation error (bad YAML, missing pair/source, column not found).",
 		"3": "Reconcile completed with unmatched rows. Only returned when --fail-if-unmatched is set.",
-		"4": "Reconcile completed with exception events (amount_diff, timing_diff, or unmatched). Only returned when --fail-if-exceptions is set. Takes precedence over exit code 3 when both flags are set.",
+		"4": "Reconcile completed with exception events (amount_diff, timing_diff, financial, settlement, or unmatched). Only returned when --fail-if-exceptions is set. Takes precedence over exit code 3 when both flags are set.",
 	}
 }
 

@@ -44,6 +44,9 @@ Use `go test ./...` for quick verification. Use `make test` when race detection 
 - `reconcile` formats: `json`, `json-stream`, `ndjson`, `csv`, `table`.
 - Prefer `ndjson` or `csv` for large reconciliation jobs.
 - `--result-mode` controls event emission: `all` (default), `exceptions_only` (suppress clean matches), `summary_only` (suppress all item events). Can also be set per-pair as `result_mode` in YAML. CLI flag overrides pair config.
+- `parser.financials` is optional. It maps gross/net and named financial fields, then evaluates fixed, percentage, fixed-plus-percentage, or component-sum expectations in minor units.
+- Financial checks are additive to matching and are emitted as `financial_effect_match`, `financial_effect_diff`, `financial_unchecked`, `settlement_match`, and `settlement_diff`. Settlement differences do not become ordinary `amount_diff` events.
+- `exceptions_only` keeps financial and settlement differences while suppressing clean financial matches and unchecked informational findings. `--fail-if-exceptions` treats financial and settlement differences as reconciliation failures.
 
 ## Agent Skills
 
@@ -74,6 +77,8 @@ the self-describing surface instead — `reconify capabilities`, `reconify inspe
 
 Tool-specific files should be thin adapters that point back to these canonical skills. Do not duplicate long workflow instructions across Codex, Claude, Gemini, and Copilot files.
 
+Financial configuration and output are covered by the reconcile, config, CLI, debug, and CI skills. Keep those skills aligned with `README.md`, `config/config.go`, and the generated result schema when changing the financial contract.
+
 **Installing skills into another project:** `npx @reconifyhq/skills` copies all skill files into the target project's `.agents/skills/`, `.claude/skills/`, and `.codex/skills/` directories. The npm package is defined in `package.json` at the repo root; the install script is `scripts/install-skills.js`.
 
 ## Pull Requests
@@ -87,6 +92,7 @@ Tool-specific files should be thin adapters that point back to these canonical s
 - Keep edits scoped to the requested behavior.
 - Do not rewrite public config keys, CLI flags, or output formats unless the task explicitly requires a breaking change.
 - Update README/examples/tests when user-facing CLI or config behavior changes.
+- Update the canonical skills when config keys, event types, summary counters, filtering, or exit-code behavior changes.
 - Do not commit generated benchmark datasets, local CSVs, coverage files, binaries, or private `*.local.yaml` configs.
 
 ## Test Organization

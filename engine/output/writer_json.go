@@ -118,6 +118,27 @@ func (j *jsonWriter) WriteSubsetSumSkipped(pair SubsetSumSkippedPair) error {
 	return nil
 }
 
+func (j *jsonWriter) WriteFinancialEffectMatch(f FinancialEffectFinding) error {
+	j.result.FinancialEffectMatches = append(j.result.FinancialEffectMatches, f)
+	return nil
+}
+func (j *jsonWriter) WriteFinancialEffectDiff(f FinancialEffectFinding) error {
+	j.result.FinancialEffectDiffs = append(j.result.FinancialEffectDiffs, f)
+	return nil
+}
+func (j *jsonWriter) WriteFinancialUnchecked(f FinancialEffectFinding) error {
+	j.result.FinancialUnchecked = append(j.result.FinancialUnchecked, f)
+	return nil
+}
+func (j *jsonWriter) WriteSettlementMatch(f SettlementFinding) error {
+	j.result.SettlementMatches = append(j.result.SettlementMatches, f)
+	return nil
+}
+func (j *jsonWriter) WriteSettlementDiff(f SettlementFinding) error {
+	j.result.SettlementDiffs = append(j.result.SettlementDiffs, f)
+	return nil
+}
+
 // SetMeta sets pair and source names on the result. Fixes the pre-existing bug
 // where PairName/LeftSource/RightSource were never populated in the JSON output.
 func (j *jsonWriter) SetMeta(pairName, leftSource, rightSource string) {

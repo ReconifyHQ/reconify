@@ -195,6 +195,47 @@ func reconcileStreamingWithOptions(
 	rightCfgNoRaw.SkipRaw = true
 
 	rightPolicy := rightCfg.ResolvedDuplicatePolicy()
+	financialMatchCount, financialDiffCount, financialUncheckedCount := 0, 0, 0
+	settlementMatchCount, settlementDiffCount := 0, 0
+	emitFinancial := func(tx Transaction) error {
+		fw, ok := w.(FinancialEventWriter)
+		if !ok {
+			return nil
+		}
+		for _, check := range tx.FinancialChecks {
+			finding := FinancialEffectFinding{Transaction: tx, Check: check}
+			var err error
+			if check.Field == "settlement" {
+				switch check.Status {
+				case "match":
+					settlementMatchCount++
+					err = fw.WriteSettlementMatch(finding)
+				case "diff":
+					settlementDiffCount++
+					err = fw.WriteSettlementDiff(finding)
+				}
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			switch check.Status {
+			case "match":
+				financialMatchCount++
+				err = fw.WriteFinancialEffectMatch(finding)
+			case "diff":
+				financialDiffCount++
+				err = fw.WriteFinancialEffectDiff(finding)
+			case "unchecked":
+				financialUncheckedCount++
+				err = fw.WriteFinancialUnchecked(finding)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 
 	// rightSeen/rightDupKeys are only used for the "flag" policy.
 	rightSeen := make(map[string]uint8)
@@ -231,8 +272,14 @@ func reconcileStreamingWithOptions(
 					rightDupKeys[tx.GroupKey] = true
 				}
 			}
+			if err := emitFinancial(tx); err != nil {
+				return err
+			}
 			return idx.Add(tx)
 		case config.DuplicatePolicyKeep:
+			if err := emitFinancial(tx); err != nil {
+				return err
+			}
 			return idx.Add(tx)
 		case config.DuplicatePolicyMerge:
 			if tx.GroupKey != "" && rightMergeSeen[tx.GroupKey] {
@@ -241,13 +288,22 @@ func reconcileStreamingWithOptions(
 			if tx.GroupKey != "" {
 				rightMergeSeen[tx.GroupKey] = true
 			}
+			if err := emitFinancial(tx); err != nil {
+				return err
+			}
 			return idx.Add(tx)
 		case config.DuplicatePolicyLatest:
 			if tx.GroupKey != "" {
 				rightLatestBuf[tx.GroupKey] = tx // overwrite with latest row
 				return nil
 			}
+			if err := emitFinancial(tx); err != nil {
+				return err
+			}
 			return idx.Add(tx)
+		}
+		if err := emitFinancial(tx); err != nil {
+			return err
 		}
 		return idx.Add(tx)
 	}); err != nil {
@@ -256,6 +312,9 @@ func reconcileStreamingWithOptions(
 	// For "latest": bulk-add the last-seen row per GroupKey after the full scan.
 	if rightPolicy == config.DuplicatePolicyLatest {
 		for _, tx := range rightLatestBuf {
+			if err := emitFinancial(tx); err != nil {
+				return err
+			}
 			if err := idx.Add(tx); err != nil {
 				return err
 			}
@@ -400,8 +459,14 @@ func reconcileStreamingWithOptions(
 					leftDupKeys[ltx.GroupKey] = true
 				}
 			}
+			if err := emitFinancial(ltx); err != nil {
+				return err
+			}
 			return doMatchLeft(ltx)
 		case config.DuplicatePolicyKeep:
+			if err := emitFinancial(ltx); err != nil {
+				return err
+			}
 			return doMatchLeft(ltx)
 		case config.DuplicatePolicyMerge:
 			if ltx.GroupKey != "" && leftMergeSeen[ltx.GroupKey] {
@@ -410,13 +475,22 @@ func reconcileStreamingWithOptions(
 			if ltx.GroupKey != "" {
 				leftMergeSeen[ltx.GroupKey] = true
 			}
+			if err := emitFinancial(ltx); err != nil {
+				return err
+			}
 			return doMatchLeft(ltx)
 		case config.DuplicatePolicyLatest:
 			if ltx.GroupKey != "" {
 				leftLatestBuf[ltx.GroupKey] = ltx // overwrite with latest row
 				return nil
 			}
+			if err := emitFinancial(ltx); err != nil {
+				return err
+			}
 			return doMatchLeft(ltx)
+		}
+		if err := emitFinancial(ltx); err != nil {
+			return err
 		}
 		return doMatchLeft(ltx)
 	}); err != nil {
@@ -427,6 +501,9 @@ func reconcileStreamingWithOptions(
 		for _, ltx := range leftLatestBuf {
 			if ctx.Err() != nil {
 				return ctx.Err()
+			}
+			if err := emitFinancial(ltx); err != nil {
+				return err
 			}
 			if err := doMatchLeft(ltx); err != nil {
 				return err
@@ -638,27 +715,32 @@ func reconcileStreamingWithOptions(
 	reporter.Start("finalization", leftSource, rightSource, nil)
 	reporter.Progress(totalLeft + totalRight)
 	if err := w.WriteSummary(Summary{
-		Currency:                cc.Currency(),
-		TotalLeft:               totalLeft,
-		TotalRight:              totalRight,
-		MatchedCount:            matchedCount,
-		UnmatchedLeft:           unmatchedLeftCount,
-		UnmatchedRight:          unmatchedRightCount,
-		AmountDiffCount:         amountDiffCount,
-		TimingDiffCount:         timingDiffCount,
-		DuplicateCount:          dupTxnCount,
-		MatchRatePct:            matchRate,
-		ReconciledRatePct:       reconciledRate,
-		SubsetSumMatchedCount:   subsetSumMatchedCount,
-		SubsetSumAmbiguousCount: subsetSumAmbiguousCount,
-		SubsetSumSkippedCount:   subsetSumSkippedCount,
-		MatchedAmountLeft:       matchedAmtLeft,
-		MatchedAmountRight:      matchedAmtRight,
-		UnmatchedAmountLeft:     unmatchedAmtLeft,
-		UnmatchedAmountRight:    unmatchedAmtRight,
-		AmountDiffTotal:         amountDiffTotal,
-		AmbiguousAmountRight:    ambiguousAmtRight,
-		TotalDiscrepancy:        unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal + ambiguousAmtRight,
+		Currency:                  cc.Currency(),
+		TotalLeft:                 totalLeft,
+		TotalRight:                totalRight,
+		MatchedCount:              matchedCount,
+		UnmatchedLeft:             unmatchedLeftCount,
+		UnmatchedRight:            unmatchedRightCount,
+		AmountDiffCount:           amountDiffCount,
+		TimingDiffCount:           timingDiffCount,
+		DuplicateCount:            dupTxnCount,
+		MatchRatePct:              matchRate,
+		ReconciledRatePct:         reconciledRate,
+		SubsetSumMatchedCount:     subsetSumMatchedCount,
+		SubsetSumAmbiguousCount:   subsetSumAmbiguousCount,
+		SubsetSumSkippedCount:     subsetSumSkippedCount,
+		FinancialEffectMatchCount: financialMatchCount,
+		FinancialEffectDiffCount:  financialDiffCount,
+		FinancialUncheckedCount:   financialUncheckedCount,
+		SettlementMatchCount:      settlementMatchCount,
+		SettlementDiffCount:       settlementDiffCount,
+		MatchedAmountLeft:         matchedAmtLeft,
+		MatchedAmountRight:        matchedAmtRight,
+		UnmatchedAmountLeft:       unmatchedAmtLeft,
+		UnmatchedAmountRight:      unmatchedAmtRight,
+		AmountDiffTotal:           amountDiffTotal,
+		AmbiguousAmountRight:      ambiguousAmtRight,
+		TotalDiscrepancy:          unmatchedAmtLeft + unmatchedAmtRight + amountDiffTotal + ambiguousAmtRight,
 	}); err != nil {
 		return err
 	}

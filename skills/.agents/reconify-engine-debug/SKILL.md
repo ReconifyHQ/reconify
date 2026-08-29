@@ -23,6 +23,9 @@ the unexpected counter is tied to concrete event rows and source names.
 |---|---|
 | Everything unmatched | Both `ref_col` mappings contain the same identifier domain; both date layouts parse |
 | Similar `amount_diff` values | A documented fee or FX policy explains the magnitude |
+| `financial_effect_diff` events | The mapped field, expectation form, percentage base/rate, tolerance, and sign operation explain the difference |
+| `settlement_diff` events | Gross, net, and configured effect components do not satisfy the declared settlement identity |
+| `financial_unchecked` events | The field is mapped but no expectation is configured; treat it as informational unless the business requires a rule |
 | Amounts differ by a factor of 100 | Both source multipliers express the same minor unit |
 | One- or two-day `timing_diff` events | A documented settlement delay explains the offset |
 | Duplicate events | The mapped reference is unique, or the config intentionally groups repeats |
@@ -51,6 +54,9 @@ reconify explain corrected-result.json > corrected-explanation.json
 Debugging is complete when the reduced fixture proves the correction, the full run preserves all
 expected counters, and the report names the causal config change. A lower match rate is acceptable;
 silencing an unverified financial difference is not.
+
+Financial differences are independent of ordinary matching. Do not widen `amount_tolerance_minor` to
+hide a fee or settlement discrepancy; correct the financial expectation or source mapping instead.
 
 When the correction ends the task, promote the corrected artifacts to `result.json` and
 `explanation.json` and report them using the completion checklist in

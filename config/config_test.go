@@ -9,6 +9,56 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestParserFinancialsConfigRoundTrips(t *testing.T) {
+	var cfg CSVParserCfg
+	if err := yaml.Unmarshal([]byte(`
+type: csv
+date_col: date
+date_layout: 2006-01-02
+amount_col: amount
+multiplier: 100
+financials:
+  gross_col: gross
+  fields:
+    fee: fee
+    tax: tax
+  expectations:
+    fee:
+      percentage:
+        base: gross
+        rate: 1.5
+      operation: subtract
+      tolerance_minor: 1
+`), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Financials == nil || cfg.Financials.GrossCol != "gross" {
+		t.Fatalf("financials not decoded: %#v", cfg.Financials)
+	}
+	fee := cfg.Financials.Expectations["fee"]
+	if fee.Percentage == nil || fee.Percentage.Base != "gross" || fee.Percentage.Rate != 1.5 {
+		t.Fatalf("fee expectation not decoded: %#v", fee)
+	}
+}
+
+func TestFinancialsValidationRejectsInvalidDependencies(t *testing.T) {
+	cfg := baseValidConfig()
+	cfg.Sources["left"] = Source{FilePattern: "left.csv", Parser: CSVParserCfg{
+		Type: "csv", DateCol: "date", DateLayout: "2006-01-02", AmountCol: "amount", Multiplier: 100,
+		Financials: &FinancialsCfg{GrossCol: "gross", Expectations: map[string]ExpectationCfg{
+			"fee": {Percentage: &PercentageCfg{Base: "missing", Rate: 1}},
+		}},
+	}}
+	var messages []string
+	for _, err := range cfg.Validate() {
+		messages = append(messages, err.Error())
+	}
+	joined := strings.Join(messages, "\n")
+	if !strings.Contains(joined, "gross_col and net_col") || !strings.Contains(joined, "unknown field \"missing\"") || !strings.Contains(joined, "field is not mapped") {
+		t.Fatalf("validation errors missing: %s", joined)
+	}
+}
+
 func baseValidConfig() Config {
 	return Config{
 		Version:  1,

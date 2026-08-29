@@ -38,6 +38,7 @@ var csvHeader = []string{
 	"amount_diff_count", "timing_diff_count", "duplicate_count", "match_rate_pct",
 	"matched_amount_left", "matched_amount_right", "unmatched_amount_left",
 	"unmatched_amount_right", "amount_diff_total", "total_discrepancy", "reconciled_rate_pct",
+	"financial_field", "financial_actual", "financial_expected", "financial_diff_minor", "financial_status",
 }
 
 type csvWriter struct {
@@ -184,6 +185,37 @@ func (c *csvWriter) WriteSummary(s Summary) error {
 	row[31] = fmtI64(s.AmountDiffTotal)
 	row[32] = fmtI64(s.TotalDiscrepancy)
 	row[33] = strconv.FormatFloat(s.ReconciledRatePct, 'f', 2, 64)
+	return c.w.Write(row)
+}
+
+func (c *csvWriter) WriteFinancialEffectMatch(f FinancialEffectFinding) error {
+	return c.writeFinancial(f, "financial_effect_match")
+}
+func (c *csvWriter) WriteFinancialEffectDiff(f FinancialEffectFinding) error {
+	return c.writeFinancial(f, "financial_effect_diff")
+}
+func (c *csvWriter) WriteFinancialUnchecked(f FinancialEffectFinding) error {
+	return c.writeFinancial(f, "financial_unchecked")
+}
+func (c *csvWriter) WriteSettlementMatch(f SettlementFinding) error {
+	return c.writeFinancial(f, "settlement_match")
+}
+func (c *csvWriter) WriteSettlementDiff(f SettlementFinding) error {
+	return c.writeFinancial(f, "settlement_diff")
+}
+
+func (c *csvWriter) writeFinancial(f FinancialEffectFinding, typ string) error {
+	if err := c.writeHeader(); err != nil {
+		return err
+	}
+	row := emptyRow(typ)
+	txLeft(row, f.Transaction)
+	row[15] = SanitizeCSVField(f.Transaction.Source)
+	row[34] = SanitizeCSVField(f.Check.Field)
+	row[35] = fmtI64(f.Check.Actual)
+	row[36] = fmtI64(f.Check.Expected)
+	row[37] = fmtI64(f.Check.DiffMinor)
+	row[38] = f.Check.Status
 	return c.w.Write(row)
 }
 

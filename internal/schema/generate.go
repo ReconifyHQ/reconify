@@ -60,6 +60,11 @@ func GenerateResultSchema() (*jsonschema.Schema, error) {
 		{typ: "duplicate", dataType: reflect.TypeOf(domain.DuplicateGroup{})},
 		{typ: "source_summary", dataType: reflect.TypeOf(domain.SourceSummary{})},
 		{typ: "summary", dataType: reflect.TypeOf(domain.Summary{})},
+		{typ: "financial_effect_match", dataType: reflect.TypeOf(domain.FinancialEffectFinding{})},
+		{typ: "financial_effect_diff", dataType: reflect.TypeOf(domain.FinancialEffectFinding{})},
+		{typ: "financial_unchecked", dataType: reflect.TypeOf(domain.FinancialEffectFinding{})},
+		{typ: "settlement_match", dataType: reflect.TypeOf(domain.SettlementFinding{})},
+		{typ: "settlement_diff", dataType: reflect.TypeOf(domain.SettlementFinding{})},
 	}
 
 	branches := make([]*jsonschema.Schema, 0, len(events))

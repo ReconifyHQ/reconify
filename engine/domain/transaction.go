@@ -21,7 +21,30 @@ type Transaction struct {
 	// (the matching key). Populated from the parser's group_col, falling back to
 	// Reference when group_col is not configured.
 	GroupKey string `json:"group_key,omitempty"`
+	// Financials contains optional normalized monetary fields keyed by their
+	// configured logical names. It is nil for sources without financials.
+	Financials      map[string]int64 `json:"financials,omitempty"`
+	FinancialChecks []FinancialCheck `json:"financial_checks,omitempty"`
 }
+
+// FinancialCheck is a source-local expectation evaluated during parsing.
+type FinancialCheck struct {
+	Field          string `json:"field"`
+	Actual         int64  `json:"actual"`
+	Expected       int64  `json:"expected"`
+	DiffMinor      int64  `json:"diff_minor"`
+	ToleranceMinor int64  `json:"tolerance_minor"`
+	Status         string `json:"status"` // match, diff, unchecked
+}
+
+// FinancialEffectFinding carries one independent financial check result.
+type FinancialEffectFinding struct {
+	Transaction Transaction    `json:"transaction"`
+	Check       FinancialCheck `json:"check"`
+}
+
+// SettlementFinding reports whether a gross-to-net settlement identity held.
+type SettlementFinding = FinancialEffectFinding
 
 // MatchedPair is a left+right pair that reconciled cleanly.
 type MatchedPair struct {
@@ -171,9 +194,14 @@ type Summary struct {
 	// same reference, making grouping undetermined. These require manual reconciliation.
 	AmbiguousGroupCount int `json:"ambiguous_group_count,omitempty"`
 	// SubsetSum match counts (subset_sum pass). Omitted when zero.
-	SubsetSumMatchedCount   int `json:"subset_sum_matched_count,omitempty"`
-	SubsetSumAmbiguousCount int `json:"subset_sum_ambiguous_count,omitempty"`
-	SubsetSumSkippedCount   int `json:"subset_sum_skipped_count,omitempty"`
+	SubsetSumMatchedCount     int `json:"subset_sum_matched_count,omitempty"`
+	SubsetSumAmbiguousCount   int `json:"subset_sum_ambiguous_count,omitempty"`
+	SubsetSumSkippedCount     int `json:"subset_sum_skipped_count,omitempty"`
+	FinancialEffectMatchCount int `json:"financial_effect_match_count,omitempty"`
+	FinancialEffectDiffCount  int `json:"financial_effect_diff_count,omitempty"`
+	FinancialUncheckedCount   int `json:"financial_unchecked_count,omitempty"`
+	SettlementMatchCount      int `json:"settlement_match_count,omitempty"`
+	SettlementDiffCount       int `json:"settlement_diff_count,omitempty"`
 
 	// Monetary totals (all values in minor units, e.g. cents).
 	// These are always populated regardless of --audit mode.
@@ -228,9 +256,14 @@ type Result struct {
 	AmbiguousGroups []AmbiguousGroupPair `json:"ambiguous_groups,omitempty"`
 	// SubsetSum slices are populated by the subset_sum pass. Omitted when empty
 	// so output remains backwards-compatible for runs without subset_sum.
-	SubsetSumMatched   []SubsetSumMatchedPair   `json:"subset_sum_matched,omitempty"`
-	SubsetSumAmbiguous []SubsetSumAmbiguousPair `json:"subset_sum_ambiguous,omitempty"`
-	SubsetSumSkipped   []SubsetSumSkippedPair   `json:"subset_sum_skipped,omitempty"`
+	SubsetSumMatched       []SubsetSumMatchedPair   `json:"subset_sum_matched,omitempty"`
+	SubsetSumAmbiguous     []SubsetSumAmbiguousPair `json:"subset_sum_ambiguous,omitempty"`
+	SubsetSumSkipped       []SubsetSumSkippedPair   `json:"subset_sum_skipped,omitempty"`
+	FinancialEffectMatches []FinancialEffectFinding `json:"financial_effect_match,omitempty"`
+	FinancialEffectDiffs   []FinancialEffectFinding `json:"financial_effect_diff,omitempty"`
+	FinancialUnchecked     []FinancialEffectFinding `json:"financial_unchecked,omitempty"`
+	SettlementMatches      []SettlementFinding      `json:"settlement_match,omitempty"`
+	SettlementDiffs        []SettlementFinding      `json:"settlement_diff,omitempty"`
 	// Warnings are non-fatal observations about the run (e.g. empty-currency rows
 	// mixed with a non-empty base currency). They never affect matching or totals.
 	Warnings []string `json:"warnings,omitempty"`

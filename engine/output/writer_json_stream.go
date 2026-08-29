@@ -49,7 +49,7 @@ type jsonStreamWriter struct {
 }
 
 func newJSONStreamWriter(w io.Writer) *jsonStreamWriter {
-	order := []string{"matched", "unmatched_left", "unmatched_right", "amount_diff", "timing_diff", "duplicates"}
+	order := []string{"matched", "unmatched_left", "unmatched_right", "amount_diff", "timing_diff", "duplicates", "financial_effect_match", "financial_effect_diff", "financial_unchecked", "settlement_match", "settlement_diff"}
 	jw := &jsonStreamWriter{
 		w:     w,
 		byKey: make(map[string]*jsonStreamSection, len(order)),
@@ -196,6 +196,21 @@ func (j *jsonStreamWriter) WriteSubsetSumSkipped(pair SubsetSumSkippedPair) erro
 	}
 	j.subsetSumSkipped = append(j.subsetSumSkipped, b)
 	return nil
+}
+func (j *jsonStreamWriter) WriteFinancialEffectMatch(f FinancialEffectFinding) error {
+	return j.appendTo("financial_effect_match", f)
+}
+func (j *jsonStreamWriter) WriteFinancialEffectDiff(f FinancialEffectFinding) error {
+	return j.appendTo("financial_effect_diff", f)
+}
+func (j *jsonStreamWriter) WriteFinancialUnchecked(f FinancialEffectFinding) error {
+	return j.appendTo("financial_unchecked", f)
+}
+func (j *jsonStreamWriter) WriteSettlementMatch(f SettlementFinding) error {
+	return j.appendTo("settlement_match", f)
+}
+func (j *jsonStreamWriter) WriteSettlementDiff(f SettlementFinding) error {
+	return j.appendTo("settlement_diff", f)
 }
 
 func (j *jsonStreamWriter) Flush() error {

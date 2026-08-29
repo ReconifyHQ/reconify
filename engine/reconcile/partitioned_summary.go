@@ -117,6 +117,37 @@ func (w *partitionSummaryWriter) WriteSubsetSumSkipped(p SubsetSumSkippedPair) e
 	return nil
 }
 
+func (w *partitionSummaryWriter) WriteFinancialEffectMatch(p FinancialEffectFinding) error {
+	if fw, ok := w.ResultWriter.(FinancialEventWriter); ok {
+		return fw.WriteFinancialEffectMatch(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteFinancialEffectDiff(p FinancialEffectFinding) error {
+	if fw, ok := w.ResultWriter.(FinancialEventWriter); ok {
+		return fw.WriteFinancialEffectDiff(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteFinancialUnchecked(p FinancialEffectFinding) error {
+	if fw, ok := w.ResultWriter.(FinancialEventWriter); ok {
+		return fw.WriteFinancialUnchecked(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteSettlementMatch(p SettlementFinding) error {
+	if fw, ok := w.ResultWriter.(FinancialEventWriter); ok {
+		return fw.WriteSettlementMatch(p)
+	}
+	return nil
+}
+func (w *partitionSummaryWriter) WriteSettlementDiff(p SettlementFinding) error {
+	if fw, ok := w.ResultWriter.(FinancialEventWriter); ok {
+		return fw.WriteSettlementDiff(p)
+	}
+	return nil
+}
+
 // SourceBreakdownWriter forwarding.
 func (w *partitionSummaryWriter) WriteSourceSummary(sourceName string, sum Summary) error {
 	if sbw, ok := w.ResultWriter.(SourceBreakdownWriter); ok {
@@ -163,6 +194,11 @@ func addSummaries(a, b Summary) Summary {
 	a.SubsetSumMatchedCount += b.SubsetSumMatchedCount
 	a.SubsetSumAmbiguousCount += b.SubsetSumAmbiguousCount
 	a.SubsetSumSkippedCount += b.SubsetSumSkippedCount
+	a.FinancialEffectMatchCount += b.FinancialEffectMatchCount
+	a.FinancialEffectDiffCount += b.FinancialEffectDiffCount
+	a.FinancialUncheckedCount += b.FinancialUncheckedCount
+	a.SettlementMatchCount += b.SettlementMatchCount
+	a.SettlementDiffCount += b.SettlementDiffCount
 	a.MatchedAmountLeft += b.MatchedAmountLeft
 	a.MatchedAmountRight += b.MatchedAmountRight
 	a.UnmatchedAmountLeft += b.UnmatchedAmountLeft

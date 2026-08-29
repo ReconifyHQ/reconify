@@ -46,6 +46,15 @@ Apply these rules together with the schema:
 - Choose one `right` or an ordered `rights` list according to the business flow.
 - Select matching `passes` from `capabilities`; keep their order intentional.
 
+When sources expose fees, taxes, commissions, or gross/net amounts, configure the optional
+`parser.financials` block after ordinary mappings are proven. Map `gross_col` and `net_col`
+together when settlement arithmetic is required. Add named `fields` for parsed financial values and
+`expectations` for derived values. Expectation values are minor units; percentage rates are written
+as percentages (`1.5` means 1.5%), and percentage bases may reference `gross`, `net`, or another
+mapped financial field. Use `components` plus `operation: add` or `subtract` for a settlement
+identity. Missing mapped values produce informational `financial_unchecked` findings; invalid
+arithmetic or overflow is a configuration/run error.
+
 Set tolerances from business policy. For example, a permitted difference of 2.00 with
 `multiplier: 100` becomes `amount_tolerance_minor: 200`. This checkpoint is complete when every
 mapping and tolerance has evidence or a named assumption.

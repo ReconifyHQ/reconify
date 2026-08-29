@@ -25,6 +25,8 @@ func (stderrWarningObserver) ObserveWarning(warning engine.Warning) {
 func reconcileExitError(sum engine.Summary, failIfUnmatched, failIfExceptions bool) error {
 	hasExceptions := sum.AmountDiffCount > 0 ||
 		sum.TimingDiffCount > 0 ||
+		sum.FinancialEffectDiffCount > 0 ||
+		sum.SettlementDiffCount > 0 ||
 		sum.UnmatchedLeft > 0 ||
 		sum.UnmatchedRight > 0
 	if failIfExceptions && hasExceptions {

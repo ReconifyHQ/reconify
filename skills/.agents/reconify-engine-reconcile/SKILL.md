@@ -89,7 +89,9 @@ the user or state an explicit assumption:
 - the shared transaction identifier;
 - the amount difference that is acceptable, expressed in minor units;
 - the permitted date offset;
-- whether repeated references represent duplicates, one-to-many groups, or many-to-many groups.
+- whether repeated references represent duplicates, one-to-many groups, or many-to-many groups;
+- whether gross, net, fees, taxes, or other effects must satisfy a financial expectation; record the
+  expected sign operation and tolerance in minor units.
 
 Classify every such decision before acting on it:
 
@@ -132,6 +134,11 @@ reconify reconcile --config reconify.yaml --pair PAIR \
 For inputs too large to buffer, read `../reconify-engine-performance/SKILL.md` and choose a streaming
 artifact deliberately. This checkpoint is complete when the command succeeds, the output parses in
 its declared format, and its final summary is present.
+
+If `parser.financials` is configured, also inspect the financial and settlement event categories and
+their summary counters. Financial findings are additive: a financial difference does not reclassify
+a normal transaction match. Under `exceptions_only`, clean financial matches and unchecked findings
+are suppressed while financial and settlement differences remain visible.
 
 ## 5. Explain and challenge the result
 

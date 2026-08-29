@@ -127,6 +127,33 @@ func drainResultToWriter(w engine.ResultWriter, res *engine.Result) error {
 			"warning: current --format does not support subset_sum match events; "+
 				"use --format=json or --format=ndjson to capture all subset_sum output")
 	}
+	if fw, ok := w.(engine.FinancialEventWriter); ok {
+		for _, finding := range res.FinancialEffectMatches {
+			if err := fw.WriteFinancialEffectMatch(finding); err != nil {
+				return err
+			}
+		}
+		for _, finding := range res.FinancialEffectDiffs {
+			if err := fw.WriteFinancialEffectDiff(finding); err != nil {
+				return err
+			}
+		}
+		for _, finding := range res.FinancialUnchecked {
+			if err := fw.WriteFinancialUnchecked(finding); err != nil {
+				return err
+			}
+		}
+		for _, finding := range res.SettlementMatches {
+			if err := fw.WriteSettlementMatch(finding); err != nil {
+				return err
+			}
+		}
+		for _, finding := range res.SettlementDiffs {
+			if err := fw.WriteSettlementDiff(finding); err != nil {
+				return err
+			}
+		}
+	}
 	// Emit warnings to stderr — mirrors what the streaming path does via cc.Warnings().
 	for _, warning := range res.Warnings {
 		fmt.Fprintln(os.Stderr, "warning:", warning)
